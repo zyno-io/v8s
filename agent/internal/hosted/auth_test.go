@@ -287,3 +287,25 @@ func TestUsernameMapping(t *testing.T) {
 		}
 	}
 }
+
+// A public login app that is also the cluster app (Entra "Mobile and desktop" redirect, no secret): login and
+// refresh send client_id only, and the login tokens are the cluster tokens.
+func TestPublicClientSameApp(t *testing.T) {
+	e := newEnv(t, func(c *config.Config, idp *oidctest.Provider) {
+		c.OIDC.ClientSecret = config.SecretRef{}
+		c.OIDC.PublicClient = true
+		c.ClusterApp = &config.ClusterApp{ClientID: c.OIDC.ClientID}
+		idp.AddClient(oidctest.Client{ID: c.OIDC.ClientID, Public: true, RedirectURI: c.PublicURL + "/auth/callback"})
+	})
+	b := e.browser()
+	b.login("alice-sub")
+	resp, _ := b.Get(e.ts.URL + "/api/me")
+	var me meResponse
+	_ = json.NewDecoder(resp.Body).Decode(&me)
+	if me.Username != "alice@example.com" || me.ClusterAuth != "ok" {
+		t.Fatalf("/api/me: %+v", me)
+	}
+	if n := len(e.idp.Requests()); n != 1 {
+		t.Fatalf("same app must not run a second authorization flow: %d requests", n)
+	}
+}

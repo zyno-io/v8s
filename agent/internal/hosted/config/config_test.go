@@ -65,6 +65,8 @@ func TestParseRejects(t *testing.T) {
 		"public url with path":   sub("https://v8s.example.com", "https://v8s.example.com/app"),
 		"both secret and key":    sub("clientSecret: {env: V8S_OIDC_SECRET}", "clientSecret: {env: A}\n  privateKey: {env: B}"),
 		"no credential":          sub("clientSecret: {env: V8S_OIDC_SECRET}", ""),
+		"public with secret":     sub("clientSecret: {env: V8S_OIDC_SECRET}", "publicClient: true\n  clientSecret: {env: A}"),
+		"public cluster app key": sub("clusterApp:\n  clientId: k8s\n", "clusterApp:\n  clientId: k8s\n  publicClient: true\n"),
 		"missing cluster app":    sub("clusterApp:\n  clientId: k8s\n  privateKey: {file: /etc/v8s/cluster-app.key}\n  certificate: {file: /etc/v8s/cluster-app.crt}\n", ""),
 		"duplicate cluster":      sub("id: kiosk", "id: prod-eu"),
 		"bad cluster id":         sub("id: kiosk", "id: Kiosk_1"),
@@ -127,5 +129,21 @@ func TestClusterAppSameAsLoginNeedsNoCredential(t *testing.T) {
 	other := strings.Replace(same, "clusterApp:\n  clientId: v8s\n", "clusterApp:\n  clientId: k8s\n", 1)
 	if _, err := Parse([]byte(other)); err == nil {
 		t.Fatal("a different clusterApp without a credential must be rejected")
+	}
+}
+
+func TestPublicClient(t *testing.T) {
+	pub := strings.Replace(good, "clientSecret: {env: V8S_OIDC_SECRET}", "publicClient: true", 1)
+	pub = strings.Replace(pub, "clusterApp:\n  clientId: k8s\n  privateKey: {file: /etc/v8s/cluster-app.key}\n  certificate: {file: /etc/v8s/cluster-app.crt}\n", "clusterApp:\n  clientId: v8s\n", 1)
+	c, err := Parse([]byte(pub))
+	if err != nil {
+		t.Fatalf("public login app, same cluster app: %v", err)
+	}
+	if !c.OIDC.PublicClient {
+		t.Fatal("publicClient not parsed")
+	}
+	sep := strings.Replace(pub, "clusterApp:\n  clientId: v8s\n", "clusterApp:\n  clientId: k8s\n  publicClient: true\n", 1)
+	if _, err := Parse([]byte(sep)); err != nil {
+		t.Fatalf("separate public cluster app: %v", err)
 	}
 }

@@ -23,12 +23,14 @@ config:
     maxPerUser: 5
   # REQUIRED. Login provider (Entra ID, Keycloak, Okta, Google, Dex, GitLab). Redirect URI to register:
   #   <publicUrl>/auth/callback
-  # Configure exactly one of clientSecret / privateKey, each an env or file reference (see secretEnv/secretMounts).
+  # Configure exactly one of clientSecret / privateKey, each an env or file reference (see secretEnv/secretMounts),
+  # or publicClient: true with neither.
   oidc:
     issuer: ""
     clientId: ""
     clientSecret:
       env: V8S_OIDC_CLIENT_SECRET
+    # Public client (no credential, PKCE only)? Set `publicClient: true` and `clientSecret: null`.
     # Using privateKey instead? Set `clientSecret: null` to drop this default.
     # privateKey: {file: /etc/v8s/secrets/oidc/tls.key}   # private_key_jwt (RSA PEM)
     # certificate: {file: /etc/v8s/secrets/oidc/tls.crt}  # sends x5t#S256 (Entra ID)

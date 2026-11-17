@@ -34,6 +34,8 @@ type Client struct {
 	RedirectURI string
 	// PublicKey, when set, verifies private_key_jwt assertions.
 	PublicKey *rsa.PublicKey
+	// Public clients authenticate with client_id only; a secret or assertion is refused.
+	Public bool
 }
 
 // AuthRequest is a recorded authorization request.
@@ -228,6 +230,9 @@ func (p *Provider) authClient(r *http.Request) (Client, bool) {
 	p.mu.Unlock()
 	if !ok {
 		return cl, false
+	}
+	if cl.Public {
+		return cl, r.PostForm.Get("client_secret") == "" && r.PostForm.Get("client_assertion") == ""
 	}
 	if a := r.PostForm.Get("client_assertion"); a != "" {
 		return cl, cl.PublicKey != nil && verifyAssertion(a, cl, p.URL+"/token")

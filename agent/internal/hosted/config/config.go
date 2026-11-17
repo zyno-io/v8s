@@ -99,8 +99,11 @@ type Session struct {
 
 // OIDC is the login provider registration.
 type OIDC struct {
-	Issuer        string    `json:"issuer"`
-	ClientID      string    `json:"clientId"`
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"clientId"`
+	// PublicClient: the app has no credential (PKCE only), e.g. an Entra app whose redirect URI is registered
+	// under "Mobile and desktop applications". Explicit, so a forgotten secret is still an error.
+	PublicClient  bool      `json:"publicClient,omitempty"`
 	ClientSecret  SecretRef `json:"clientSecret,omitempty"`
 	PrivateKey    SecretRef `json:"privateKey,omitempty"`  // PEM, RSA (private_key_jwt)
 	Certificate   SecretRef `json:"certificate,omitempty"` // PEM, for the x5t#S256 header (Entra ID)
@@ -113,6 +116,7 @@ type OIDC struct {
 type ClusterApp struct {
 	Issuer       string    `json:"issuer,omitempty"` // default: the login issuer
 	ClientID     string    `json:"clientId"`
+	PublicClient bool      `json:"publicClient,omitempty"` // no credential, PKCE only (see OIDC.PublicClient)
 	ClientSecret SecretRef `json:"clientSecret,omitempty"`
 	PrivateKey   SecretRef `json:"privateKey,omitempty"`
 	Certificate  SecretRef `json:"certificate,omitempty"`
@@ -291,7 +295,7 @@ func (c *Config) Validate() error {
 	if c.OIDC.ClientID == "" {
 		return errors.New("oidc.clientId is required")
 	}
-	if err := checkAuth("oidc", c.OIDC.ClientSecret, c.OIDC.PrivateKey); err != nil {
+	if err := checkAuth("oidc", c.OIDC.PublicClient, c.OIDC.ClientSecret, c.OIDC.PrivateKey, c.OIDC.Certificate); err != nil {
 		return err
 	}
 	passthrough := false
@@ -352,7 +356,7 @@ func (c *Config) Validate() error {
 		// The same app as login reuses the login tokens, so it needs no credential of its own.
 		sameApp := ca.ClientID == c.OIDC.ClientID && (ca.Issuer == "" || ca.Issuer == c.OIDC.Issuer)
 		if !sameApp {
-			if err := checkAuth("clusterApp", ca.ClientSecret, ca.PrivateKey); err != nil {
+			if err := checkAuth("clusterApp", ca.PublicClient, ca.ClientSecret, ca.PrivateKey, ca.Certificate); err != nil {
 				return err
 			}
 		}
@@ -365,7 +369,13 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func checkAuth(what string, secret, key SecretRef) error {
+func checkAuth(what string, public bool, secret, key, cert SecretRef) error {
+	if public {
+		if !secret.IsZero() || !key.IsZero() || !cert.IsZero() {
+			return fmt.Errorf("%s: publicClient takes no clientSecret, privateKey or certificate", what)
+		}
+		return nil
+	}
 	if secret.IsZero() == key.IsZero() {
 		return fmt.Errorf("%s: set exactly one of clientSecret and privateKey", what)
 	}
