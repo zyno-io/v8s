@@ -1,0 +1,24 @@
+# Minimal config: unsigned, local builds only (signing/notarization come later, see docs/packaging.md).
+appId: io.zyno.v8s
+productName: v8s
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+extraResources:
+  # Built UI, served through the app:// protocol.
+  - from: ../ui/dist
+    to: ui
+  # Agent binary for the target platform: `cd agent && go build -o bin/v8s ./cmd/v8s` (gitignored).
+  - from: ../../agent/bin
+    to: agent
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  target: [dir, dmg]
+linux:
+  target: [AppImage]
+  category: Development
+win:
+  target: [dir]
