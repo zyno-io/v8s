@@ -9,3 +9,4 @@ test-results/
 playwright-report/
 /agent/bin/
 /packages/desktop/release/
+/test/e2e/out/
