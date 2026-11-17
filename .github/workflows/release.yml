@@ -118,7 +118,8 @@ jobs:
           bin="dist/${GOOS}_${GOARCH}/v8s"
           rcodesign sign --p12-file "$p12" --p12-password-file "$pw" --code-signature-flags runtime "$bin"
           zip -j "$RUNNER_TEMP/notarize.zip" "$bin"
-          rcodesign notary-submit --api-key-file "$key" --wait "$RUNNER_TEMP/notarize.zip"
+          # Apple's queue sometimes takes well over the 10-minute default.
+          rcodesign notary-submit --api-key-file "$key" --wait --max-wait-seconds 3600 "$RUNNER_TEMP/notarize.zip"
           rm -f "$p12" "$pw" "$key"
 
       # --- Windows: Azure Artifact Signing (same account and service principal as sp2p) ---
