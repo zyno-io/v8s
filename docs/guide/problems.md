@@ -150,7 +150,7 @@ Problems is the landing tab on a phone. It loads a tiny summary first (counts pe
 
 ## How it stays cheap
 
-When a cluster is selected, v8s keeps a fixed set of cheap watches that feed the default-on checks: projected pods and nodes, workload and Job status, Services, EndpointSlices, Ingresses, PVCs, Warning events only, and so on. Security and policy report counts come from server-side tables that carry only the counts. Nothing is watched in full that does not need to be. Detectors run in the agent on only what changed. The design is in [Problems engine](/problems).
+When a cluster is selected, v8s keeps a fixed set of cheap watches that feed the default-on checks: projected pods and nodes, workload and Job status, Services, EndpointSlices, Ingresses, PVCs, Warning events only (the Events tab of a resource loads all of its events on demand), and so on. Security and policy report counts come from server-side tables that carry only the counts. Nothing is watched in full that does not need to be. Detectors run in the agent on only what changed. The design is in [Problems engine](/problems).
 
 ## Presets
 

@@ -104,6 +104,7 @@ export type {
 } from './protocol.gen.ts';
 export {
     HelmGVR,
+    MaxObjectEvents,
     ProblemsGVR,
     SourceKubescape,
     SourceKyverno,

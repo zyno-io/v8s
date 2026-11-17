@@ -1,64 +1,80 @@
 <script setup lang="ts">
-import type { ObjectRef } from '@v8s/client';
+import type { ObjectRef, ViewHandle } from '@v8s/client';
 
-import { computed, onBeforeUnmount } from 'vue';
+import { MaxObjectEvents } from '@v8s/client';
+import { computed, onBeforeUnmount, shallowRef } from 'vue';
 
-import { getAgent, kinds } from '@/lib/agent.ts';
+import { getAgent } from '@/lib/agent.ts';
+import { eventRows, eventsErrorText, eventsRetryable, eventsState, eventTone } from '@/lib/events.ts';
 import { formatAge } from '@/lib/format.ts';
 
 const props = defineProps<{ target: ObjectRef }>();
 
-const kindName = computed(() => kinds.value.find(k => k.gvr === props.target.gvr)?.kind ?? '');
+// Every event of the object (Normal and Warning), listed by the agent on demand while this tab is open. The ref is
+// copied into a plain object: props are reactive proxies, which cannot be posted to the worker.
+function open(): ViewHandle {
+    const t = props.target;
+    return getAgent().subscribeView(
+        {
+            clusters: [t.cluster],
+            gvr: 'v1/events',
+            namespaces: [],
+            text: '',
+            filters: [],
+            sort: [{ col: 'lastSeen', desc: true }],
+            involved: { cluster: t.cluster, gvr: t.gvr, namespace: t.namespace, name: t.name }
+        },
+        { offset: 0, limit: MaxObjectEvents }
+    );
+}
 
-// The events view's `object` column is "Kind/name"; an `eq` filter narrows it to this object, scoped to its namespace and cluster.
-const handle = getAgent().subscribeView(
-    {
-        clusters: [props.target.cluster],
-        gvr: 'v1/events',
-        namespaces: props.target.namespace ? [props.target.namespace] : [],
-        text: '',
-        filters: [{ col: 'object', op: 'eq', value: `${kindName.value ? kindName.value + '/' : ''}${props.target.name}` }],
-        sort: [{ col: 'lastSeen', desc: true }]
-    },
-    { offset: 0, limit: 50 }
-);
-onBeforeUnmount(() => handle.close());
+const handle = shallowRef<ViewHandle>(open());
+onBeforeUnmount(() => handle.value.close());
 
-const idx = computed(() => {
-    const m: Record<string, number> = {};
-    (handle.columns.value ?? []).forEach((c, i) => (m[c.key] = i + 2));
-    return m;
-});
-const rows = computed(() => {
-    void handle.version.value;
-    return [...handle.ids].map(id => handle.rows.get(id)).filter((r): r is NonNullable<typeof r> => !!r);
-});
-const supported = computed(() => handle.columns.value === null || handle.columns.value.length > 0);
+function retry() {
+    handle.value.close();
+    handle.value = open();
+}
+
+const rows = computed(() => eventRows(handle.value));
+const state = computed(() => eventsState(handle.value, rows.value.length));
+const error = computed(() => handle.value.error.value);
 </script>
 
 <template>
-    <div class="ev">
-        <p class="muted note">The agent keeps Warning events only, so normal events do not appear here.</p>
-        <p v-if="!supported" class="muted">No selected cluster serves events.</p>
-        <p v-else-if="!rows.length" class="muted" role="status">No warning events for this object.</p>
-        <ul v-else class="list">
-            <li v-for="r in rows" :key="r[0]">
-                <div class="top">
-                    <span class="tag warning">{{ r[idx.reason] }}</span>
-                    <span v-if="Number(r[idx.count]) > 1" class="muted">×{{ r[idx.count] }}</span>
-                    <span class="grow"></span>
-                    <span class="muted">{{ formatAge(Number(r[idx.lastSeen]), Date.now()) }} ago</span>
-                </div>
-                <div class="msg">{{ r[idx.message] }}</div>
-            </li>
-        </ul>
+    <div class="ev" data-testid="events-pane">
+        <p v-if="state === 'loading'" class="muted" role="status">Loading events…</p>
+        <div v-else-if="state === 'error' && error" class="notice danger" role="alert">
+            {{ eventsErrorText(error, target) }}
+            <button v-if="eventsRetryable(error)" class="btn sm" type="button" @click="retry">Retry</button>
+        </div>
+        <p v-else-if="state === 'empty'" class="muted" role="status">No events for this object.</p>
+        <template v-else>
+            <ul class="list">
+                <li v-for="r in rows" :key="r.id" :data-type="r.type">
+                    <div class="top">
+                        <span class="tag" :class="eventTone(r.type)">{{ r.type }}</span>
+                        <b>{{ r.reason }}</b>
+                        <span v-if="r.count > 1" class="muted">×{{ r.count }}</span>
+                        <span class="grow"></span>
+                        <span v-if="r.source" class="muted">from {{ r.source }}</span>
+                        <span class="muted">{{ formatAge(r.lastSeen, Date.now()) }} ago</span>
+                    </div>
+                    <div class="msg">{{ r.message }}</div>
+                </li>
+            </ul>
+            <p v-if="rows.length >= MaxObjectEvents" class="muted note">Showing the newest {{ MaxObjectEvents }} events.</p>
+        </template>
     </div>
 </template>
 
 <style scoped>
 .note {
-    margin: 0 0 8px;
+    margin: 8px 0 0;
     font-size: 12px;
+}
+.notice .btn {
+    margin-left: 8px;
 }
 .list {
     list-style: none;

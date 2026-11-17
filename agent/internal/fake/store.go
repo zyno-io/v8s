@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	jsonpatch "gopkg.in/evanphx/json-patch.v4"
 
@@ -20,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,7 +36,7 @@ import (
 type kwatch struct {
 	gvr  string
 	ns   string
-	name string
+	sel  fields.Selector // nil: everything
 	conv func(typ watch.EventType, o *unstructured.Unstructured) []watch.Event
 	ch   chan watch.Event
 	done bool
@@ -85,7 +87,35 @@ func (w *World) emitLocked(typ watch.EventType, gvr string, o *unstructured.Unst
 }
 
 func (k *kwatch) matches(o *unstructured.Unstructured) bool {
-	return (k.ns == "" || o.GetNamespace() == k.ns) && (k.name == "" || o.GetName() == k.name)
+	return (k.ns == "" || o.GetNamespace() == k.ns) && (k.sel == nil || k.sel.Matches(fieldSet(k.gvr, o)))
+}
+
+// fieldSet is the field-selector view of an object: metadata.name and metadata.namespace for every kind, and
+// for events the fields a real API server supports (type, reason, source, reportingComponent, involvedObject.*).
+func fieldSet(gvr string, o *unstructured.Unstructured) fields.Set {
+	s := fields.Set{"metadata.name": o.GetName(), "metadata.namespace": o.GetNamespace()}
+	if gvr != "v1/events" {
+		return s
+	}
+	str := func(path ...string) string { v, _, _ := unstructured.NestedString(o.Object, path...); return v }
+	s["type"], s["reason"] = str("type"), str("reason")
+	s["source"], s["reportingComponent"] = str("source", "component"), str("reportingComponent")
+	for _, f := range []string{"kind", "name", "namespace", "uid", "apiVersion"} {
+		s["involvedObject."+f] = str("involvedObject", f)
+	}
+	return s
+}
+
+// parseSelector parses a list/watch field selector (empty: no selector).
+func parseSelector(sel string) (fields.Selector, error) {
+	if sel == "" {
+		return nil, nil
+	}
+	s, err := fields.ParseSelector(sel)
+	if err != nil {
+		return nil, apierrors.NewBadRequest("bad fieldSelector: " + err.Error())
+	}
+	return s, nil
 }
 
 func (w *World) getLocked(gvr, ns, name string) *unstructured.Unstructured {
@@ -187,7 +217,11 @@ type kindAPI struct {
 	w   *World
 	d   *kindDef
 	mod *ingest.Module
+	ns  string // narrows list and watch to one namespace
 }
+
+// InNamespace implements ingest.Namespacer.
+func (a *kindAPI) InNamespace(ns string) ingest.API { c := *a; c.ns = ns; return &c }
 
 func typedObject(o *unstructured.Unstructured) (runtime.Object, error) {
 	obj, err := scheme.Scheme.New(o.GroupVersionKind())
@@ -238,12 +272,25 @@ func (a *kindAPI) List(ctx context.Context, opts metav1.ListOptions) (runtime.Ob
 		}
 		start, rv = n, r
 	}
+	sel, err := parseSelector(opts.FieldSelector)
+	if err != nil {
+		return nil, err
+	}
 	a.w.mu.Lock()
 	defer a.w.mu.Unlock()
 	if opts.Continue == "" {
 		rv = strconv.FormatUint(a.w.rv, 10)
 	}
-	all := a.w.listLocked(a.d.gvr, "")
+	all := a.w.listLocked(a.d.gvr, a.ns)
+	if sel != nil {
+		kept := all[:0:0]
+		for _, o := range all {
+			if sel.Matches(fieldSet(a.d.gvr, o)) {
+				kept = append(kept, o)
+			}
+		}
+		all = kept
+	}
 	limit := int(opts.Limit)
 	if limit <= 0 {
 		limit = len(all) + 1
@@ -344,29 +391,24 @@ func (a *kindAPI) bookmark(rv uint64, initialEnd bool) watch.Event {
 }
 
 func (a *kindAPI) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-	return a.w.watch(a.d.gvr, "", fieldName(opts.FieldSelector), opts, a.conv(), a.bookmark)
-}
-
-func fieldName(sel string) string {
-	for _, part := range strings.Split(sel, ",") {
-		if v, ok := strings.CutPrefix(part, "metadata.name="); ok {
-			return v
-		}
+	sel, err := parseSelector(opts.FieldSelector)
+	if err != nil {
+		return nil, err
 	}
-	return ""
+	return a.w.watch(a.d.gvr, a.ns, sel, opts, a.conv(), a.bookmark)
 }
 
 // watch opens a watch with the semantics the reflector expects: a streaming list when
 // SendInitialEvents is set, a replay from the log when a resourceVersion is given.
-func (w *World) watch(gvr, ns, name string, opts metav1.ListOptions, conv func(watch.EventType, *unstructured.Unstructured) []watch.Event,
+func (w *World) watch(gvr, ns string, sel fields.Selector, opts metav1.ListOptions, conv func(watch.EventType, *unstructured.Unstructured) []watch.Event,
 	bookmark func(uint64, bool) watch.Event) (watch.Interface, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	k := &kwatch{gvr: gvr, ns: ns, name: name, conv: conv, ch: make(chan watch.Event, 8192)}
+	k := &kwatch{gvr: gvr, ns: ns, sel: sel, conv: conv, ch: make(chan watch.Event, 8192)}
 	initial := opts.SendInitialEvents != nil && *opts.SendInitialEvents
 	if initial {
 		for _, o := range w.listLocked(gvr, ns) {
-			if name != "" && o.GetName() != name {
+			if sel != nil && !sel.Matches(fieldSet(gvr, o)) {
 				continue
 			}
 			for _, ev := range conv(watch.Added, o) {
@@ -475,7 +517,11 @@ func (r *dynRes) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Inte
 		o.SetResourceVersion(strconv.FormatUint(rv, 10))
 		return watch.Event{Type: watch.Bookmark, Object: o}
 	}
-	return r.d.w.watch(r.gvr, r.ns, fieldName(opts.FieldSelector), opts, conv, bm)
+	sel, err := parseSelector(opts.FieldSelector)
+	if err != nil {
+		return nil, err
+	}
+	return r.d.w.watch(r.gvr, r.ns, sel, opts, conv, bm)
 }
 
 func dry(o []string) bool { return len(o) > 0 }
@@ -664,6 +710,12 @@ func (w *World) applyEffects(gvr string, old, o *unstructured.Unstructured) {
 	switch gvr {
 	case "apps/v1/deployments", "apps/v1/statefulsets", "apps/v1/replicasets":
 		n, ok, _ := unstructured.NestedInt64(o.Object, "spec", "replicas")
+		if gvr == "apps/v1/deployments" { // patched objects come from JSON, so replicas may be a float64 here
+			prev, pok := specReplicas(old)
+			if cur, cok := specReplicas(o); pok && cok && prev != cur {
+				w.scalingEvent(o, prev, cur)
+			}
+		}
 		if ok {
 			_ = unstructured.SetNestedField(o.Object, n, "status", "replicas")
 			_ = unstructured.SetNestedField(o.Object, n, "status", "readyReplicas")
@@ -671,6 +723,52 @@ func (w *World) applyEffects(gvr string, old, o *unstructured.Unstructured) {
 			_ = unstructured.SetNestedField(o.Object, n, "status", "updatedReplicas")
 		}
 	}
+}
+
+func specReplicas(o *unstructured.Unstructured) (int64, bool) {
+	v, found, _ := unstructured.NestedFieldNoCopy(o.Object, "spec", "replicas")
+	switch n := v.(type) {
+	case int64:
+		return n, found
+	case float64:
+		return int64(n), found
+	case int:
+		return int64(n), found
+	}
+	return 0, false
+}
+
+// scalingEvent records the deployment controller's ScalingReplicaSet event for a replica change.
+func (w *World) scalingEvent(o *unstructured.Unstructured, prev, n int64) {
+	dir := "up"
+	if n < prev {
+		dir = "down"
+	}
+	w.eventLocked(o.GetNamespace(), map[string]any{"kind": "Deployment", "name": o.GetName(), "namespace": o.GetNamespace(), "uid": string(o.GetUID())},
+		"Normal", "ScalingReplicaSet", "Scaled "+dir+" replica set "+w.ownedRS(o)+" to "+strconv.FormatInt(n, 10), "deployment-controller", time.Now(), true)
+}
+
+// ownedRS names the ReplicaSet a Deployment owns (the newest with replicas, else the first), or the Deployment's name.
+func (w *World) ownedRS(d *unstructured.Unstructured) string {
+	best := ""
+	for _, rs := range w.objs["apps/v1/replicasets"] {
+		if rs.GetNamespace() != d.GetNamespace() {
+			continue
+		}
+		for _, or := range rs.GetOwnerReferences() {
+			if or.UID != d.GetUID() {
+				continue
+			}
+			n, _, _ := unstructured.NestedInt64(rs.Object, "spec", "replicas")
+			if best == "" || n > 0 {
+				best = rs.GetName()
+			}
+		}
+	}
+	if best == "" {
+		return d.GetName()
+	}
+	return best
 }
 
 func (r *dynRes) Apply(ctx context.Context, name string, obj *unstructured.Unstructured, opts metav1.ApplyOptions, sub ...string) (*unstructured.Unstructured, error) {

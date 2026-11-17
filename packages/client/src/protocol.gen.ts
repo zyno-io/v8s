@@ -564,7 +564,17 @@ export interface ViewQuery {
   text: string; // substring match on name
   filters: Filter[];
   sort: Sort[];
+  /**
+   * Involved, with GVR "v1/events", makes this the view of every event (Normal and Warning) of one object, listed
+   * on demand while the view is open (docs/protocol.md "Events of one object"). Clusters and Namespaces are then
+   * ignored; Filters, Text and Sort still apply.
+   */
+  involved?: ObjectRef;
 }
+/**
+ * MaxObjectEvents is the events of one object an involved view keeps, newest by lastSeen.
+ */
+export const MaxObjectEvents = 200;
 /**
  * Window selects which slice of the sorted view the client holds.
  * If AnchorID is set and still in the view, the agent positions the window around it

@@ -40,17 +40,33 @@ type TypedAPI struct {
 	C        rest.Interface
 	Resource string
 	NewList  func() runtime.Object
+	// Namespace, when set, narrows list and watch to that namespace.
+	Namespace string
+}
+
+// Namespacer narrows a list/watch source to one namespace (the per-object events watch).
+type Namespacer interface{ InNamespace(ns string) API }
+
+// InNamespace returns a copy of the API scoped to one namespace.
+func (a *TypedAPI) InNamespace(ns string) API { c := *a; c.Namespace = ns; return &c }
+
+func (a *TypedAPI) req() *rest.Request {
+	r := a.C.Get()
+	if a.Namespace != "" {
+		r = r.Namespace(a.Namespace)
+	}
+	return r.Resource(a.Resource)
 }
 
 func (a *TypedAPI) List(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 	out := a.NewList()
-	err := a.C.Get().Resource(a.Resource).VersionedParams(&opts, scheme.ParameterCodec).Do(ctx).Into(out)
+	err := a.req().VersionedParams(&opts, scheme.ParameterCodec).Do(ctx).Into(out)
 	return out, err
 }
 
 func (a *TypedAPI) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
 	opts.Watch = true
-	return a.C.Get().Resource(a.Resource).VersionedParams(&opts, scheme.ParameterCodec).Watch(ctx)
+	return a.req().VersionedParams(&opts, scheme.ParameterCodec).Watch(ctx)
 }
 
 // TableAPI lists and watches any resource as a server-side Table with PartialObjectMetadata (mode C).

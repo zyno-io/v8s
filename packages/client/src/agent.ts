@@ -53,6 +53,8 @@ export interface ViewHandle {
     /** View index of ids[0]. */
     readonly offset: ShallowRef<number>;
     readonly columns: ShallowRef<Column[] | null>;
+    /** The subscribe failure (the agent refused the query, or an involved-object events view could not load); null while fine. */
+    readonly error: ShallowRef<ErrorBody | null>;
     readonly gen: number;
     readonly query: ViewQuery;
     readonly window: Window;
@@ -323,7 +325,10 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 break;
             case 'columns': {
                 const v = views.get(m.qid);
-                if (v) v.columns.value = m.columns;
+                if (v) {
+                    v.columns.value = m.columns;
+                    v.error.value = m.error ?? null;
+                }
                 break;
             }
             case 'rows': {
@@ -406,6 +411,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 total: shallowRef(0),
                 offset: shallowRef(0),
                 columns: shallowRef<Column[] | null>(null),
+                error: shallowRef<ErrorBody | null>(null),
                 gen: 1,
                 query,
                 window,

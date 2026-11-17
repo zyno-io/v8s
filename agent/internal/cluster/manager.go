@@ -37,6 +37,7 @@ type Manager struct {
 	// Linger is how long an unreferenced on-demand watch stays warm; Budget caps watches per cluster;
 	// DiscoveryEvery is the periodic discovery refresh. Set before the first Select.
 	Linger         time.Duration
+	EventsLinger   time.Duration // the linger of object-events watches
 	Budget         int
 	DiscoveryEvery time.Duration
 
@@ -60,7 +61,7 @@ func NewManager(ctx context.Context, src Source, eng *view.Engine, log *slog.Log
 	}
 	return &Manager{src: src, eng: eng, log: log, runners: map[string]*runner{}, listeners: map[chan struct{}]struct{}{},
 		ctx: ctx, selected: []string{}, scopes: map[*Scope]struct{}{},
-		Linger: DefaultLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery}
+		Linger: DefaultLinger, EventsLinger: DefaultEventsLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery}
 }
 
 func (m *Manager) Source() Source { return m.src }
@@ -488,6 +489,8 @@ type Scope struct {
 	clusters []string // empty = every selected cluster
 	held     map[string]func()
 	closed   bool
+	ev       *ObjectEvents // non-nil: the scope of one object's events (gvr is ingest.ObjectEventsGVR)
+	err      error         // the last acquire error of an events scope (guarded by reconcileMu)
 }
 
 // OpenScope references the kind's watch on every cluster in scope that serves it.
@@ -557,6 +560,19 @@ func (m *Manager) reconcile(s *Scope) {
 	}
 	for id, r := range in {
 		if s.held[id] != nil {
+			continue
+		}
+		if s.ev != nil {
+			if _, ok := r.serves(ingest.EventsGVR); !ok {
+				continue
+			}
+			rel, err := r.acquireEvents(s.ev)
+			s.err = err
+			if err != nil {
+				m.log.Debug("events watch not started", "cluster", id, "key", s.ev.key, "err", err.Error())
+				continue
+			}
+			s.held[id] = rel
 			continue
 		}
 		if _, ok := r.serves(s.gvr); !ok {

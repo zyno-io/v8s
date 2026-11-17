@@ -34,7 +34,7 @@ Each resource type has a **view spec** (columns, projection, sort keys, actions,
 | --- | --- | --- | --- |
 | Namespace | Curated | P1 | status, labels; create, delete (type-to-confirm) |
 | Node | Curated | P1 | status, roles, version, CPU/mem capacity and allocatable, pods, taints, age; cordon/uncordon (P2), drain (P2), node shell (P2) |
-| Event | Curated | P1 | type, reason, object, message, count, last seen; global stream with Warning filter |
+| Event | Curated | P1 | type, reason, object, message, count, last seen, source; global stream is Warning-only; all events of one object on demand in its Events tab |
 | Pod | Curated | P1 | ready, status reason, restarts, node, IP, age, QoS; logs, exec (P2), delete, evict, debug container (P2) |
 | Deployment | Curated | P1 | ready/up-to-date/available, images, age; scale, restart, rollback (P2), pause/resume |
 | ReplicaSet | Curated | P1 | desired/current/ready, owner; revision history for rollback |

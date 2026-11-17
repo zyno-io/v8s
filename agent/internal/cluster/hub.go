@@ -25,6 +25,10 @@ const (
 	DefaultDiscoveryEvery = 5 * time.Minute
 )
 
+// DefaultEventsLinger is how long an object-events watch stays warm after its last reference (these are
+// per-object etcd watches, so the linger is short).
+const DefaultEventsLinger = 30 * time.Second
+
 // ErrBudget is returned when a cluster is at its watch budget and nothing lingering can be evicted.
 var ErrBudget = errors.New("watch budget exhausted")
 
@@ -44,6 +48,10 @@ type watchEntry struct {
 	tier0   bool
 	lastUse time.Time
 	linger  *time.Timer
+	// part is set for an object-events watch (docs/protocol.md "Events of one object"): its rows live in the
+	// runner's shared oev store, st stays nil, and synced closes after the first list.
+	part   *store.Part
+	synced chan struct{}
 }
 
 type listErr struct{ err error }
@@ -85,6 +93,10 @@ type runner struct {
 
 	pe     *problems.Engine // the cluster's problems engine (nil: problems are not enabled)
 	gcOnce sync.Once
+
+	// oev is the one store all of the cluster's object-events watches write into (created on first use,
+	// guarded by mu); it is attached to the view engine once as ingest.ObjectEventsGVR.
+	oev *store.Store
 }
 
 func (r *runner) state() protocol.ClusterState {
@@ -358,6 +370,14 @@ func (r *runner) stopLocked(w *watchEntry) {
 		w.linger.Stop()
 		w.linger = nil
 	}
+	if w.part != nil {
+		// An object-events watch: remove its rows now, under r.mu, so a restart of the same key cannot have its
+		// rows deleted by this watch later (late reflector writes are no-ops after Close). It never touches
+		// the engine attachment or the problems engine.
+		w.cancel()
+		w.part.Close()
+		return
+	}
 	r.m.eng.DetachKind(r.id, w.gvr)
 	if r.pe != nil {
 		r.pe.Detach(w.gvr)
@@ -373,14 +393,23 @@ func (r *runner) stopLocked(w *watchEntry) {
 // acquire takes a reference on the watch for gvr, starting it when needed. release drops it; the last
 // release starts the linger timer (the watch then stays warm for Linger, or until evicted).
 func (r *runner) acquire(gvr string) (release func(), err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	w := r.watches[gvr]
-	if w == nil {
+	return r.acquireKey(gvr, r.m.Linger, func() (*watchEntry, error) {
 		if err := r.makeRoomLocked(); err != nil {
 			return nil, err
 		}
-		if w, err = r.startLocked(gvr, false); err != nil {
+		return r.startLocked(gvr, false)
+	})
+}
+
+// acquireKey takes a reference on the watch stored under key, calling start (with r.mu held) when there is none.
+// The last release starts a linger timer of linger.
+func (r *runner) acquireKey(key string, linger time.Duration, start func() (*watchEntry, error)) (release func(), err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	gvr := key
+	w := r.watches[gvr]
+	if w == nil {
+		if w, err = start(); err != nil {
 			return nil, err
 		}
 	}
@@ -401,7 +430,7 @@ func (r *runner) acquire(gvr string) (release func(), err error) {
 			w.refs--
 			w.lastUse = time.Now()
 			if w.refs == 0 && !w.tier0 {
-				w.linger = time.AfterFunc(r.m.Linger, func() { r.expire(w) })
+				w.linger = time.AfterFunc(linger, func() { r.expire(w) })
 			}
 		})
 	}, nil
@@ -502,7 +531,12 @@ func (r *runner) attachAll() {
 		r.m.eng.AttachKind(r.id, problems.GVR, r.pe.Store())
 	}
 	for gvr, w := range r.watches {
-		r.m.eng.AttachKind(r.id, gvr, w.st)
+		if w.part == nil {
+			r.m.eng.AttachKind(r.id, gvr, w.st)
+		}
+	}
+	if r.oev != nil {
+		r.m.eng.AttachKind(r.id, ingest.ObjectEventsGVR, r.oev)
 	}
 	r.mu.Unlock()
 }
@@ -523,7 +557,14 @@ func (r *runner) stop() {
 		if w.linger != nil {
 			w.linger.Stop()
 		}
-		w.st.Reset()
+		if w.part != nil {
+			w.part.Close()
+		} else {
+			w.st.Reset()
+		}
+	}
+	if r.oev != nil {
+		r.oev.Reset()
 	}
 	r.watches = map[string]*watchEntry{}
 	r.mu.Unlock()

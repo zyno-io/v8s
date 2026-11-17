@@ -86,6 +86,17 @@ describe('connectAgent', () => {
         expect(h.total.value).toBe(0);
     });
 
+    it('exposes the subscribe error on the handle and clears it with the columns', async () => {
+        const { agent, emit } = await open();
+        const h = agent.subscribeView(Q, { offset: 0, limit: 10 });
+        expect(h.error.value).toBeNull();
+        emit({ t: 'columns', qid: h.qid, columns: [], error: { code: 'unavailable', message: 'timed out' } });
+        expect(h.error.value).toEqual({ code: 'unavailable', message: 'timed out' });
+        expect(h.columns.value).toEqual([]);
+        emit({ t: 'columns', qid: h.qid, columns: [{ key: 'a', type: 'str', label: 'A', width: 10 }] });
+        expect(h.error.value).toBeNull();
+    });
+
     it('close() unsubscribes once and ignores later updates', async () => {
         const { agent, sent } = await open();
         const h = agent.subscribeView(Q, { offset: 0, limit: 10 });

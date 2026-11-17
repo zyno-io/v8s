@@ -58,8 +58,13 @@ type ListerWatcher struct {
 	// Generic instead; Mod is filled in from the first columnDefinitions.
 	Mod     *Module
 	Generic *GenericSpec
-	Hooks   Hooks
-	count   atomic.Int64
+	// Tweak, when set, replaces the module's list/watch tweak (the per-object events watch must not inherit
+	// the tier-0 events module's type=Warning selector).
+	Tweak func(*metav1.ListOptions)
+	// NoWatchList forces a paginated LIST + watch (events have no API-server watch cache, so a streaming list gains nothing).
+	NoWatchList bool
+	Hooks       Hooks
+	count       atomic.Int64
 
 	mu      sync.Mutex
 	mapping []int // table column → cell index of the latest columnDefinitions
@@ -85,7 +90,7 @@ func (l *ListerWatcher) mod() *Module {
 // IsWatchListSemanticsUnSupported makes the reflector use a paginated LIST + watch for Table kinds
 // (a streaming list cannot deliver columnDefinitions for an empty kind).
 func (l *ListerWatcher) IsWatchListSemanticsUnSupported() bool {
-	return l.Generic != nil || (l.Mod != nil && (l.Mod.Table || l.Mod.NoWatchList))
+	return l.NoWatchList || l.Generic != nil || (l.Mod != nil && (l.Mod.Table || l.Mod.NoWatchList))
 }
 
 // tableModule resolves the module and mapping for a table result carrying columns (idempotent).
@@ -103,6 +108,10 @@ func (l *ListerWatcher) tableModule(t *TableResult) (*Module, []int) {
 }
 
 func (l *ListerWatcher) tweak(opts metav1.ListOptions) metav1.ListOptions {
+	if l.Tweak != nil {
+		l.Tweak(&opts)
+		return opts
+	}
 	if m := l.mod(); m != nil && m.Tweak != nil {
 		m.Tweak(&opts)
 	} else if m == nil && l.Generic != nil {
