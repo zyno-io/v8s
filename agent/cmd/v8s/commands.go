@@ -19,6 +19,7 @@ const usage = `usage: v8s <command> [flags]
 commands:
   agent      run the agent (used by the desktop app and for development)
   serve      run the agent on loopback, serve the embedded UI, and open the browser
+  server     run the self-hosted multi-user server (OIDC login, per-user engines): --config /etc/v8s/config.yaml
   version    print the version
 `
 
@@ -32,6 +33,8 @@ func dispatch(args []string) error {
 		return runAgent(args[1:], agentHooks{})
 	case "serve":
 		return runServe(args[1:])
+	case "server":
+		return runServer(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println("v8s", version.Version)
 		return nil

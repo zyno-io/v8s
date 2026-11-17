@@ -117,7 +117,7 @@ func (m *Manager) List() protocol.ClustersListResult {
 		if hidden[c.ID] {
 			continue
 		}
-		c.Groups = groupsOf[c.ID]
+		c.Groups = append(append([]string{}, c.Groups...), groupsOf[c.ID]...) // source-provided (hosted) + the user's own
 		sort.Strings(c.Groups)
 		if c.Groups == nil {
 			c.Groups = []string{}

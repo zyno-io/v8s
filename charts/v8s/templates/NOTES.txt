@@ -1,0 +1,9 @@
+v8s is deployed. Register these redirect URIs with your identity provider:
+
+  {{ .Values.config.publicUrl }}/auth/callback           (login app: oidc.clientId)
+{{- if .Values.config.clusterApp }}
+  {{ .Values.config.publicUrl }}/auth/cluster-callback   (cluster app: clusterApp.clientId)
+{{- end }}
+
+Sign-in: {{ .Values.config.publicUrl }}
+Secrets are read from the environment variables and files named in config; the chart never stores them.

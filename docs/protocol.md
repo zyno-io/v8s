@@ -182,6 +182,42 @@ The engine runs per agent instance and cluster over the tier-0 stores: a watch e
 - **Discovery** (aggregated discovery with legacy fallback) is cached per cluster, refreshed every 5 minutes and when a CRD or APIService changes.
 - Rows appear **progressively** while a kind syncs: projected list pages and initial watch events are shown provisionally and reconciled by the reflector's final `Replace`. Fallback LISTs are paged (500).
 
+## Hosted (`v8s server`)
+
+The self-hosted multi-user mode speaks the same protocol over the same `/ws` and `/stream`; only authentication and the engine behind the socket differ. Design: [auth.md](auth.md#hosted), [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing), [packaging.md](packaging.md#hosted-v8s-server).
+
+### Connection auth
+
+- `/ws` and `/stream` authenticate by the **session cookie** `__Host-v8s_session` (HttpOnly, Secure, SameSite=Strict, Path=/), not the token subprotocol. The client still offers `Sec-WebSocket-Protocol: v8s.v1` (400 without it); there is no `token.*` entry.
+- **Strict origin**: `Origin` must equal the configured public URL **and** `Sec-Fetch-Site` must be `same-origin`; either missing or different is 403. No cookie, or an expired/ended session, is **401**: the UI sends the browser to `/auth/login?return=<path>`. Ending a session (logout, expiry, eviction) closes its sockets.
+- `GET /stream/download` needs the cookie and `Sec-Fetch-Site: same-origin`, plus the single-use `streamId`. Every state-changing HTTP request (`POST /auth/logout`) must carry a matching `Origin`, or `Sec-Fetch-Site: same-origin` when `Origin` is absent; a foreign value is 403. `GET /api/me` rejects cross-site fetches.
+- `Hello.mode` is `"hosted"`.
+
+### Engines
+
+Each identity (IdP subject + group set) has its own engine (cluster manager, views, problems, ops, streams, jobs, settings) whose cluster source is the server's cluster list filtered to the user's IdP groups (`adminGroups` see all; a cluster with `groups: ["*"]` is visible to every signed-in user). `clusters.list` returns only those clusters; `clusters.select` of any other id fails with `unknown cluster`. Access to a cluster is checked only when it is selected.
+
+- The engine starts with the identity's first client and stops its watches **30 s after the last client closes** (a reconnect within the grace keeps them). Running jobs keep the engine record, without watches, until they end; the jobs manager's 15-minute no-client bound still applies.
+- Several sessions of one identity share one engine; the cluster token used is the live session's token that lives longest.
+- Settings are the same document as desktop, persisted per user as JSON under `dataDir/users/`.
+- **Port-forward is disabled** (`stream.open` type `portforward` fails): a local port is meaningless on a server. HTTP preview ([operations.md](operations.md)) is not implemented yet.
+- Kiosk clusters are read-only: mutations, exec/attach, logs, drain and Helm are unavailable, and access reviews answer "no" for writes.
+- Requests carry `User-Agent: v8s/<version> (corr <hmac>)`. Read QPS is 20 (burst 40) per (user, cluster) with a 100 (burst 200) ceiling per cluster across users.
+
+### HTTP endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /auth/login?return=/path` | start OIDC login (code + PKCE S256 + state + nonce; state/nonce/verifier stored server-side, bound to the browser by a short-lived `__Host-v8s_flow` cookie) |
+| `GET /auth/callback` | verify the ID token (issuer, audience, nonce, expiry, JWKS signature), create the session, start the cluster-app flow |
+| `GET /auth/cluster-login?return=` | re-run only the cluster-app flow (clusters `auth-required`); silent (`prompt=none`) first, interactive on `login_required` |
+| `GET /auth/cluster-callback` | store the cluster app's ID token and refresh token in the session (memory only) |
+| `POST /auth/logout` | delete the session and its tokens, clear the cookie (204) |
+| `GET /api/me` | `{username, sub, groups, expiresAt, admin, clusterAuth: "ok"\|"required"}`; 401 without a session |
+| `GET /healthz`, `GET /readyz` | liveness; readiness (identity provider reachable) |
+
+The flows finish with a small HTML page that navigates client-side to `return` (a 302 from a redirect chain that began at the IdP is cross-site and would not carry the Strict cookie).
+
 ## Fake mode
 
 `--fake clusters=N,pods=P,churn=R[,rbac=1][,lograte=L]` serves, per cluster: P/N pods owned by one ReplicaSet per app (400 apps, each with a Deployment, a current and a previous ReplicaSet for rollback, a Service and an EndpointSlice), StatefulSets, DaemonSets, Ingresses, 150 nodes, 37 namespaces, Warning events for failing pods, Jobs and CronJobs, ConfigMaps and Secrets (Table mode), `storageclasses`, the seven Flux CRDs with about 30 Flux objects in varied states (a requested reconcile is handled about a second later, setting `status.lastHandledReconcileAt`), and Helm release Secrets (gzip+base64 payloads; `podinfo` with three revisions, a `broken-release` that failed, one stuck pending, one Flux-managed). Pod logs are synthetic lines (`lograte` lines per second per pod, default 20), exec is an echo shell, port-forward serves a small HTTP page, and drain runs over a demo pod set on `node-3` (a PDB refuses its pods twice, plus DaemonSet, emptyDir, unmanaged and finished pods) and `node-4`..`node-8`. Helm actions in fake mode only change release records. Object get, subscribe, dry run, apply, delete and actions work against an in-memory store that feeds the views (a successful apply bumps `resourceVersion`). G3 adds fixtures for the problems engine: failing pods of every kind from the pod generator, Deployments without available replicas (rollout stuck), Ingresses routing to a missing Service and to a Service without ready endpoints, a pending PVC with its provisioning Warning event, a failed bare Job and cron Jobs, NotReady and memory-pressure nodes, APIServices (one unavailable), validating and mutating webhooks with no endpoints, cert-manager Certificates (expiring, not ready), an unaccepted Gateway API HTTPRoute, Flux controllers (one down) and Flux / Helm objects in failing, stalled, hung and dependency-blocked states; Kyverno policies and reports (policy failures), Trivy reports (some images with critical vulnerabilities across clusters, an exposed secret), Kubescape summaries, and a `hubble-relay` Service per cluster (except `staging`) backed by an in-process fake relay that produces frontend / backend / DNS flows and POLICY_DENIED drops for the flows stream, the service map and the drops view. With `rbac=1`, the second cluster is read-only for mutations and a context `<name>-admin` can be linked to it (`settings.links`) to exercise write-context switching.
