@@ -16,7 +16,7 @@ import {
     ROW_H_FLOW_PHONE,
     verdictTone
 } from '@/lib/flows.ts';
-import { dropCompensation, isAtBottom, newLinesSince, shouldPauseFollow, viewRange } from '@/lib/logs.ts';
+import { dropCompensation, followItems, isAtBottom, newLinesSince, shouldPauseFollow, viewRange } from '@/lib/logs.ts';
 import { isPhone } from '@/lib/viewport.ts';
 
 /**
@@ -28,6 +28,7 @@ const props = defineProps<{ handle: FlowStreamHandle; follow: boolean }>();
 const emit = defineEmits<{ 'update:follow': [boolean] }>();
 
 const scroller = ref<HTMLElement | null>(null);
+const viewH = ref(0);
 const rowH = computed(() => (isPhone.value ? ROW_H_FLOW_PHONE : ROW_H_FLOW));
 const first = computed(() => props.handle.first.value);
 const count = computed(() => Math.max(0, props.handle.total.value - props.handle.first.value));
@@ -54,7 +55,8 @@ interface Row {
 const rows = computed<Row[]>(() => {
     void props.handle.version.value;
     const f = first.value;
-    return virt.value.getVirtualItems().map(it => ({ abs: f + it.index, top: it.start, flow: props.handle.flowAt(f + it.index) }));
+    const items = props.follow ? followItems(count.value, viewH.value, rowH.value, 0, 10) : virt.value.getVirtualItems();
+    return items.map(it => ({ abs: f + it.index, top: it.start, flow: props.handle.flowAt(f + it.index) }));
 });
 
 // ---- frame loop: at most one setView and one scroll write per animation frame ----
@@ -176,8 +178,12 @@ let ro: ResizeObserver | null = null;
 onMounted(() => {
     document.addEventListener('visibilitychange', onVisibility);
     props.handle.setPaused(document.hidden);
+    viewH.value = scroller.value?.clientHeight ?? 0;
     if (typeof ResizeObserver === 'function' && scroller.value) {
-        ro = new ResizeObserver(() => schedule(true));
+        ro = new ResizeObserver(() => {
+            viewH.value = scroller.value?.clientHeight ?? 0;
+            schedule(true);
+        });
         ro.observe(scroller.value);
     }
     if (props.follow) pin = true;

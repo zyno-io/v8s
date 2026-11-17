@@ -161,6 +161,24 @@ export function dropCompensation(prevFirst: number, first: number, rowH: number)
     return first > prevFirst ? -((first - prevFirst) * rowH) : 0;
 }
 
+/**
+ * Rows to paint while following: the last screenful plus overscan, computed from the list size alone. The virtualizer's own scroll
+ * offset trails the real scrollTop (it only learns of our pin-to-bottom writes from the async scroll event), so under a fast stream
+ * its window can sit hundreds of rows behind the data the worker holds and the viewport paints blank.
+ */
+export function followItems(
+    count: number,
+    viewH: number,
+    rowH: number,
+    paddingStart: number,
+    overscan = OVERSCAN
+): { index: number; start: number }[] {
+    const n = Math.min(count, Math.ceil(viewH / rowH) + 1 + overscan);
+    const out: { index: number; start: number }[] = [];
+    for (let i = count - n; i < count; i++) out.push({ index: i, start: paddingStart + i * rowH });
+    return out;
+}
+
 /** Lines that arrived since follow paused. */
 export const newLinesSince = (pausedAtTotal: number, total: number): number => Math.max(0, total - pausedAtTotal);
 
