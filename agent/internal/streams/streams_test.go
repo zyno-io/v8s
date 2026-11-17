@@ -676,19 +676,25 @@ func TestWriteContextStreamsHaveIdleTimeoutAndCapReadOnesDoNot(t *testing.T) {
 	// traffic keeps it alive, but the cap ends it
 	res, _ = m.Open(context.Background(), protocol.StreamOpenParams{Type: "exec", Ref: ref, Command: []string{"sh"}})
 	tr, _ = serve(t, m, res.StreamID)
-	stop := make(chan struct{})
-	go func() {
+	stop, fed := make(chan struct{}), make(chan struct{})
+	go func(tr *memTransport) { // own copy: tr is reassigned below
+		defer close(fed)
 		for {
 			select {
 			case <-stop:
 				return
 			case <-time.After(30 * time.Millisecond):
-				tr.in <- msg{true, []byte{protocol.StreamChanStdin, 'x'}}
+				select {
+				case tr.in <- msg{true, []byte{protocol.StreamChanStdin, 'x'}}:
+				case <-stop:
+					return
+				}
 			}
 		}
-	}()
+	}(tr)
 	sm, ok = exitOf(tr, 3*time.Second)
 	close(stop)
+	<-fed
 	if !ok || !strings.Contains(sm.Error, "maximum session length") {
 		t.Fatalf("cap: %+v %v", sm, ok)
 	}
