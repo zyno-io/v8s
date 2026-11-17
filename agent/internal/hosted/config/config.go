@@ -359,6 +359,8 @@ func (c *Config) Validate() error {
 			if err := checkAuth("clusterApp", ca.PublicClient, ca.ClientSecret, ca.PrivateKey, ca.Certificate); err != nil {
 				return err
 			}
+		} else if ca.PublicClient && (!ca.ClientSecret.IsZero() || !ca.PrivateKey.IsZero() || !ca.Certificate.IsZero()) {
+			return errors.New("clusterApp: publicClient takes no clientSecret, privateKey or certificate")
 		}
 	} else if passthrough {
 		return errors.New("clusterApp is required when a cluster uses oidc-passthrough")

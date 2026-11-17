@@ -66,6 +66,7 @@ func TestParseRejects(t *testing.T) {
 		"both secret and key":    sub("clientSecret: {env: V8S_OIDC_SECRET}", "clientSecret: {env: A}\n  privateKey: {env: B}"),
 		"no credential":          sub("clientSecret: {env: V8S_OIDC_SECRET}", ""),
 		"public with secret":     sub("clientSecret: {env: V8S_OIDC_SECRET}", "publicClient: true\n  clientSecret: {env: A}"),
+		"public same app secret": sub("clusterApp:\n  clientId: k8s\n  privateKey: {file: /etc/v8s/cluster-app.key}\n  certificate: {file: /etc/v8s/cluster-app.crt}\n", "clusterApp:\n  clientId: v8s\n  publicClient: true\n  clientSecret: {env: A}\n"),
 		"public cluster app key": sub("clusterApp:\n  clientId: k8s\n", "clusterApp:\n  clientId: k8s\n  publicClient: true\n"),
 		"missing cluster app":    sub("clusterApp:\n  clientId: k8s\n  privateKey: {file: /etc/v8s/cluster-app.key}\n  certificate: {file: /etc/v8s/cluster-app.crt}\n", ""),
 		"duplicate cluster":      sub("id: kiosk", "id: prod-eu"),

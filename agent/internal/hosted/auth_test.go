@@ -296,6 +296,7 @@ func TestPublicClientSameApp(t *testing.T) {
 		c.OIDC.PublicClient = true
 		c.ClusterApp = &config.ClusterApp{ClientID: c.OIDC.ClientID}
 		idp.AddClient(oidctest.Client{ID: c.OIDC.ClientID, Public: true, RedirectURI: c.PublicURL + "/auth/callback"})
+		idp.IDTokenTTL = 10 * time.Minute
 	})
 	b := e.browser()
 	b.login("alice-sub")
@@ -307,5 +308,13 @@ func TestPublicClientSameApp(t *testing.T) {
 	}
 	if n := len(e.idp.Requests()); n != 1 {
 		t.Fatalf("same app must not run a second authorization flow: %d requests", n)
+	}
+	// Refresh also authenticates with client_id only (the fake IdP refuses a secret from a public client).
+	first, _, _ := b.session().ClusterToken(e.clock.Now())
+	e.clock.Advance(6 * time.Minute)
+	e.srv.Maintain(t.Context())
+	second, _, err := b.session().ClusterToken(e.clock.Now())
+	if e.idp.RefreshCalls() != 1 || err != nil || second == first {
+		t.Fatalf("refresh: calls=%d err=%v changed=%v", e.idp.RefreshCalls(), err, second != first)
 	}
 }

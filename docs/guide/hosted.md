@@ -186,7 +186,7 @@ oidc:
 clusterApp:
     clientId: <cluster-app-client-id> # same as oidc.clientId: login tokens are reused
     privateKey:
-        file: /etc/v8s/app.key # required by validation, not used in this mode
+        file: /etc/v8s/app.key # optional and unused in this mode: the login credential is used
 
 adminGroups:
     - <platform-admins-group-object-id>
