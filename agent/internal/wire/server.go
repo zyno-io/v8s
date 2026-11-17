@@ -54,7 +54,10 @@ type Options struct {
 	// DevOrigins additionally allows http://localhost:* and http://127.0.0.1:* (fake mode with a dev token).
 	DevOrigins bool
 	StaticDir  string
-	Log        *slog.Logger
+	// PreAuthorized: an authenticating front door (hosted mode: session cookie, strict Origin/Sec-Fetch-Site)
+	// already vetted the request, so the token subprotocol and Origin allowlist are skipped.
+	PreAuthorized bool
+	Log           *slog.Logger
 	// Tick is the per-subscription patch interval (default 100 ms).
 	Tick time.Duration
 }
@@ -91,7 +94,13 @@ func NewServer(opt Options) *Server {
 func (s *Server) Handler() http.Handler { return s.mux }
 
 // ClientCount is the number of connected data sockets (the Hubble problem subscriptions run only while > 0).
-func (s *Server) ClientCount() int { return int(s.clients.Load()) }
+// A nil server has no clients.
+func (s *Server) ClientCount() int {
+	if s == nil {
+		return 0
+	}
+	return int(s.clients.Load())
+}
 
 // SetPort records the listener port once known (own-origin allowance).
 func (s *Server) SetPort(p int) { s.opt.Port = p }
@@ -148,7 +157,7 @@ func (s *Server) authorized(r *http.Request) bool {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	if !s.originAllowed(r.Header.Get("Origin")) || !s.authorized(r) {
+	if !s.opt.PreAuthorized && (!s.originAllowed(r.Header.Get("Origin")) || !s.authorized(r)) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -219,7 +228,7 @@ func streamID(r *http.Request) string {
 // handleStream serves GET /stream: same auth as /ws, plus the stream id from stream.open as subprotocol.
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	id := streamID(r)
-	if s.opt.Streams == nil || id == "" || !s.originAllowed(r.Header.Get("Origin")) || !s.authorized(r) {
+	if s.opt.Streams == nil || id == "" || (!s.opt.PreAuthorized && (!s.originAllowed(r.Header.Get("Origin")) || !s.authorized(r))) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -241,7 +250,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 // one-shot token; the Origin allowlist applies.
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("streamId")
-	if s.opt.Streams == nil || id == "" || r.Method != http.MethodGet || !s.originAllowed(r.Header.Get("Origin")) {
+	if s.opt.Streams == nil || id == "" || r.Method != http.MethodGet || (!s.opt.PreAuthorized && !s.originAllowed(r.Header.Get("Origin"))) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

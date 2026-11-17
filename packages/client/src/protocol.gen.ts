@@ -1452,6 +1452,7 @@ export interface KyvernoExceptionTemplateParams {
 export interface KyvernoExceptionTemplateResult {
   yaml: string;
   apiVersion: string;
+  kind: string; // "PolicyException"
   namespace?: string;
 }
 /**

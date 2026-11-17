@@ -100,18 +100,24 @@ func explained(f *ingest.PodFacts) bool {
 	return false
 }
 
+// crashWindow is how long a freshly restarted container with a failing last exit counts as crash-looping
+// when the kubelet shows it neither waiting nor terminated.
+const crashWindow = 90 * time.Second
+
 // crashLooping reports a container that keeps crashing: waiting in CrashLoopBackOff, or (between back-off
 // periods the kubelet shows it terminated or just restarted) restarted repeatedly with a failing exit.
-func crashLooping(ct *ingest.CtrFact, now time.Time) bool {
+// transient is true for the last case, which only holds until crashWindow after the container started: the
+// caller must expire it then (no pod update arrives when a container merely keeps running).
+func crashLooping(ct *ingest.CtrFact, now time.Time) (hit, transient bool) {
 	switch {
 	case ct.Waiting == "CrashLoopBackOff":
-		return true
+		return true, false
 	case ct.Restarts >= 3 && ct.TermReason != "" && ct.TermReason != "Completed" && ct.TermExit != 0:
-		return true
-	case ct.Restarts >= 3 && ct.Started != 0 && now.UnixMilli()-ct.Started < 90_000 && ct.LastTermExit != 0:
-		return true
+		return true, false
+	case ct.Restarts >= 3 && ct.Started != 0 && now.UnixMilli()-ct.Started < crashWindow.Milliseconds() && ct.LastTermExit != 0:
+		return true, true
 	}
-	return false
+	return false, false
 }
 
 // oomKilled reports the time of the container's last OOM kill: the reported reason, or exit 137 of a
@@ -150,15 +156,23 @@ func init() {
 
 	reg(&Detector{Class: "pod.crashloop", Family: FamPods, Default: true, Severity: SevError, Title: "Crash-looping pods",
 		Evaluate: podEval(func(c *Ctx, r *ingest.Row, f *ingest.PodFacts) []podHit {
+			if f.Phase != "Running" && f.Phase != "Pending" { // a Failed or Succeeded pod is over, not looping
+				return nil
+			}
 			var out []podHit
 			for i := range f.Containers {
 				ct := &f.Containers[i]
-				if !crashLooping(ct, c.Now()) {
+				hit, transient := crashLooping(ct, c.Now())
+				if !hit {
 					continue
 				}
-				out = append(out, podHit{Disc: ct.Name, Label: "CrashLoopBackOff",
+				h := podHit{Disc: ct.Name, Label: "CrashLoopBackOff",
 					Title: fmt.Sprintf("CrashLoopBackOff: %s (restarts %d)", ct.Name, ct.Restarts), Msg: lastExit(ct),
-					Since: firstNonZero(f.Ready.Since, ct.LastTermAt, ct.TermAt, f.Scheduled.Since)})
+					Since: firstNonZero(f.Ready.Since, ct.LastTermAt, ct.TermAt, f.Scheduled.Since)}
+				if transient { // ends crashWindow after the container started
+					h.Since, h.TTL = ct.Started, crashWindow
+				}
+				out = append(out, h)
 			}
 			return out
 		})})
@@ -263,7 +277,10 @@ func init() {
 			var out []podHit
 			for i := range f.Containers {
 				ct := &f.Containers[i]
-				if ct.Restarts == 0 || ct.LastTermAt == 0 || crashLooping(ct, c.Now()) {
+				if ct.Restarts == 0 || ct.LastTermAt == 0 {
+					continue
+				}
+				if hit, _ := crashLooping(ct, c.Now()); hit {
 					continue
 				}
 				out = append(out, podHit{Disc: ct.Name, Label: "restarting", Title: fmt.Sprintf("Restarted: %s (restarts %d)", ct.Name, ct.Restarts), Msg: lastExit(ct),

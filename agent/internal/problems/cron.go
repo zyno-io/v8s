@@ -128,24 +128,18 @@ func (c cronSpec) next(t time.Time) time.Time {
 	return time.Time{}
 }
 
-// cronInterval estimates the gap between two consecutive runs of a schedule (the larger of the next two
-// gaps, so "0 9 * * 1-5" counts the weekend). ok is false for an unparsable schedule.
-func cronInterval(schedule string, from time.Time) (time.Duration, bool) {
+// cronSlack is how long after the second missed fire time cronjob.not-scheduling waits before raising.
+const cronSlack = 5 * time.Minute
+
+// cronSecondAfter is the second fire time after base (zero for an unparsable or never-firing schedule).
+func cronSecondAfter(schedule string, base time.Time) time.Time {
 	c, ok := parseCron(schedule)
 	if !ok {
-		return 0, false
+		return time.Time{}
 	}
-	a := c.next(from)
+	a := c.next(base)
 	if a.IsZero() {
-		return 0, false
+		return time.Time{}
 	}
-	b := c.next(a)
-	if b.IsZero() {
-		return 0, false
-	}
-	d := b.Sub(a)
-	if e := c.next(b); !e.IsZero() && e.Sub(b) > d {
-		d = e.Sub(b)
-	}
-	return d, true
+	return c.next(a)
 }

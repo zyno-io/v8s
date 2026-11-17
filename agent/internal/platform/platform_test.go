@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/problems/ptest"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -199,5 +200,32 @@ func TestMissingOptionalKindDoesNotBlockDetector(t *testing.T) {
 	h.Pass()
 	if n := len(h.ByClass("gateway.route-unaccepted")); n != 1 {
 		t.Fatalf("got %d", n)
+	}
+}
+
+// The wording and severity of an expiring certificate follow the clock without any event: urgent at 3 days, expired at notAfter.
+func TestCertExpiryDeadlines(t *testing.T) {
+	h := ptest.New(t, gvrCert)
+	now := h.Clk.Now()
+	h.Put(gvrCert, rowOf(t, decodeCert, certJSON("c", "True", now.Add(4*24*time.Hour))))
+	h.Pass()
+	one := func() problems.Problem {
+		t.Helper()
+		ps := h.ByClass("cert.expiring")
+		if len(ps) != 1 {
+			t.Fatalf("%+v", ps)
+		}
+		return ps[0]
+	}
+	if p := one(); p.Severity.String() != "warning" {
+		t.Fatalf("4 days out: %+v", p)
+	}
+	h.Advance(25 * time.Hour) // 3 days left minus an hour: urgent
+	if p := one(); p.Severity.String() != "error" || !strings.Contains(p.Title, "expires in 2 days") {
+		t.Fatalf("urgent window: %+v", p)
+	}
+	h.Advance(3 * 24 * time.Hour) // past notAfter
+	if p := one(); !strings.Contains(p.Title, "expired") {
+		t.Fatalf("expired title not refreshed: %+v", p)
 	}
 }

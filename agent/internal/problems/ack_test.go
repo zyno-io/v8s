@@ -9,6 +9,8 @@ import (
 	. "github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/problems/ptest"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func crashers(h *ptest.Harness, rs string, n int) []*ingest.Row {
@@ -20,6 +22,16 @@ func crashers(h *ptest.Harness, rs string, n int) []*ingest.Row {
 	}
 	h.Pass()
 	return rows
+}
+
+func healthyPod(name, rs string) *ingest.Row {
+	tr := true
+	return ingest.Project(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "shop", UID: types.UID("uid-" + name), ResourceVersion: "2",
+			OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: rs, Controller: &tr}}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning,
+			Conditions:        []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "app", Ready: true, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}}})
 }
 
 func only(t *testing.T, h *ptest.Harness, class string) Problem {
@@ -76,7 +88,7 @@ func TestAckSnoozeExpires(t *testing.T) {
 
 func TestAckSurvivesRestartAndDropsOnResolveRecur(t *testing.T) {
 	h := ptest.New(t, podsGVR, rsGVR)
-	rows := crashers(h, "api-x", 1)
+	crashers(h, "api-x", 1)
 	p := only(t, h, "pod.crashloop")
 	if err := h.Hub.Ack(p.ID, 0); err != nil {
 		t.Fatal(err)
@@ -88,9 +100,10 @@ func TestAckSurvivesRestartAndDropsOnResolveRecur(t *testing.T) {
 	if !only(t, h2, "pod.crashloop").Acked {
 		t.Fatal("ack lost across an agent restart")
 	}
-	// resolves (pod deleted) and recurs: it is a new problem, no longer acknowledged
-	h.Del(podsGVR, rows[0])
+	// resolves (the pod recovers and stays healthy through the hold) and recurs: it is a new problem, no longer acknowledged
+	h.Put(podsGVR, healthyPod("api-x-0", "api-x"))
 	h.Pass()
+	h.Advance(DefaultHold + time.Second)
 	if len(h.ByClass("pod.crashloop")) != 0 {
 		t.Fatal("not resolved")
 	}

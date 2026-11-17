@@ -310,6 +310,8 @@ Every OIDC pass-through cluster, direct or behind a gateway such as Warpgate, mu
 
 ### Optional shared cache (impersonation and kiosk clusters only)
 
+> **Status: not yet implemented.** `v8s server` currently runs per-user watches for every strategy, including impersonation and kiosk clusters. The section below is the design.
+
 For clusters where an admin has configured a v8s-held identity anyway (impersonation or kiosk, [auth.md](auth.md)), the admin can enable a shared cache, because per-user watches multiply API-server watch load and agent memory by the number of users (50 users × 10 clusters × 10k pods ≈ 7 GB of per-user caches, and 50× the watches):
 
 - **One shared tier-0 cache per cluster**, read through a hub ServiceAccount with `get/list/watch` on tier-0 kinds and **no access to Secrets**.

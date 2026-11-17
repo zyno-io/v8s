@@ -71,6 +71,7 @@ For directly reached clusters that cannot trust the IdP, v8s authenticates as a 
   - v8s only sends usernames produced by its own claim mapping, with a mandatory prefix (default `v8s:`), and hard-denies any mapped name or group starting with `system:`.
   - Where **constrained impersonation** is available (KEP-5284: beta 1.36, GA targeted 1.38), v8s uses it to limit what may be impersonated.
   - The IdP `sub` and a correlation id travel as user extras (`Impersonate-Extra-v8s.io%2Fcorrelation`; client-go percent-encodes the key).
+- **Status in `v8s server`**: the prefix, the `system:` hard-deny, the allowlist of forwarded groups and the correlation extra are implemented. The `SelfSubjectAccessReview` probes of the impersonator, the IdP `sub` extra and constrained impersonation are not yet. The mapped user name is the configured username claim (default `preferred_username`), else a verified `email`, else `sub`: choose a claim that is unique and not user-editable at your IdP, because anyone who can obtain the same value is the same Kubernetes user.
 - This is the only strategy (with the kiosk) where v8s holds a cluster credential, and the only one that permits the optional shared cache ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
 
 #### 4. Shared credential (read-only kiosk)

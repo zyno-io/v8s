@@ -22,6 +22,9 @@ type Store struct {
 	path string
 	// CorruptMovedTo is where an unreadable settings file was renamed to at Open ("" = none).
 	CorruptMovedTo string
+	// MaxBytes caps the serialized document (0 = unlimited); hosted mode sets it so one user cannot grow the
+	// shared server's memory and disk without bound.
+	MaxBytes int
 
 	mu  sync.Mutex // serializes Patch and guards cur
 	cur protocol.Settings
@@ -174,6 +177,10 @@ func (s *Store) Patch(patch map[string]any) (protocol.Settings, error) {
 	if err != nil {
 		s.mu.Unlock()
 		return protocol.Settings{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if s.MaxBytes > 0 && len(mb) > s.MaxBytes {
+		s.mu.Unlock()
+		return protocol.Settings{}, fmt.Errorf("%w: settings document exceeds %d bytes", ErrInvalid, s.MaxBytes)
 	}
 	next, err := decode(mb, true)
 	if err != nil {

@@ -21,32 +21,12 @@ import (
 	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/cluster"
-	"github.com/zyno-io/v8s/agent/internal/drainer"
+	"github.com/zyno-io/v8s/agent/internal/engine"
 	"github.com/zyno-io/v8s/agent/internal/fake"
-	"github.com/zyno-io/v8s/agent/internal/flux"
-	"github.com/zyno-io/v8s/agent/internal/helm"
-	"github.com/zyno-io/v8s/agent/internal/hubble"
-	"github.com/zyno-io/v8s/agent/internal/ingest"
-	"github.com/zyno-io/v8s/agent/internal/jobs"
 	"github.com/zyno-io/v8s/agent/internal/kube"
-	_ "github.com/zyno-io/v8s/agent/internal/kubescape"
-	_ "github.com/zyno-io/v8s/agent/internal/kyverno"
-	"github.com/zyno-io/v8s/agent/internal/ops"
-	_ "github.com/zyno-io/v8s/agent/internal/platform"
-	"github.com/zyno-io/v8s/agent/internal/problems"
-	"github.com/zyno-io/v8s/agent/internal/rpc"
-	"github.com/zyno-io/v8s/agent/internal/security"
 	"github.com/zyno-io/v8s/agent/internal/settings"
-	"github.com/zyno-io/v8s/agent/internal/streams"
-	_ "github.com/zyno-io/v8s/agent/internal/trivy"
 	"github.com/zyno-io/v8s/agent/internal/version"
-	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/webui"
-	"github.com/zyno-io/v8s/agent/internal/wire"
-	"helm.sh/helm/v4/pkg/action"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type stringList []string
@@ -129,121 +109,18 @@ func runAgent(args []string, hooks agentHooks) error {
 	if err != nil {
 		return err
 	}
-	eng := view.NewEngine()
-	mgr := cluster.NewManager(ctx, src, eng, log)
-	mgr.SetSettings(set)
-	probHub := problems.NewHub(problems.HubConfig{
-		Settings: set.Get, Patch: set.Patch, Log: log,
-		Fetch: func(ctx context.Context, cluster, gvr, ns, name string) (*unstructured.Unstructured, error) {
-			g, v, r, err := ingest.ParseGVR(gvr)
-			if err != nil {
-				return nil, err
-			}
-			c, err := src.Backend(cluster)
-			if err != nil {
-				return nil, err
-			}
-			ri := c.Dynamic().Resource(schema.GroupVersionResource{Group: g, Version: v, Resource: r})
-			if ns != "" {
-				return ri.Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-			}
-			return ri.Get(ctx, name, metav1.GetOptions{})
-		},
-	})
-	set.OnChange(probHub.SettingsChanged)
-	mgr.SetProblems(probHub)
-	opsSvc := ops.New(ops.Config{
-		Conn:    func(id string) (kube.Conn, error) { return src.Backend(id) },
-		Links:   mgr.Links,
-		Resolve: mgr.Resolve,
-	})
-	connFn := func(id string) (kube.Conn, error) { return src.Backend(id) }
-	jobsMgr := jobs.New(ctx, nil)
 	user := "v8s"
 	if u, uerr := osuser.Current(); uerr == nil && u.Username != "" {
 		user = u.Username
 	}
-	streamMgr := streams.New(streams.Config{Router: opsSvc, Conn: connFn, Settings: set.Get, AllowPortForward: true, User: user, Log: log})
-	defer streamMgr.Close()
-	drainSvc := drainer.New(drainer.Config{Router: opsSvc, Conn: connFn})
-	fluxSvc := flux.New(flux.Config{
-		Get: func(ctx context.Context, cluster, gvr, ns, name string) (*unstructured.Unstructured, error) {
-			g, v, r, err := ingest.ParseGVR(gvr)
-			if err != nil {
-				return nil, err
-			}
-			c, err := connFn(cluster)
-			if err != nil {
-				return nil, err
-			}
-			ri := c.Dynamic().Resource(schema.GroupVersionResource{Group: g, Version: v, Resource: r})
-			if ns != "" {
-				return ri.Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-			}
-			return ri.Get(ctx, name, metav1.GetOptions{})
-		},
-		Scan:     mgr.ScanKind,
-		Clusters: func() []string { return mgr.List().Selected },
-		Resolve:  mgr.Resolve,
-	})
-	helmCfg := helm.Config{
-		Runtime: func(id string) (kube.Runtime, error) {
-			c, err := connFn(id)
-			if err != nil {
-				return nil, err
-			}
-			rt, ok := kube.RuntimeOf(c)
-			if !ok {
-				return nil, errors.New("context has no runtime")
-			}
-			return rt, nil
-		},
-		Route: func(ctx context.Context, cluster, verb, gvr, sub, ns, name string) (string, bool, error) {
-			r, err := opsSvc.Route(ctx, cluster, verb, gvr, sub, ns, name)
-			if err != nil {
-				return "", false, err
-			}
-			return r.ContextID, r.ViaWrite, nil
-		},
-		Log: log,
-	}
-	if fakeSet { // release records live in the fake clientset; no chart resources are touched
-		helmCfg.NewActionConfig = func(ctx context.Context, id, ns string) (*action.Configuration, error) {
-			rt, err := helmCfg.Runtime(id)
-			if err != nil {
-				return nil, err
-			}
-			return helm.NewFakeActionConfig(rt.Clientset(), ns)
-		}
-	}
-	helmSvc := helm.New(helmCfg)
 	if fakeSet {
 		// Remembered selection in fake mode = all fake clusters; the UI still calls clusters.select.
 		log.Info("fake mode", "clusters", len(src.Clusters()))
 	}
-	go eng.Run(ctx)
-
-	handlers := map[string]rpc.Handler{}
-	var srv *wire.Server
-	secSvc := security.New(security.Config{Route: opsSvc.Route, Conn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Scan: mgr.ScanKind,
-		Clusters: func() []string { return mgr.List().Selected }})
-	for k, v := range secSvc.Handlers() {
-		handlers[k] = v
-	}
-	hubbleSvc := hubble.New(hubble.Config{Conn: connFn, Router: opsSvc, Clusters: func() []string { return mgr.List().Selected }, Problems: probHub,
-		ClientCount: func() int { return srv.ClientCount() }, Log: log})
-	defer hubbleSvc.Close()
-	hubbleSvc.RegisterStreams(streamMgr)
-	for k, v := range hubbleSvc.Handlers() {
-		handlers[k] = v
-	}
-	go hubbleSvc.StartProblems(ctx)
-
-	srv = wire.NewServer(wire.Options{Handlers: handlers,
-		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Streams: streamMgr, Jobs: jobsMgr, Drain: drainSvc, Flux: fluxSvc, Helm: helmSvc, Problems: probHub, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
-		Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "",
-		StaticDir: *staticDir, Log: log,
-	})
+	e := engine.New(engine.Config{Ctx: ctx, Source: src, Settings: set, Log: log, User: user, AllowPortForward: true, FakeHelm: fakeSet,
+		Token: token, Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "", StaticDir: *staticDir})
+	defer e.Close()
+	srv := e.Server
 	handler := srv.Handler()
 	if *staticDir == "" && webui.Available() {
 		handler = withEmbeddedUI(handler)
@@ -279,6 +156,5 @@ func runAgent(args []string, hooks agentHooks) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = hs.Shutdown(shutdown)
-	mgr.Close()
 	return nil
 }

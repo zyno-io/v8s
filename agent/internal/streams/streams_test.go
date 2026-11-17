@@ -106,6 +106,10 @@ func (c *stubConn) Exec(ctx context.Context, r kube.ExecRequest) error {
 	}
 	return c.execFn(r)
 }
+func (c *stubConn) DialPod(context.Context, string, string, int) (*kube.PodDialer, error) {
+	return nil, errors.New("not supported")
+}
+
 func (c *stubConn) PortForward(context.Context, string, string, int, int) (*kube.Forward, error) {
 	return nil, errors.New("no")
 }

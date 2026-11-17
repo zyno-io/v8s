@@ -57,7 +57,7 @@ func ActionsFor(mode string, current []string) ([]string, error) {
 }
 
 // SetMode switches a policy between Audit and Enforce. CEL validating policies change their validationActions;
-// legacy kyverno.io/v1 policies are read-only (Kyverno >= 1.20 no longer executes them) and are refused.
+// legacy kyverno.io/v1 policies are read-only (Kyverno >= 1.20 no longer executes them) and are refused (bad_request).
 func SetMode(ctx context.Context, cfg *security.Config, p protocol.KyvernoSetModeParams) (*protocol.KyvernoSetModeResult, error) {
 	ref := p.Ref
 	if ref.Cluster == "" || ref.GVR == "" || ref.Name == "" {
@@ -66,7 +66,7 @@ func SetMode(ctx context.Context, cfg *security.Config, p protocol.KyvernoSetMod
 	group, res := security.GroupOf(ref.GVR), security.ResourceOf(ref.GVR)
 	switch {
 	case group == GroupLegacy:
-		return nil, &ops.Error{Body: protocol.ErrorBody{Code: "forbidden", Message: "legacy kyverno.io/v1 policies are read-only: Kyverno 1.20 and later no longer execute them",
+		return nil, &ops.Error{Body: protocol.ErrorBody{Code: "bad_request", Message: "legacy kyverno.io/v1 policies are read-only: Kyverno 1.20 and later no longer execute them",
 			Hint: "migrate to a CEL policy (policies.kyverno.io/v1 ValidatingPolicy) and switch its mode there"}}
 	case group != GroupCEL || !strings.HasSuffix(res, "validatingpolicies"):
 		return nil, ops.NewError("bad_request", "%s has no Audit/Enforce mode", ref.GVR)
@@ -187,5 +187,5 @@ func ExceptionTemplate(p protocol.KyvernoExceptionTemplateParams) (*protocol.Kyv
 	if err != nil {
 		return nil, ops.NewError("internal", "%s", err.Error())
 	}
-	return &protocol.KyvernoExceptionTemplateResult{YAML: string(b), APIVersion: apiVersion, Namespace: ns}, nil
+	return &protocol.KyvernoExceptionTemplateResult{YAML: string(b), APIVersion: apiVersion, Kind: "PolicyException", Namespace: ns}, nil
 }

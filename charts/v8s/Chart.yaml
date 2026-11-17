@@ -1,0 +1,8 @@
+apiVersion: v2
+name: v8s
+description: Self-hosted multi-user v8s server (OIDC login, per-user Kubernetes watches with the user's own credential).
+type: application
+version: 0.1.0
+appVersion: "0.0.0-dev"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/zyno-io/v8s

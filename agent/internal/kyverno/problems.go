@@ -94,6 +94,11 @@ func init() {
 			if c.Col(k.GR, r, "reason").S.Value() != "PolicyViolation" {
 				return nil
 			}
+			// Kyverno emits PolicyViolation for audit-mode and background findings too; only an enforced policy
+			// that stopped a request says "(blocked)" (older versions: "was blocked").
+			if !strings.Contains(strings.ToLower(c.Col(k.GR, r, "message").S.Value()), "blocked") {
+				return nil
+			}
 			kind, name, ok := strings.Cut(c.Col(k.GR, r, "object").S.Value(), "/")
 			if !ok {
 				return nil

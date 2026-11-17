@@ -34,8 +34,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=agent /out/v8s /usr/local/bin/v8s
 EXPOSE 7931
 ENTRYPOINT ["/usr/local/bin/v8s"]
-# Hosted multi-user `v8s server` mode (OIDC, per-user state) does not exist yet. Until it lands this runs the bare
-# single-user agent: it exposes the credentials the container can reach to anyone who can reach the port and has
-# the token printed in its logs. Do not publish the port to an untrusted network. Replace this CMD with `server`
-# when hosted mode ships (docs/packaging.md).
-CMD ["agent", "--listen", "0.0.0.0:7931"]
+# `server` is the self-hosted multi-user mode (OIDC login, per-user engines). Mount the configuration at
+# /etc/v8s/config.yaml (see charts/v8s). `serve` and `agent` stay available for single-user use, e.g.
+# `docker run ... serve`; they bind a token-protected agent, not a multi-user server.
+CMD ["server", "--config", "/etc/v8s/config.yaml"]

@@ -147,8 +147,8 @@ type Link struct {
 	Dead func() bool
 }
 
-// connect builds a Link: discovery, a port-forward through the cluster's credentials to a ready relay pod and a
-// plaintext gRPC client over it. There is no direct relay URL: the relay has no authorization of its own.
+// connect builds a Link: discovery, a port-forward tunnel through the cluster's credentials to a ready relay pod and a
+// plaintext gRPC client dialing over it (in-process: no listening socket). There is no direct relay URL: the relay has no authorization of its own.
 func (s *Service) connect(ctx context.Context, cluster string) (*Link, error) {
 	if s.cfg.Connect != nil {
 		return s.cfg.Connect(ctx, cluster)
@@ -181,8 +181,10 @@ func (s *Service) connect(ctx context.Context, cluster string) (*Link, error) {
 	if !ok {
 		return nil, ops.NewError("unavailable", "context %q cannot port-forward", cluster)
 	}
-	fctx, cancel := context.WithCancel(context.Background())
-	fw, err := rt.PortForward(fctx, info.Namespace, info.Pod, info.Port, 0)
+	// The relay has no authorization of its own, so it is never bound to a local port (every local process could
+	// reach it): gRPC dials the port-forward stream in-process.
+	dctx, cancel := context.WithCancel(context.Background())
+	pd, err := rt.DialPod(dctx, info.Namespace, info.Pod, info.Port)
 	if err != nil {
 		cancel()
 		e := ops.MapError(err, false)
@@ -191,18 +193,19 @@ func (s *Service) connect(ctx context.Context, cluster string) (*Link, error) {
 		}
 		return nil, e
 	}
-	cc, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", fw.LocalPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient("passthrough:///hubble-relay", grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(pd.DialContext))
 	if err != nil {
-		fw.Stop()
+		pd.Close()
 		cancel()
 		return nil, ops.NewError("internal", "hubble client: %s", err.Error())
 	}
 	var once sync.Once
-	closeFn := func() { once.Do(func() { _ = cc.Close(); fw.Stop(); cancel() }) }
+	closeFn := func() { once.Do(func() { _ = cc.Close(); pd.Close(); cancel() }) }
 	return &Link{Info: info, Client: pb.NewObserverClient(cc), Close: closeFn,
 		Dead: func() bool {
 			select {
-			case <-fw.Done:
+			case <-pd.Done:
 				return true
 			default:
 				return false
@@ -251,12 +254,16 @@ func (s *Service) acquire(ctx context.Context, cluster string) (*Link, func(), e
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			e.refs--
-			if e.refs == 0 && e.link == l {
+			// refs counts the holders of every generation of the link: when the last one lets go, the link that is
+			// current now (not necessarily the one this holder got) idles out. Holders of an older link that was
+			// rebuilt meanwhile must not leave the newer one without a timer.
+			if e.refs == 0 && e.link != nil {
+				cur := e.link
 				e.idle = time.AfterFunc(s.cfg.LinkIdle, func() {
 					e.mu.Lock()
 					defer e.mu.Unlock()
-					if e.refs == 0 && e.link == l {
-						l.Close()
+					if e.refs == 0 && e.link == cur {
+						cur.Close()
 						e.link = nil
 					}
 				})

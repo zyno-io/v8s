@@ -26,6 +26,7 @@ const (
 	CellCount
 	CellSource
 	CellAcked
+	CellProblemID
 	numCells
 )
 
@@ -47,6 +48,7 @@ func init() {
 			ingest.ColInt("count", "Count", 70),
 			ingest.ColDict("source", "Source", 90),
 			ingest.ColDict("acked", "Acked", 70),
+			ingest.ColStr("problemId", "Problem ID", 0),
 			ingest.ColTone(),
 		},
 	})

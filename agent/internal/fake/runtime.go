@@ -411,6 +411,17 @@ func echoShell(ctx context.Context, req kube.ExecRequest) error {
 
 // ---- port-forward ----------------------------------------------------------------------
 
+// DialPod is the in-process counterpart of PortForward: only the fake Hubble relay can be dialed.
+func (b *Backend) DialPod(ctx context.Context, ns, pod string, remotePort int) (*kube.PodDialer, error) {
+	if d, ok := b.fakeRelayDial(ctx, ns, pod); ok {
+		return d, nil
+	}
+	if !b.podExists(ctx, ns, pod) {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, pod)
+	}
+	return nil, apierrors.NewServiceUnavailable("fake pods only serve their relay in-process")
+}
+
 // PortForward binds a loopback listener that answers every connection with a small HTTP page.
 func (b *Backend) PortForward(ctx context.Context, ns, pod string, remotePort, localPort int) (*kube.Forward, error) {
 	if f, ok, err := b.fakeRelayForward(ctx, ns, pod, localPort); ok {

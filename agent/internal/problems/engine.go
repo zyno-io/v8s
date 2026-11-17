@@ -48,6 +48,8 @@ type pstate struct {
 	members map[ckey]*mdraft
 	emptyAt time.Time
 	pub     *published
+	// armedUntil is the snooze deadline already pushed on the heap for this problem (0: none).
+	armedUntil int64
 }
 
 type published struct {
@@ -124,8 +126,10 @@ type Engine struct {
 	counts   []ClassCount
 	idx      indexes
 	rv       uint64
+	umu      sync.Mutex // guards unavail (set from watch goroutines, read by passes)
 	unavail  map[string]string
 	aggOwner map[string]map[string]struct{} // owner key → pids of aggregates over that owner
+	prog     map[Key]progState              // last observed rollout progress of workloads (Ctx.ProgressSince)
 
 	// Now, Hold and Interval are injectable for tests.
 	Now      func() time.Time
@@ -146,7 +150,7 @@ func newEngine(h *Hub, cluster string) *Engine {
 	e := &Engine{h: h, cluster: cluster, st: store.New(), log: h.log,
 		byInput: map[string][]int{}, byTrig: map[string][]int{}, interest: map[string]bool{}, tables: map[string]*table{},
 		dirty: map[Key]struct{}{}, contribs: map[ckey][]string{}, first: map[ckey]map[string]time.Time{}, probs: map[string]*pstate{}, touched: map[string]bool{},
-		aggOwner: map[string]map[string]struct{}{}, unavail: map[string]string{},
+		aggOwner: map[string]map[string]struct{}{}, prog: map[Key]progState{}, unavail: map[string]string{},
 		Now: h.Now, Hold: h.Hold, Interval: h.Interval}
 	e.idx.init()
 	e.dets = Detectors()
@@ -241,19 +245,25 @@ func (e *Engine) SetDiscovery(grs map[string]bool) {
 
 // SetUnavailable records that a baseline kind cannot be read (no permission), shown by problems.classes.
 func (e *Engine) SetUnavailable(gr, reason string) {
-	e.mu.Lock()
+	e.umu.Lock()
 	if reason == "" {
 		delete(e.unavail, gr)
 	} else {
 		e.unavail[gr] = reason
 	}
-	e.mu.Unlock()
+	e.umu.Unlock()
+}
+
+func (e *Engine) isUnavailable(gr string) bool {
+	e.umu.Lock()
+	defer e.umu.Unlock()
+	return e.unavail[gr] != ""
 }
 
 // Unavailable returns the kinds that could not be read, with the reason.
 func (e *Engine) Unavailable() map[string]string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.umu.Lock()
+	defer e.umu.Unlock()
 	out := make(map[string]string, len(e.unavail))
 	for k, v := range e.unavail {
 		out[k] = v
@@ -396,6 +406,16 @@ func (e *Engine) Pass() {
 			continue
 		}
 		e.fullEval[i] = false
+		// contributions whose rows vanished while the detector could not see its inputs (a watch stopped and
+		// restarted, the object deleted meanwhile) would otherwise stay forever
+		for ck := range e.contribs {
+			if ck.det != i || ck.k.GR == extGR {
+				continue
+			}
+			if t := e.tables[ck.k.GR]; t == nil || t.rows[nk{ck.k.NS, ck.k.Name}] == nil {
+				e.applyContrib(ck, nil, true, now)
+			}
+		}
 		for _, gr := range d.Inputs {
 			if t := e.tables[gr]; t != nil {
 				for k, r := range t.rows {
@@ -433,6 +453,9 @@ func (e *Engine) inputsReady(d *Detector) bool {
 	// watched and synced, else the class cannot judge (it is reported as unavailable instead of guessing).
 	any := false
 	for _, gr := range d.Inputs {
+		if e.isUnavailable(gr) {
+			continue // an unreadable kind (no permission, aggregated API down) is absent, not a reason to stay silent
+		}
 		if t := e.tables[gr]; t != nil && t.st != nil {
 			any = true
 			if !t.st.Synced() {
@@ -444,6 +467,9 @@ func (e *Engine) inputsReady(d *Detector) bool {
 		return false
 	}
 	for _, gr := range d.Triggers {
+		if e.isUnavailable(gr) && slices.Contains(d.Optional, gr) {
+			continue
+		}
 		t := e.tables[gr]
 		if t == nil || t.st == nil || !t.st.Synced() {
 			return false
@@ -498,6 +524,7 @@ func (e *Engine) evalDet(c *Ctx, di int, k Key, row *ingest.Row, now time.Time) 
 	d := e.dets[di]
 	ck := ckey{di, k}
 	if row == nil {
+		delete(e.prog, k)
 		e.applyContrib(ck, nil, true, now)
 		return
 	}
@@ -546,6 +573,11 @@ func (e *Engine) applyContrib(ck ckey, drafts []Draft, immediate bool, now time.
 				continue
 			}
 			heap.Push(&e.heap, deadline{at: at, kind: dlKey, k: ck.k})
+		}
+		for _, w := range dr.Wake {
+			if w.After(now) {
+				heap.Push(&e.heap, deadline{at: w, kind: dlKey, k: ck.k})
+			}
 		}
 		if _, dup := seen[id]; !dup {
 			newPIDs = append(newPIDs, id)
@@ -645,20 +677,24 @@ func (e *Engine) recompute(c *Ctx, p *pstate, immediate bool, now time.Time) {
 			delete(e.probs, p.id)
 			return
 		}
-		if immediate || e.Hold <= 0 {
+		if immediate { // the subject went away (deleted, class disabled): GitOps may recreate it, so the ack stays
 			e.unpublish(p)
 			delete(e.probs, p.id)
 			return
 		}
-		if p.emptyAt.IsZero() {
-			p.emptyAt = now
-			heap.Push(&e.heap, deadline{at: now.Add(e.Hold), kind: dlPID, pid: p.id})
-			return
+		if e.Hold > 0 {
+			if p.emptyAt.IsZero() {
+				p.emptyAt = now
+				heap.Push(&e.heap, deadline{at: now.Add(e.Hold), kind: dlPID, pid: p.id})
+				return
+			}
+			if now.Before(p.emptyAt.Add(e.Hold)) {
+				return
+			}
 		}
-		if now.Before(p.emptyAt.Add(e.Hold)) {
-			return
-		}
+		// resolved and stayed resolved for the hold: a recurrence is a new problem, without the old acknowledgement
 		e.unpublish(p)
+		e.h.ackResolved(p.id)
 		delete(e.probs, p.id)
 		return
 	}
@@ -720,7 +756,12 @@ func (e *Engine) publish(p *pstate, d *Detector, out *Draft, ms []Draft, now tim
 	if prev != nil && prev.sev == sev && prev.title == pb.title && prev.msg == pb.msg && prev.count == pb.count {
 		pb.changed = prev.changed
 	}
-	pb.acked = e.h.ackHolds(p.id, now, sev.Rank(), pb.count)
+	held, until := e.h.ackHolds(p.id, now, sev.Rank(), pb.count)
+	pb.acked = held
+	if held && until > 0 && p.armedUntil != until { // a snooze loaded from the settings has no deadline yet
+		p.armedUntil = until
+		e.heapPushAckExpiry(p.id, time.UnixMilli(until))
+	}
 	pb.row = e.buildRow(p, d, pb)
 	if prev != nil && prev.row != nil && prev.row.CellsEqual(pb.row) {
 		p.pub = pb
@@ -757,8 +798,8 @@ func (e *Engine) unpublish(p *pstate) {
 		e.counts[p.det].Acked--
 	}
 	e.clearOwners(p, p.pub)
-	e.h.ackResolved(p.id)
 	p.pub = nil
+	p.armedUntil = 0
 }
 
 // setOwners records which workloads a problem aggregates over, so a change of a workload's pod count recomposes it.
@@ -821,6 +862,7 @@ func (e *Engine) buildRow(p *pstate, d *Detector, pb *published) *ingest.Row {
 	} else {
 		r.PutS("false")
 	}
+	r.PutS(p.id)
 	r.SetTone(pb.sev.Tone())
 	return r
 }

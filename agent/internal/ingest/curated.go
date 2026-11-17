@@ -536,6 +536,9 @@ func registerClusterKinds() {
 				last = e.CreationTimestamp.UnixMilli()
 			}
 			r.putN(last)
+			if e.InvolvedObject.Namespace != e.Namespace { // an event about a cluster-scoped object lives in another namespace
+				r.SetFacts(&EventFacts{InvolvedNS: e.InvolvedObject.Namespace})
+			}
 			if e.Type == corev1.EventTypeWarning {
 				r.tone = ToneWarning
 			}

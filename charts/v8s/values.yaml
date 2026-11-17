@@ -1,0 +1,153 @@
+# v8s server (hosted mode). One replica: sessions and per-user engines live in memory, so scaling out means
+# sharding users (not built yet). Every secret is read from an environment variable or a file, never from
+# this values file: reference Kubernetes Secrets through `secretEnv` and `secretMounts` below.
+
+image:
+  repository: ghcr.io/zyno-io/v8s
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# The server configuration, rendered verbatim to /etc/v8s/config.yaml (schema: docs/protocol.md "Hosted" and
+# agent/internal/hosted/config). `listen` and `dataDir` are set by the chart.
+config:
+  # REQUIRED. The browser-facing origin, https, no path. Cookies and the WebSocket Origin check are bound to it.
+  publicUrl: ""
+  session:
+    lifetime: 12h      # absolute; IdP tokens live in memory for at most this long
+    idleTimeout: 30m
+    maxPerUser: 5
+  # REQUIRED. Login provider (Entra ID, Keycloak, Okta, Google, Dex, GitLab). Redirect URI to register:
+  #   <publicUrl>/auth/callback
+  # Configure exactly one of clientSecret / privateKey, each an env or file reference (see secretEnv/secretMounts).
+  oidc:
+    issuer: ""
+    clientId: ""
+    clientSecret:
+      env: V8S_OIDC_CLIENT_SECRET
+    # Using privateKey instead? Set `clientSecret: null` to drop this default.
+    # privateKey: {file: /etc/v8s/secrets/oidc/tls.key}   # private_key_jwt (RSA PEM)
+    # certificate: {file: /etc/v8s/secrets/oidc/tls.crt}  # sends x5t#S256 (Entra ID)
+    scopes: [openid, profile, email]
+    usernameClaim: preferred_username
+    groupsClaim: groups
+  # The cluster app registration whose ID token OIDC pass-through clusters receive (second, silent
+  # server-side flow after login). Redirect URI to register: <publicUrl>/auth/cluster-callback
+  # Required when any cluster uses oidc-passthrough. Same client id as oidc.clientId reuses the login token.
+  clusterApp: {}
+  #  clientId: ""
+  #  issuer: ""            # default: oidc.issuer
+  #  clientSecret: {env: V8S_CLUSTER_APP_SECRET}
+  #  scopes: [openid, offline_access]
+  # Members of these IdP groups see every cluster.
+  adminGroups: []
+  # Cluster records. `groups` maps IdP groups to the cluster ("*" = every signed-in user).
+  # strategy: oidc-passthrough (default; no cluster credential held) | impersonation | kiosk
+  clusters: []
+  #  - id: prod-eu
+  #    name: Production EU
+  #    server: https://k8s.prod-eu.example.com
+  #    caData: <base64 PEM>          # or caFile: /etc/v8s/secrets/ca/prod-eu.crt
+  #    groups: [platform, sre]
+  #    displayGroups: [Production]
+  #  - id: legacy
+  #    server: https://10.0.0.1:6443
+  #    strategy: impersonation
+  #    impersonation:
+  #      token: {file: /etc/v8s/secrets/legacy/token}   # the impersonator's token; prefix defaults to "v8s:"
+  #    groups: [ops]
+  #  - id: wallboard
+  #    server: https://k8s.example.com
+  #    strategy: kiosk
+  #    kiosk:
+  #      token: {file: /etc/v8s/secrets/kiosk/token}
+  #    groups: ["*"]
+  limits:
+    readQps: 20       # per (user, cluster)
+    readBurst: 40
+    clusterQps: 100   # ceiling per cluster across users
+    clusterBurst: 200
+
+# Environment variables sourced from existing Secrets (referenced by `env:` in config).
+secretEnv: []
+#  - name: V8S_OIDC_CLIENT_SECRET
+#    secretName: v8s-oidc
+#    key: client-secret
+
+# Existing Secrets mounted read-only as files (referenced by `file:` in config).
+secretMounts: []
+#  - name: legacy-token
+#    secretName: v8s-legacy-impersonator
+#    mountPath: /etc/v8s/secrets/legacy
+
+extraEnv: []
+
+# Per-user settings (stars, bookmarks, layouts, selection) are small JSON files. Without persistence they are
+# lost on restart; sessions are lost on restart either way (users sign in again, silently through the IdP).
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /var/lib/v8s
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # v8s needs no Kubernetes API access for itself: oidc-passthrough uses the user's token, and impersonator
+  # and kiosk credentials come from Secrets. No RBAC is created.
+  automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  # WebSockets need long read timeouts on most controllers (nginx: proxy-read-timeout / proxy-send-timeout).
+  annotations: {}
+  #  nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  #  nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  host: ""            # defaults to the host of config.publicUrl
+  tls:
+    enabled: true
+    secretName: ""    # e.g. created by cert-manager
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# About 50 MB per 10k pods per active (user, cluster), plus a base of ~50 MB (docs/performance.md §10).
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 2Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
