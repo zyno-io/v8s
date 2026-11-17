@@ -31,7 +31,8 @@ type Options struct {
 	ClientID    string
 	RedirectURL string
 	Scopes      []string
-	// Exactly one client authentication: Secret (client_secret_post) or Signer (private_key_jwt, RS256).
+	// At most one client authentication: Secret (client_secret_post) or Signer (private_key_jwt, RS256).
+	// Neither is a public client: only client_id is sent, and PKCE protects the code.
 	Secret string
 	Signer crypto.Signer
 	// KeyID and X5tS256 go in the client assertion header (Entra ID requires x5t#S256 of the certificate).

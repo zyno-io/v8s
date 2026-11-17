@@ -94,7 +94,8 @@ The login provider. Redirect URI to register: `<publicUrl>/auth/callback`.
 | --------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------- |
 | `issuer`        | OIDC issuer URL. https required (http only for localhost)                                                             | required                   |
 | `clientId`      | Client ID of the login app                                                                                            | required                   |
-| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`                                                  |                            |
+| `publicClient`  | `true` for an app with no credential: PKCE only. See [Public client](#public-client-no-secret)                        | `false`                    |
+| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`, unless `publicClient` is `true`                 |                            |
 | `privateKey`    | Secret reference to a PEM RSA private key (PKCS#1 or PKCS#8), for `private_key_jwt` client authentication             |                            |
 | `certificate`   | Secret reference to the PEM certificate matching `privateKey`. Sent as the `x5t#S256` header, which Entra ID requires | none                       |
 | `scopes`        | Scopes to request                                                                                                     | `[openid, profile, email]` |
@@ -107,14 +108,15 @@ Pick a username claim that is unique and that users cannot edit. It becomes the 
 
 The app registration whose ID token OIDC pass-through clusters receive. Redirect URI to register: `<publicUrl>/auth/cluster-callback` (not needed when it is the same app as `oidc`, see below).
 
-| Key            | Meaning                                                              | Default                    |
-| -------------- | -------------------------------------------------------------------- | -------------------------- |
-| `clientId`     | Client ID of the cluster app                                         | required                   |
-| `issuer`       | Issuer of the cluster app                                            | the `oidc.issuer`          |
-| `clientSecret` | Secret reference. Set exactly one of `clientSecret` and `privateKey` |                            |
-| `privateKey`   | Secret reference to a PEM RSA private key                            |                            |
-| `certificate`  | Secret reference to the matching PEM certificate (`x5t#S256` header) | none                       |
-| `scopes`       | Scopes to request                                                    | `[openid, offline_access]` |
+| Key            | Meaning                                                                                               | Default                    |
+| -------------- | ----------------------------------------------------------------------------------------------------- | -------------------------- |
+| `clientId`     | Client ID of the cluster app                                                                          | required                   |
+| `issuer`       | Issuer of the cluster app                                                                             | the `oidc.issuer`          |
+| `publicClient` | `true` for an app with no credential: PKCE only                                                       | `false`                    |
+| `clientSecret` | Secret reference. Set exactly one of `clientSecret` and `privateKey`, unless `publicClient` is `true` |                            |
+| `privateKey`   | Secret reference to a PEM RSA private key                                                             |                            |
+| `certificate`  | Secret reference to the matching PEM certificate (`x5t#S256` header)                                  | none                       |
+| `scopes`       | Scopes to request                                                                                     | `[openid, offline_access]` |
 
 After login, v8s runs a second authorization-code flow against this app, silently through the person's existing IdP session, and keeps the resulting ID token and refresh token in server memory. Tokens are refreshed in the background shortly before they expire.
 
@@ -184,7 +186,7 @@ oidc:
 clusterApp:
     clientId: <cluster-app-client-id> # same as oidc.clientId: login tokens are reused
     privateKey:
-        file: /etc/v8s/app.key # required by validation, not used in this mode
+        file: /etc/v8s/app.key # optional and unused in this mode: the login credential is used
 
 adminGroups:
     - <platform-admins-group-object-id>
@@ -221,6 +223,22 @@ jwt:
           username: { claim: preferred_username, prefix: 'oidc:' }
           groups: { claim: groups, prefix: 'oidc:' }
 ```
+
+### Public client (no secret)
+
+If the app your clusters trust is a public client, as the one `kubelogin` uses with the device-code grant usually is, v8s can sign in with it without a secret. Set `publicClient: true` and no `clientSecret`, `privateKey`, or `certificate`. v8s then sends only `client_id` to the token endpoint, and PKCE binds each authorization code to the server that started the login.
+
+```yaml
+oidc:
+    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+    clientId: <cluster-app-client-id>
+    publicClient: true
+
+clusterApp:
+    clientId: <cluster-app-client-id> # same app: the login tokens are the cluster tokens
+```
+
+In Entra ID, register `<publicUrl>/auth/callback` under **Mobile and desktop applications**, not **Web** (Web redirects need a credential) and not **Single-page application** (those tokens must be redeemed from a browser). `publicClient` is explicit on purpose: leaving out a secret by mistake is still a configuration error.
 
 ### Shared audience
 

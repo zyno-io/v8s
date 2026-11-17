@@ -149,7 +149,7 @@ func New(ctx context.Context, opt Options) (*Server, error) {
 		s.sameApp = true
 		loginScopes = append(append([]string(nil), loginScopes...), "offline_access")
 	}
-	s.login, err = buildProvider(cfg.PublicURL+"/auth/callback", cfg.OIDC.Issuer, cfg.OIDC.ClientID, cfg.OIDC.ClientSecret,
+	s.login, err = buildProvider(cfg.PublicURL+"/auth/callback", cfg.OIDC.Issuer, cfg.OIDC.ClientID, cfg.OIDC.PublicClient, cfg.OIDC.ClientSecret,
 		cfg.OIDC.PrivateKey, cfg.OIDC.Certificate, loginScopes, opt.HTTP, s.clock.Now)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: %w", err)
@@ -159,7 +159,7 @@ func New(ctx context.Context, opt Options) (*Server, error) {
 		if iss == "" {
 			iss = cfg.OIDC.Issuer
 		}
-		s.cluster, err = buildProvider(cfg.PublicURL+"/auth/cluster-callback", iss, ca.ClientID, ca.ClientSecret,
+		s.cluster, err = buildProvider(cfg.PublicURL+"/auth/cluster-callback", iss, ca.ClientID, ca.PublicClient, ca.ClientSecret,
 			ca.PrivateKey, ca.Certificate, ca.Scopes, opt.HTTP, s.clock.Now)
 		if err != nil {
 			return nil, fmt.Errorf("clusterApp: %w", err)
@@ -185,9 +185,11 @@ func New(ctx context.Context, opt Options) (*Server, error) {
 	return s, nil
 }
 
-func buildProvider(redirect, issuer, clientID string, secret, key, cert config.SecretRef, scopes []string, hc *http.Client, now func() time.Time) (*oidc.Provider, error) {
+func buildProvider(redirect, issuer, clientID string, public bool, secret, key, cert config.SecretRef, scopes []string, hc *http.Client, now func() time.Time) (*oidc.Provider, error) {
 	o := oidc.Options{Issuer: issuer, ClientID: clientID, RedirectURL: redirect, Scopes: scopes, HTTP: hc, Now: now}
 	switch {
+	case public:
+		// No client authentication: the token requests carry client_id, and PKCE binds the code to this server.
 	case !secret.IsZero():
 		v, err := secret.Resolve()
 		if err != nil {

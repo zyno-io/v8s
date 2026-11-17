@@ -287,3 +287,34 @@ func TestUsernameMapping(t *testing.T) {
 		}
 	}
 }
+
+// A public login app that is also the cluster app (Entra "Mobile and desktop" redirect, no secret): login and
+// refresh send client_id only, and the login tokens are the cluster tokens.
+func TestPublicClientSameApp(t *testing.T) {
+	e := newEnv(t, func(c *config.Config, idp *oidctest.Provider) {
+		c.OIDC.ClientSecret = config.SecretRef{}
+		c.OIDC.PublicClient = true
+		c.ClusterApp = &config.ClusterApp{ClientID: c.OIDC.ClientID}
+		idp.AddClient(oidctest.Client{ID: c.OIDC.ClientID, Public: true, RedirectURI: c.PublicURL + "/auth/callback"})
+		idp.IDTokenTTL = 10 * time.Minute
+	})
+	b := e.browser()
+	b.login("alice-sub")
+	resp, _ := b.Get(e.ts.URL + "/api/me")
+	var me meResponse
+	_ = json.NewDecoder(resp.Body).Decode(&me)
+	if me.Username != "alice@example.com" || me.ClusterAuth != "ok" {
+		t.Fatalf("/api/me: %+v", me)
+	}
+	if n := len(e.idp.Requests()); n != 1 {
+		t.Fatalf("same app must not run a second authorization flow: %d requests", n)
+	}
+	// Refresh also authenticates with client_id only (the fake IdP refuses a secret from a public client).
+	first, _, _ := b.session().ClusterToken(e.clock.Now())
+	e.clock.Advance(6 * time.Minute)
+	e.srv.Maintain(t.Context())
+	second, _, err := b.session().ClusterToken(e.clock.Now())
+	if e.idp.RefreshCalls() != 1 || err != nil || second == first {
+		t.Fatalf("refresh: calls=%d err=%v changed=%v", e.idp.RefreshCalls(), err, second != first)
+	}
+}
