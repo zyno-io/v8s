@@ -43,11 +43,11 @@ docker run --rm -p 7931:7931 \
   ghcr.io/zyno-io/v8s:0.1.0
 ```
 
-**Helm chart (hosted mode).** From a checkout at the release tag:
+**Helm chart (hosted mode):**
 
 ```sh
-helm install v8s ./charts/v8s --namespace v8s --create-namespace \
-  --set image.tag=0.1.0 --values my-values.yaml
+helm install v8s oci://ghcr.io/zyno-io/charts/v8s --version 0.1.0 \
+  --namespace v8s --create-namespace --values my-values.yaml
 ```
 
 See [Install](https://zyno-io.github.io/v8s/guide/install), [Hosted mode](https://zyno-io.github.io/v8s/guide/hosted), and the [CLI reference](https://zyno-io.github.io/v8s/guide/cli).

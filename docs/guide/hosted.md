@@ -118,7 +118,7 @@ The app registration whose ID token OIDC pass-through clusters receive. Redirect
 
 After login, v8s runs a second authorization-code flow against this app, silently through the person's existing IdP session, and keeps the resulting ID token and refresh token in server memory. Tokens are refreshed in the background shortly before they expire.
 
-**The same app for login and clusters.** If `clusterApp.clientId` equals `oidc.clientId` (and `clusterApp.issuer` is unset or equal to `oidc.issuer`), v8s does not run a second flow. The login tokens are the cluster tokens: v8s adds `offline_access` to the login scopes and reuses the ID and refresh tokens of the login. Use this when your clusters and gateway already trust the app registration that people sign in to v8s with. The `clusterApp` block must still be present, and validation still requires one of `clientSecret` or `privateKey` in it (use the same reference as `oidc`), but its credentials and `scopes` are not used in this mode.
+**The same app for login and clusters.** If `clusterApp.clientId` equals `oidc.clientId` (and `clusterApp.issuer` is unset or equal to `oidc.issuer`), v8s does not run a second flow. The login tokens are the cluster tokens: v8s adds `offline_access` to the login scopes and reuses the ID and refresh tokens of the login. Use this when your clusters and gateway already trust the app registration that people sign in to v8s with. The `clusterApp` block only needs `clientId` in this mode; it needs no credential of its own, and its `scopes` are not used.
 
 ### `clusters`
 
@@ -300,13 +300,11 @@ Sessions and IdP tokens live in server memory only. The only state written to di
 
 ### With Helm
 
-The chart in `charts/v8s` deploys one `v8s server` Deployment (arguments `server --config /etc/v8s/config.yaml`), a Service, a ConfigMap holding the rendered configuration, an optional Ingress, and a PersistentVolumeClaim for `dataDir`. The chart is not published to a registry in v0.1.0, so install it from a checkout at the release tag. Set `image.tag` because the chart's default tag is a development placeholder:
+The chart in `charts/v8s` deploys one `v8s server` Deployment (arguments `server --config /etc/v8s/config.yaml`), a Service, a ConfigMap holding the rendered configuration, an optional Ingress, and a PersistentVolumeClaim for `dataDir`. The chart is published as an OCI artifact with every release; its default image tag is the release version:
 
 ```sh
-git clone --branch v0.1.0 https://github.com/zyno-io/v8s.git
-helm install v8s ./v8s/charts/v8s \
+helm install v8s oci://ghcr.io/zyno-io/charts/v8s --version 0.1.0 \
   --namespace v8s --create-namespace \
-  --set image.tag=0.1.0 \
   --values values.yaml
 ```
 

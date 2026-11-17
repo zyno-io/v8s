@@ -106,17 +106,15 @@ The entrypoint is `v8s` and the default command is `server --config /etc/v8s/con
 
 ## Helm chart
 
-The Helm chart in `charts/v8s` deploys hosted mode: one Deployment running `v8s server`, a Service, a ConfigMap for the configuration file, an optional Ingress, and a PersistentVolumeClaim for the per-user settings. Secrets (OIDC client secret, private keys, impersonation tokens) are referenced from Kubernetes Secrets, not written into values. The chart is not published to a chart registry in v0.1.0: install it from a checkout of the repository at the release tag.
+The Helm chart in `charts/v8s` deploys hosted mode: one Deployment running `v8s server`, a Service, a ConfigMap for the configuration file, an optional Ingress, and a PersistentVolumeClaim for the per-user settings. Secrets (OIDC client secret, private keys, impersonation tokens) are referenced from Kubernetes Secrets, not written into values. The chart is published to `oci://ghcr.io/zyno-io/charts/v8s` with every release, and its default image tag is the release version.
 
 ```sh
-git clone --branch v0.1.0 https://github.com/zyno-io/v8s.git
-helm install v8s ./v8s/charts/v8s \
+helm install v8s oci://ghcr.io/zyno-io/charts/v8s --version 0.1.0 \
   --namespace v8s --create-namespace \
-  --set image.tag=0.1.0 \
   --values my-values.yaml
 ```
 
-Set `image.tag` explicitly: the chart's default tag is its `appVersion`, which is a development placeholder in this release. The values mirror the server configuration. [Hosted mode](/guide/hosted#with-helm) lists them and has a full example, and `charts/v8s/values.yaml` documents every key.
+The values mirror the server configuration. [Hosted mode](/guide/hosted#with-helm) lists them and has a full example, and `charts/v8s/values.yaml` documents every key.
 
 ## Build from source
 
