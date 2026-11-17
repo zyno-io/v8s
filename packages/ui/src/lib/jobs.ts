@@ -2,6 +2,8 @@ import type { DrainOptions, DrainParams, DrainPod, DrainPreflightResult, JobFram
 
 import { shallowRef } from 'vue';
 
+import type { WriteDecision } from '@/lib/mutations.ts';
+
 import { newRequestId } from '@/lib/actions.ts';
 import { getAgent } from '@/lib/agent.ts';
 import { callMutating } from '@/lib/mutations.ts';
@@ -17,6 +19,10 @@ export const DEFAULT_DRAIN_TIMEOUT = 300;
 export interface StartOpts {
     /** One requestId per intent: pass the same one when retrying so the agent de-duplicates. */
     requestId?: string;
+    /** Share across attempts so an accepted write context is not asked for twice. */
+    decision?: WriteDecision;
+    /** The `write_confirm` retry replaces the requestId: keep the new one for a later retry of the same intent. */
+    onRequestId?: (id: string) => void;
 }
 
 /** Starts an agent-owned job. Returns the job id and the requestId used (reuse it for a retry of the same intent). */
@@ -26,8 +32,19 @@ export async function startJob(
     params: object,
     opts: StartOpts = {}
 ): Promise<JobsStartResult & { requestId: string }> {
-    const requestId = opts.requestId ?? newRequestId();
-    const res = await callMutating<JobsStartResult>(cluster, 'jobs.start', { requestId, type, params: params as Record<string, unknown> });
+    let requestId = opts.requestId ?? newRequestId();
+    const res = await callMutating<JobsStartResult>(
+        cluster,
+        'jobs.start',
+        { requestId, type, params: params as Record<string, unknown> },
+        {
+            decision: opts.decision,
+            onRequestId: id => {
+                requestId = id;
+                opts.onRequestId?.(id);
+            }
+        }
+    );
     return { ...res, requestId };
 }
 

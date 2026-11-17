@@ -55,6 +55,21 @@ describe('createShell', () => {
         expect([...(sent[1] as Uint8Array)]).toEqual([0, 108, 115, 13]);
     });
 
+    it('splits a large paste into frames of at most 64 KiB, in order', () => {
+        const { s, sent } = fakeSocket();
+        const sh = createShell({ socket: s, usedContext: 'ctx', raf: fn => fn() });
+        s.open();
+        const big = new Uint8Array(64 * 1024 * 2 + 10).map((_, i) => i % 251);
+        sh.write(big);
+        expect(sent.map(f => (f as Uint8Array).length - 1)).toEqual([65536, 65536, 10]);
+        const joined = sent.flatMap(f => [...(f as Uint8Array).subarray(1)]);
+        expect(joined).toEqual([...big]);
+        expect((sent[0] as Uint8Array)[0]).toBe(0);
+        sent.length = 0;
+        sh.write('');
+        expect(sent).toEqual([]);
+    });
+
     it('goes ready on the ready frame and batches output once per frame', () => {
         const { s } = fakeSocket();
         const frames: (() => void)[] = [];

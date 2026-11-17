@@ -71,6 +71,7 @@ describe('streamParams', () => {
             follow: true,
             tailLines: 1000,
             capacity: 50000,
+            maxBytes: 32 * 1024 * 1024,
             multi: false
         });
     });
@@ -79,6 +80,7 @@ describe('streamParams', () => {
         expect(p.previous).toBe(true);
         expect(p.follow).toBe(false);
         expect(p.capacity).toBe(5000);
+        expect(p.maxBytes).toBe(8 * 1024 * 1024);
     });
     it('workloads are merged with no container', () => {
         const d = { cluster: 'c1', gvr: 'apps/v1/deployments', namespace: 'ns', name: 'web' };

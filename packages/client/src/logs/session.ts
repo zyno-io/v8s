@@ -21,6 +21,7 @@ export interface LogSessionIO {
 export interface LogSessionOptions {
     sid: number;
     capacity: number;
+    maxBytes?: number;
     /** Merged stream: lines are prefixed `<pod>/<container>\t`. */
     multi: boolean;
 }
@@ -64,7 +65,7 @@ export class LogSession {
         private readonly o: LogSessionOptions,
         private readonly io: LogSessionIO
     ) {
-        this.buf = new LogBuffer({ capacity: o.capacity });
+        this.buf = new LogBuffer({ capacity: o.capacity, maxBytes: o.maxBytes, multi: o.multi });
     }
 
     // ---- socket side ----

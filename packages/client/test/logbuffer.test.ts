@@ -43,6 +43,30 @@ describe('LogBuffer', () => {
         expect(buf.held).toBeLessThanOrEqual(1250);
     });
 
+    it('caps the bytes held with large lines, keeps the newest, and shrinks the arena', () => {
+        const buf = new LogBuffer({ capacity: 50_000, maxBytes: 1024 * 1024 });
+        const big = 'z'.repeat(10_000) + '\n';
+        for (let i = 0; i < 500; i++) buf.append(b(big.replace('z', String(i % 10))));
+        expect(buf.bytes).toBeLessThanOrEqual(1024 * 1024);
+        expect(buf.held).toBeLessThan(110);
+        expect(buf.total).toBe(500);
+        expect(buf.text(499).startsWith('9')).toBe(true);
+        expect(buf.has(buf.first)).toBe(true);
+        // A burst of huge lines grows the arena; small lines afterwards let it shrink again.
+        const arenaBefore = (buf as unknown as { arena: Uint8Array }).arena.length;
+        for (let i = 0; i < 2000; i++) buf.append(b('s\n'));
+        const arenaAfter = (buf as unknown as { arena: Uint8Array }).arena.length;
+        expect(arenaAfter).toBeLessThanOrEqual(arenaBefore);
+    });
+
+    it('a single line larger than the cap is kept alone', () => {
+        const buf = new LogBuffer({ capacity: 100, maxBytes: 2048 });
+        buf.append(b('a\nb\n'));
+        buf.append(b('q'.repeat(5000) + '\n'));
+        expect(buf.held).toBe(1);
+        expect(buf.text(buf.total - 1).length).toBe(5000);
+    });
+
     it('grows the arena beyond its initial size', () => {
         const buf = new LogBuffer({ capacity: 100_000 });
         const big = 'y'.repeat(1000) + '\n';
@@ -59,6 +83,37 @@ describe('LogBuffer', () => {
         // "err" + "or" are on different lines
         expect(buf.search(encodeQuery('err\nor'), false)).toEqual([]);
         expect(buf.search(encodeQuery('zzz'), false)).toEqual([]);
+    });
+
+    it('searches only visible text: not the timestamp, the pod/container prefix, or ANSI escapes', () => {
+        const buf = new LogBuffer({ capacity: 100, multi: true });
+        buf.append(
+            b(
+                [
+                    'web-1/app\t2026-11-17T10:00:00.123Z hello world',
+                    'web-1/app\t2026-11-17T10:00:00.123Z nothing',
+                    'web-1/app\t2026-11-17T10:00:00Z \x1b[31mred\x1b[0m text',
+                    'web-1/app\t2026-11-17T10:00:00+02:00 he\x1b[1mllo\x1b[0m again',
+                    ''
+                ].join('\n')
+            )
+        );
+        const q = (s: string, mc = false) => buf.search(encodeQuery(s), mc);
+        expect(q('web-1')).toEqual([]);
+        expect(q('app')).toEqual([]);
+        expect(q('2026')).toEqual([]);
+        expect(q('10:00')).toEqual([]);
+        expect(q('hello')).toEqual([0, 3]);
+        expect(q('HELLO', true)).toEqual([]);
+        expect(q('31m')).toEqual([]);
+        expect(q('red text')).toEqual([2]);
+        expect(q('hello world')).toEqual([0]);
+    });
+
+    it('a hit in the prefix does not hide a later hit in the same line', () => {
+        const buf = new LogBuffer({ capacity: 100 });
+        buf.append(b('2026-11-17T10:00:00Z 2026 and 2026\n'));
+        expect(buf.search(encodeQuery('2026'), false)).toEqual([0]);
     });
 
     it('searches from a line and after drops', () => {

@@ -1,5 +1,5 @@
 export { connectAgent, httpOrigin, RpcError, sortJobs, streamUrlOf } from './agent.ts';
-export type { Agent, ConnectOptions, LogOpenOptions, LogStreamHandle, ObjectSubscription, ViewHandle, WorkerLike } from './agent.ts';
+export type { Agent, ConnectOptions, LogFileTarget, LogOpenOptions, LogStreamHandle, ObjectSubscription, ViewHandle, WorkerLike } from './agent.ts';
 export { createShell, decodeInteractive, encodeResize, encodeStdin } from './shell.ts';
 export type { ShellExit, ShellHandle, ShellState, SocketLike } from './shell.ts';
 export { BOLD, detectLevel, DIM, ITALIC, NO_COLOR, parseAnsi, RGB_FLAG, SPAN_STRIDE, splitLine, UNDERLINE } from './logs/ansi.ts';

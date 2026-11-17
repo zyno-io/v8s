@@ -8,7 +8,7 @@ import { useRouter } from 'vue-router';
 import { newRequestId } from '@/lib/actions.ts';
 import { getNamespacesView, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
-import { callMutating, errorText, isCancelled } from '@/lib/mutations.ts';
+import { callMutating, errorText, isCancelled, newWriteDecision } from '@/lib/mutations.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
 import { gvrFromManifest, TEMPLATES, templateFor } from '@/lib/templates.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -79,12 +79,21 @@ async function resolve(): Promise<Resolved | string> {
     return { yaml, ref: { cluster: cluster.value, gvr, namespace: first.metadata?.namespace || undefined, name: first.metadata?.name || '' } };
 }
 
+// The write-context answer from the dry run carries into the create, so the user is asked once.
+const writeDecision = newWriteDecision();
+
 async function runDry(r: Resolved): Promise<boolean> {
-    dry.value = await callMutating<ObjectDryRunResult>(r.ref.cluster, 'object.dryRun', { ref: r.ref, yaml: r.yaml, mode: 'create' });
+    dry.value = await callMutating<ObjectDryRunResult>(
+        r.ref.cluster,
+        'object.dryRun',
+        { ref: r.ref, yaml: r.yaml, mode: 'create' },
+        { decision: writeDecision }
+    );
     return dry.value.ok;
 }
 
 async function dryRun() {
+    writeDecision.accepted = false;
     busy.value = true;
     failure.value = '';
     try {
@@ -110,6 +119,7 @@ function createErrorText(e: unknown): string {
 
 let requestId: string | null = null;
 async function create() {
+    writeDecision.accepted = false;
     busy.value = true;
     failure.value = '';
     try {
@@ -120,7 +130,15 @@ async function create() {
         }
         if (!(await runDry(r))) return;
         requestId ??= newRequestId();
-        const res = await callMutating<ObjectApplyResult>(r.ref.cluster, 'object.apply', { requestId, ref: r.ref, yaml: r.yaml, mode: 'create' });
+        const res = await callMutating<ObjectApplyResult>(
+            r.ref.cluster,
+            'object.apply',
+            { requestId, ref: r.ref, yaml: r.yaml, mode: 'create' },
+            {
+                decision: writeDecision,
+                onRequestId: id => (requestId = id)
+            }
+        );
         requestId = null;
         created.value = true;
         const n = res.applied?.length ?? 1;

@@ -42,6 +42,9 @@ export interface SocketLike {
 const OPEN = 1;
 const encoder = new TextEncoder();
 
+/** Largest stdin frame body the agent accepts (docs/protocol.md): 64 KiB of data, plus the channel byte. */
+export const MAX_STDIN_FRAME = 64 * 1024;
+
 /** `[0x00][stdin bytes]`. */
 export function encodeStdin(data: string | Uint8Array): Uint8Array<ArrayBuffer> {
     const body = typeof data === 'string' ? encoder.encode(data) : data;
@@ -134,7 +137,9 @@ export function createShell(o: ShellChannelOptions): ShellHandle {
         },
         write(data) {
             if (closed || sock.readyState !== OPEN) return;
-            sock.send(encodeStdin(data));
+            const body = typeof data === 'string' ? encoder.encode(data) : data;
+            // A large paste goes out as several frames, in order; each is at most MAX_STDIN_FRAME bytes of data.
+            for (let i = 0; i < body.length; i += MAX_STDIN_FRAME) sock.send(encodeStdin(body.subarray(i, i + MAX_STDIN_FRAME)));
         },
         resize(cols, rows) {
             const msg = encodeResize(cols, rows);

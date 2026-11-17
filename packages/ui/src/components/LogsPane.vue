@@ -176,10 +176,12 @@ function onSearchKey(e: KeyboardEvent) {
 
 async function download() {
     const params = downloadParams(props.target, { container: isPod.value ? container.value : undefined, previous: previous.value });
+    const filename = downloadFilename(props.target, isPod.value ? container.value : undefined);
     try {
-        await withWriteConfirm(props.target.cluster, extra =>
-            getAgent().downloadLog({ ...params, ...extra }, downloadFilename(props.target, isPod.value ? container.value : undefined))
-        );
+        // The save picker needs the click's user activation: ask once, first, outside the write-confirm wrapper (its retry must not re-open it).
+        const file = await getAgent().pickLogFile(filename);
+        if (file === false) return;
+        await withWriteConfirm(props.target.cluster, extra => getAgent().downloadLog({ ...params, ...extra }, filename, file));
     } catch (e) {
         ui.toast('danger', errorText(e));
     }
@@ -280,7 +282,7 @@ const waiting = computed(() => isPod.value && !props.parsed && !handle.value && 
 
         <p v-if="openError" class="notice danger" role="alert">
             <span>{{ openError }}</span>
-            <button type="button" class="btn sm" @click="reconnect">Retry</button>
+            <button type="button" class="btn sm" @click="reconnect">Reconnect</button>
         </p>
         <p v-else-if="waiting" class="muted">Loading containers…</p>
 

@@ -7,7 +7,8 @@ import { useRouter } from 'vue-router';
 
 import { checkAccess } from '@/lib/access.ts';
 import { newRequestId } from '@/lib/actions.ts';
-import { callMutating, errorText, isCancelled, runAs } from '@/lib/mutations.ts';
+import { editRequest } from '@/lib/drawer.ts';
+import { callMutating, errorText, isCancelled, newWriteDecision, runAs } from '@/lib/mutations.ts';
 import { GITOPS_LABEL } from '@/lib/overview.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -72,6 +73,17 @@ function startEdit() {
     queueMicrotask(() => editor.value?.focus());
 }
 
+// The `e` shortcut asks for edit mode; honoured once the document is here and editable.
+watch(
+    editRequest,
+    want => {
+        if (!want) return;
+        editRequest.value = false;
+        if (mode.value === 'view' && !tooLarge.value && !props.deleted) startEdit();
+    },
+    { immediate: true }
+);
+
 function discard() {
     // The editor still holds the edits (it only reloads when its `initial` changes): put the live document back explicitly.
     editor.value?.setValue(props.payload.yaml);
@@ -102,6 +114,8 @@ interface Review {
 const review = shallowRef<Review | null>(null);
 const conflict = shallowRef<ObjectPayload | null>(null);
 const applying = ref(false);
+// The write-context answer from the dry run carries into the apply, so the user is asked once.
+const writeDecision = newWriteDecision();
 
 async function startReview() {
     const draft = editor.value?.getValue() ?? openedYaml.value;
@@ -109,12 +123,18 @@ async function startReview() {
         ui.toast('info', 'No changes to review');
         return;
     }
+    writeDecision.accepted = false;
     review.value = { draft, dry: null, failure: '', viaWrite: false, busy: true };
     conflict.value = null;
     mode.value = 'review';
     try {
         const [dry, access] = await Promise.all([
-            callMutating<ObjectDryRunResult>(props.target.cluster, 'object.dryRun', { ref: props.target, yaml: draft, mode: 'update' }),
+            callMutating<ObjectDryRunResult>(
+                props.target.cluster,
+                'object.dryRun',
+                { ref: props.target, yaml: draft, mode: 'update' },
+                { decision: writeDecision }
+            ),
             checkAccess([
                 { cluster: props.target.cluster, verb: 'update', gvr: props.target.gvr, namespace: props.target.namespace, name: props.target.name }
             ]).catch(() => [])
@@ -141,13 +161,18 @@ async function apply(overwrite = false) {
     // One id per intent: a retry after a dropped connection reuses it, so the agent cannot apply twice.
     pendingRequest ??= newRequestId();
     try {
-        const res = await callMutating<{ resourceVersion: string; usedContext: string }>(props.target.cluster, 'object.apply', {
-            requestId: pendingRequest,
-            ref: props.target,
-            yaml: r.draft,
-            mode: 'update',
-            resourceVersion: live ? live.resourceVersion : openedRV.value
-        });
+        const res = await callMutating<{ resourceVersion: string; usedContext: string }>(
+            props.target.cluster,
+            'object.apply',
+            {
+                requestId: pendingRequest,
+                ref: props.target,
+                yaml: r.draft,
+                mode: 'update',
+                resourceVersion: live ? live.resourceVersion : openedRV.value
+            },
+            { decision: writeDecision, onRequestId: id => (pendingRequest = id) }
+        );
         pendingRequest = null;
         ui.toast('success', `Applied ${props.target.name}${res.usedContext ? ` as ${res.usedContext}` : ''}`);
         mode.value = 'view';

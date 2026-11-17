@@ -87,7 +87,7 @@ export type MainToWorker =
     | { t: 'subscribe'; qid: number; gen: number; query: ViewQuery; window: Window }
     | { t: 'update'; qid: number; gen: number; query?: ViewQuery; window?: Window }
     | { t: 'unsubscribe'; qid: number }
-    | { t: 'log.open'; sid: number; params: StreamOpenParams; capacity: number; multi: boolean }
+    | { t: 'log.open'; sid: number; params: StreamOpenParams; capacity: number; maxBytes?: number; multi: boolean }
     | { t: 'log.view'; sid: number; first: number; count: number; follow: boolean }
     | { t: 'log.search'; sid: number; q: string; matchCase: boolean }
     | { t: 'log.step'; sid: number; dir: 1 | -1; from?: number }

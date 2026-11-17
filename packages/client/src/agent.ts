@@ -58,6 +58,8 @@ export interface ViewHandle {
 export interface LogOpenOptions extends Omit<StreamOpenParams, 'type'> {
     /** Lines kept in the ring buffer: desktop 50k, phone 5k. */
     capacity?: number;
+    /** Bytes kept in the ring buffer: desktop 32 MiB, phone 8 MiB. */
+    maxBytes?: number;
     /** The stream is merged from several pods/containers (lines carry a `<pod>/<container>\t` prefix). */
     multi?: boolean;
 }
@@ -97,6 +99,11 @@ export interface ObjectSubscription {
     close(): void;
 }
 
+/** A save-file handle from `showSaveFilePicker`. */
+export interface LogFileTarget {
+    createWritable(): Promise<WritableStream<Uint8Array>>;
+}
+
 export interface Agent {
     readonly status: ShallowRef<ConnectionStatus>;
     readonly statusMessage: ShallowRef<string>;
@@ -115,7 +122,13 @@ export interface Agent {
     /** Opens an interactive stream (exec, debug container, node shell) on its own socket, on the main thread. */
     openStream(type: 'exec' | 'debug' | 'nodeshell', params: Omit<StreamOpenParams, 'type'>): Promise<ShellHandle>;
     /** Streams the whole log to a file (File System Access API when available, else a browser download). */
-    downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string): Promise<void>;
+    downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string, target?: LogFileTarget | null): Promise<void>;
+    /**
+     * Asks where to save (File System Access API). Call it first thing in the click handler, once, outside any confirm/retry
+     * wrapper: the picker needs user activation. Resolves `null` when the API is missing (the download falls back to the
+     * browser's own), `false` when the user dismissed the picker; pass a result to `downloadLog`.
+     */
+    pickLogFile(filename: string): Promise<LogFileTarget | null | false>;
     /** Every job the agent knows (running first), updated by `Job` frames; reattaches after a reload through `jobs.list`. */
     readonly jobs: ShallowRef<readonly JobFrame[]>;
     refreshJobs(): Promise<void>;
@@ -374,8 +387,9 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             if (type === 'logs') return openLogs(params as LogOpenOptions) as Promise<never>;
             return openShell(type, params as Omit<StreamOpenParams, 'type'>) as Promise<never>;
         },
-        async downloadLog(params, filename) {
-            await downloadLog(params, filename);
+        pickLogFile,
+        async downloadLog(params, filename, target) {
+            await downloadLog(params, filename, target ?? null);
         },
         close() {
             post({ t: 'close' });
@@ -385,7 +399,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
     };
 
     function openLogs(params: LogOpenOptions): Promise<LogStreamHandle> {
-        const { capacity = 50_000, multi, ...rest } = params;
+        const { capacity = 50_000, maxBytes, multi, ...rest } = params;
         const isMulti = multi ?? !(rest.ref?.gvr === 'v1/pods' && !!rest.container);
         const sid = nextSid++;
         return new Promise<LogStreamHandle>((resolve, reject) => {
@@ -448,7 +462,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 return handle;
             };
             logOpens.set(sid, { resolve, reject, make });
-            post({ t: 'log.open', sid, params: { ...rest, type: 'logs' }, capacity, multi: isMulti });
+            post({ t: 'log.open', sid, params: { ...rest, type: 'logs' }, capacity, maxBytes, multi: isMulti });
         });
     }
 
@@ -459,30 +473,30 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         return createShell({ socket: sock as unknown as import('./shell.ts').SocketLike, usedContext: res.usedContext ?? '' });
     }
 
-    async function downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string): Promise<void> {
-        type Picker = (o: { suggestedName: string }) => Promise<{ createWritable(): Promise<WritableStream<Uint8Array>> }>;
-        const picker = (globalThis as unknown as { showSaveFilePicker?: Picker }).showSaveFilePicker;
-        let file: Awaited<ReturnType<Picker>> | null = null;
-        if (picker) {
-            try {
-                file = await picker({ suggestedName: filename });
-            } catch (e) {
-                if (e instanceof DOMException && e.name === 'AbortError') return;
-                file = null;
-            }
+    async function pickLogFile(filename: string): Promise<LogFileTarget | null | false> {
+        const picker = (globalThis as unknown as { showSaveFilePicker?: (o: { suggestedName: string }) => Promise<LogFileTarget> })
+            .showSaveFilePicker;
+        if (!picker) return null;
+        try {
+            return await picker({ suggestedName: filename });
+        } catch (e) {
+            return e instanceof DOMException && e.name === 'AbortError' ? false : null;
         }
+    }
+
+    async function downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string, file: LogFileTarget | null): Promise<void> {
         const res = await call<StreamOpenResult>('stream.open', { ...params, type: 'logs', download: true, follow: false });
         if (!res?.downloadUrl) throw new RpcError('internal', 'stream.open returned no download url');
-        const origin = httpOrigin(opts.url);
-        const url = origin + res.downloadUrl;
+        const url = httpOrigin(opts.url) + res.downloadUrl;
         if (file) {
             const r = await fetch(url, { headers: { Authorization: 'Bearer ' + opts.token } });
             if (!r.ok || !r.body) throw new RpcError('unavailable', `download failed (${r.status})`);
             await r.body.pipeTo(await file.createWritable());
             return;
         }
+        // The single-use streamId in the URL is the credential: the agent token never goes into a URL.
         const a = document.createElement('a');
-        a.href = url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(opts.token);
+        a.href = url;
         a.download = filename;
         document.body.appendChild(a);
         a.click();

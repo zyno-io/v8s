@@ -5,12 +5,13 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import JobProgress from '@/components/JobProgress.vue';
+import { checkAccess } from '@/lib/access.ts';
 import { newRequestId } from '@/lib/actions.ts';
 import { getAgent } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { isPending, latestRevisionOptions } from '@/lib/helm.ts';
 import { cancelJob, isActive, startJob } from '@/lib/jobs.ts';
-import { callMutating, errorText } from '@/lib/mutations.ts';
+import { callMutating, errorText, runAs } from '@/lib/mutations.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -45,7 +46,8 @@ const gitopsHint = ref('');
 const jobId = ref('');
 
 const production = computed(() => clusters.isProduction(props.target.cluster));
-const writeCtx = computed(() => clusters.writeContextOf(props.target.cluster));
+const viaWrite = ref(false);
+const runsAs = computed(() => runAs(props.target.cluster, viaWrite.value));
 const ns = computed(() => props.target.namespace ?? props.release.namespace);
 const flux = computed(() => props.release.managedBy);
 const title = computed(() => ({ rollback: 'Roll back', uninstall: 'Uninstall', retry: 'Retry' })[props.action]);
@@ -57,6 +59,8 @@ watch(finished, f => f && emit('done'));
 const canStart = computed(() => {
     if (busy.value || !timeoutOk.value) return false;
     if (props.action === 'rollback' && !revision.value) return false;
+    // Production groups: every release-changing action types the release name (uninstall also the namespace), like ActionBar.
+    if (production.value && typedName.value.trim() !== props.release.name) return false;
     if (props.action === 'uninstall') {
         if (typedName.value.trim() !== props.release.name) return false;
         if (production.value && typedNs.value.trim() !== ns.value) return false;
@@ -141,6 +145,14 @@ onMounted(async () => {
     await nextTick();
     el.value?.showModal();
     el.value?.querySelector<HTMLElement>('select, input, button.primary, button.danger')?.focus();
+    try {
+        const [a] = await checkAccess([
+            { cluster: props.target.cluster, verb: props.action === 'uninstall' ? 'delete' : 'create', gvr: 'v1/secrets', namespace: ns.value }
+        ]);
+        viaWrite.value = !!a?.viaWrite;
+    } catch {
+        // Unknown: the dialog keeps saying "your current context".
+    }
 });
 </script>
 
@@ -211,9 +223,9 @@ onMounted(async () => {
                         Force replacement deletes and recreates resources that cannot be patched, which can cause downtime.
                     </p>
                 </template>
-                <template v-if="action === 'uninstall'">
+                <template v-if="action === 'uninstall' || production">
                     <label class="fld"
-                        >Type <b class="mono">{{ release.name }}</b> to confirm
+                        >{{ production ? 'This is a production cluster. ' : '' }}Type <b class="mono">{{ release.name }}</b> to confirm
                         <span class="field"
                             ><input
                                 v-model="typedName"
@@ -224,7 +236,7 @@ onMounted(async () => {
                                 data-testid="helm-confirm-name"
                         /></span>
                     </label>
-                    <label v-if="production" class="fld"
+                    <label v-if="production && action === 'uninstall'" class="fld"
                         >This is a production cluster. Type the namespace <b class="mono">{{ ns }}</b>
                         <span class="field"
                             ><input
@@ -237,7 +249,7 @@ onMounted(async () => {
                         /></span>
                     </label>
                 </template>
-                <p class="runas" data-testid="runas">Runs as {{ writeCtx || 'your current context' }}</p>
+                <p class="runas" data-testid="runas">{{ runsAs }}</p>
                 <p v-if="err" class="err" role="alert">{{ err }}</p>
                 <div class="foot">
                     <button class="btn" type="button" @click="emit('close')">Cancel</button>

@@ -9,7 +9,7 @@ import { newRequestId } from '@/lib/actions.ts';
 import { getAgent } from '@/lib/agent.ts';
 import { ask } from '@/lib/ask.ts';
 import { cancelJob, CANCEL_CONFIRM, drainParams, isActive, jobLabel, preflightSummary, startJob } from '@/lib/jobs.ts';
-import { errorText, isCancelled } from '@/lib/mutations.ts';
+import { errorText, isCancelled, newWriteDecision } from '@/lib/mutations.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 
 const props = defineProps<{ cluster: string; node: string; jobId?: string }>();
@@ -65,6 +65,7 @@ async function runPreflight() {
 
 // A changed option is a new intent: a failed start must not reuse the old requestId.
 let requestId = newRequestId();
+const writeDecision = newWriteDecision();
 watch(options, () => {
     requestId = newRequestId();
     startErr.value = null;
@@ -74,6 +75,7 @@ watch(options, () => {
 });
 
 const summary = computed(() => (pre.value ? preflightSummary(pre.value, options.value) : null));
+const clusterName = computed(() => clusters.nameById.get(props.cluster) ?? props.cluster);
 const production = computed(() => clusters.isProduction(props.cluster));
 const needsTyped = computed(() => production.value || !!opts.disableEviction);
 const typedOk = computed(() => !needsTyped.value || typed.value.trim() === props.node);
@@ -166,7 +168,11 @@ async function start() {
     busy.value = true;
     startErr.value = null;
     try {
-        const res = await startJob(props.cluster, 'drain', drainParams(props.cluster, props.node, options.value), { requestId });
+        const res = await startJob(props.cluster, 'drain', drainParams(props.cluster, props.node, options.value), {
+            requestId,
+            decision: writeDecision,
+            onRequestId: id => (requestId = id)
+        });
         activeJobId.value = res.jobId;
         step.value = 'progress';
     } catch (e) {
@@ -218,14 +224,15 @@ onBeforeUnmount(() => {
     >
         <div class="body">
             <h2 id="drain-title">
-                {{ step === 'progress' ? `Drain ${node}` : step === 'confirm' ? `Confirm: delete pods on ${node}` : `Drain ${node}` }}
+                {{ step === 'confirm' ? `Confirm: delete pods on ${node} (${clusterName})` : `Drain ${node} on ${clusterName}` }}
                 <span v-if="step === 'options' && pre?.cordoned" class="tag warning">already cordoned</span>
             </h2>
 
             <!-- Step 1: options and pre-flight -->
             <template v-if="step === 'options'">
                 <p class="muted">
-                    Cordons <b class="mono">{{ node }}</b>, then evicts its pods the way <span class="mono">kubectl drain</span> does.
+                    Cordons <b class="mono">{{ node }}</b> on <b>{{ clusterName }}</b>, then evicts its pods the way
+                    <span class="mono">kubectl drain</span> does.
                 </p>
                 <p v-if="runsAs" class="runas" data-testid="runas">{{ runsAs }}</p>
                 <p v-if="preErr" class="err" role="alert">{{ preErr }}</p>
@@ -290,7 +297,7 @@ onBeforeUnmount(() => {
                 <p v-for="w in summary?.warnings ?? []" :key="w" class="notice warn">{{ w }}</p>
 
                 <label v-if="production && !opts.disableEviction" class="phrase">
-                    <span>Production cluster. Type <b class="mono">{{ node }}</b> to confirm</span>
+                    <span>Production cluster <b>{{ clusterName }}</b>. Type <b class="mono">{{ node }}</b> to confirm</span>
                     <span class="field"><input v-model="typed" type="text" autocomplete="off" spellcheck="false" aria-label="Node name" /></span>
                 </label>
             </template>
@@ -299,12 +306,12 @@ onBeforeUnmount(() => {
             <template v-else-if="step === 'confirm'">
                 <p class="notice danger-n" role="alert">
                     <span
-                        ><b>Eviction is disabled.</b> Pods are deleted directly: PodDisruptionBudgets are NOT honoured and the pods get no graceful
-                        handover. Workloads can lose availability.</span
+                        ><b>Eviction is disabled</b> on <b>{{ clusterName }}</b>. Pods on {{ node }} are deleted directly: PodDisruptionBudgets are
+                        NOT honoured and the pods get no graceful handover. Workloads can lose availability.</span
                     >
                 </p>
                 <label class="phrase">
-                    <span>Type <b class="mono">{{ node }}</b> to confirm</span>
+                    <span>Type <b class="mono">{{ node }}</b> on <b>{{ clusterName }}</b> to confirm</span>
                     <span class="field"><input v-model="typed" type="text" autocomplete="off" spellcheck="false" aria-label="Node name" /></span>
                 </label>
             </template>

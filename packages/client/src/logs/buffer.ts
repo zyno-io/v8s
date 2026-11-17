@@ -4,7 +4,12 @@
  * index so the UI's scroll anchors and search hits survive the oldest lines being dropped.
  */
 
+import { parseAnsi } from './ansi.ts';
+
 const NL = 0x0a;
+const ESC = 0x1b;
+/** Set in `cs` for a line whose visible text needs ANSI stripping before it can be searched. */
+const ESC_FLAG = 0x80000000;
 const CR = 0x0d;
 
 export interface LogBufferOptions {
@@ -12,17 +17,29 @@ export interface LogBufferOptions {
     capacity: number;
     /** Extra slots before a trim happens; amortises the compaction. Default 25% of capacity (at least 256). */
     slack?: number;
+    /** Cap on the bytes held (the arena): desktop 32 MiB, phone 8 MiB. Long lines must not make 50k lines unbounded. */
+    maxBytes?: number;
+    /** Merged stream: lines start with `<pod>/<container>\t` (not searchable). */
+    multi?: boolean;
 }
+
+export const MAX_BYTES_DESKTOP = 32 * 1024 * 1024;
+export const MAX_BYTES_PHONE = 8 * 1024 * 1024;
+const MIN_ARENA = 64 * 1024;
 
 const decoder = new TextDecoder('utf-8');
 
 export class LogBuffer {
     readonly capacity: number;
+    readonly maxBytes: number;
     private readonly slots: number;
     private arena: Uint8Array;
     private arenaLen = 0;
     private off: Uint32Array;
     private len: Uint32Array;
+    /** Per line: bytes of `<pod>/<container>\t` and timestamp prefix (search only looks past it), with ESC_FLAG when the line has escapes. */
+    private cs: Uint32Array;
+    private readonly multi: boolean;
     private count = 0;
     private firstAbs = 0;
     private partial: Uint8Array | null = null;
@@ -31,9 +48,12 @@ export class LogBuffer {
         this.capacity = Math.max(1, opts.capacity);
         const slack = opts.slack ?? Math.max(256, Math.floor(this.capacity / 4));
         this.slots = this.capacity + slack;
-        this.arena = new Uint8Array(64 * 1024);
+        this.maxBytes = Math.max(1024, opts.maxBytes ?? MAX_BYTES_DESKTOP);
+        this.arena = new Uint8Array(MIN_ARENA);
         this.off = new Uint32Array(Math.min(this.slots, 1024));
         this.len = new Uint32Array(this.off.length);
+        this.cs = new Uint32Array(this.off.length);
+        this.multi = !!opts.multi;
     }
 
     /** Absolute index of the first line still held; lines before it were dropped. */
@@ -90,8 +110,8 @@ export class LogBuffer {
     }
 
     private push(src: Uint8Array, from: number, to: number): void {
-        if (this.count >= this.slots) this.trim();
         const n = to - from;
+        if (this.count >= this.slots || this.arenaLen + n + 1 > this.maxBytes) this.trim(n + 1);
         if (this.arenaLen + n + 1 > this.arena.length) {
             let cap = this.arena.length;
             while (cap < this.arenaLen + n + 1) cap *= 2;
@@ -103,32 +123,60 @@ export class LogBuffer {
             const size = Math.min(this.slots, this.off.length * 2);
             const o = new Uint32Array(size);
             const l = new Uint32Array(size);
+            const c = new Uint32Array(size);
             o.set(this.off);
             l.set(this.len);
+            c.set(this.cs);
             this.off = o;
             this.len = l;
+            this.cs = c;
         }
         this.arena.set(src.subarray(from, to), this.arenaLen);
         this.arena[this.arenaLen + n] = NL;
         this.off[this.count] = this.arenaLen;
         this.len[this.count] = n;
+        this.cs[this.count] = (contentStart(src, from, to, this.multi) - from) | (src.subarray(from, to).includes(ESC) ? ESC_FLAG : 0);
         this.arenaLen += n + 1;
         this.count++;
     }
 
-    /** Drops the oldest lines down to `capacity` and compacts the arena. */
-    private trim(): void {
-        const drop = this.count - this.capacity;
+    /**
+     * Drops the oldest lines and compacts the arena: down to `capacity` when the slots are full, and, when the next line (`need`
+     * bytes) would pass `maxBytes`, down to 75% of it (amortises the copy). The newest data always survives. Shrinks an arena
+     * that has become much larger than what it holds.
+     */
+    private trim(need: number): void {
+        let drop = this.count >= this.slots ? Math.max(0, this.count - this.capacity) : 0;
+        if (this.arenaLen + need > this.maxBytes) {
+            const limit = Math.max(Math.floor(this.maxBytes * 0.75), need);
+            const remaining = (d: number) => (d >= this.count ? 0 : this.arenaLen - this.off[d]);
+            let lo = drop;
+            let hi = this.count;
+            while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (remaining(mid) + need <= limit) hi = mid;
+                else lo = mid + 1;
+            }
+            drop = lo;
+        }
         if (drop <= 0) return;
-        const start = this.off[drop];
+        const start = drop >= this.count ? this.arenaLen : this.off[drop];
         this.arena.copyWithin(0, start, this.arenaLen);
         this.arenaLen -= start;
         this.off.copyWithin(0, drop, this.count);
         this.len.copyWithin(0, drop, this.count);
-        const keep = this.count - drop;
+        this.cs.copyWithin(0, drop, this.count);
+        const keep = Math.max(0, this.count - drop);
         for (let i = 0; i < keep; i++) this.off[i] -= start;
         this.count = keep;
         this.firstAbs += drop;
+        let cap = MIN_ARENA;
+        while (cap < (this.arenaLen + need) * 2) cap *= 2;
+        if (this.arena.length > cap * 2) {
+            const next = new Uint8Array(cap);
+            next.set(this.arena.subarray(0, this.arenaLen));
+            this.arena = next;
+        }
     }
 
     has(abs: number): boolean {
@@ -146,8 +194,9 @@ export class LogBuffer {
     }
 
     /**
-     * Absolute indexes (ascending, one per line) of lines containing `pattern`, scanning lines `[fromAbs, total)`.
-     * ASCII letters fold case unless `matchCase`. The arena separates lines with `\n`, so a match never spans two lines.
+     * Absolute indexes (ascending, one per line) of lines whose VISIBLE text contains `pattern`, scanning lines `[fromAbs, total)`.
+     * Visible means what the viewer shows: after the pod/container and timestamp prefix, with ANSI escapes stripped (the same text
+     * the highlights are computed on). ASCII letters fold case unless `matchCase`. A match never spans two lines.
      */
     search(pattern: Uint8Array, matchCase: boolean, fromAbs = this.firstAbs): number[] {
         const out: number[] = [];
@@ -169,18 +218,86 @@ export class LogBuffer {
                 while (k < m && lo(a[i + k]) === p[k]) k++;
                 if (k === m) {
                     while (line + 1 < this.count && this.off[line + 1] <= i) line++;
-                    out.push(this.firstAbs + line);
-                    // skip to the next line
-                    i = this.off[line] + this.len[line] + 1;
-                    line++;
-                    if (line >= this.count) break;
-                    continue;
+                    const c = this.cs[line];
+                    if (!(c & ESC_FLAG) && i - this.off[line] >= c) {
+                        out.push(this.firstAbs + line);
+                        // skip to the next line
+                        i = this.off[line] + this.len[line] + 1;
+                        line++;
+                        if (line >= this.count) break;
+                        continue;
+                    }
+                    if (c & ESC_FLAG) {
+                        // Lines with escapes are decided on their stripped text below.
+                        i = this.off[line] + this.len[line] + 1;
+                        line++;
+                        if (line >= this.count) break;
+                        continue;
+                    }
+                    // A hit inside the prefix: keep looking in the same line.
                 }
             }
             i++;
         }
+        let esc: number[] | null = null;
+        for (let l = startLine; l < this.count; l++) {
+            if (!(this.cs[l] & ESC_FLAG)) continue;
+            esc ??= [];
+            esc.push(l);
+        }
+        if (esc) {
+            const needle = decoder.decode(pattern);
+            const want = matchCase ? needle : needle.toLowerCase();
+            const hits: number[] = [];
+            for (const l of esc) {
+                const start = this.off[l] + (this.cs[l] & ~ESC_FLAG);
+                const visible = parseAnsi(decoder.decode(this.arena.subarray(start, this.off[l] + this.len[l]))).text;
+                if ((matchCase ? visible : visible.toLowerCase()).includes(want)) hits.push(this.firstAbs + l);
+            }
+            if (hits.length) {
+                out.push(...hits);
+                out.sort((x, y) => x - y);
+            }
+        }
         return out;
     }
+}
+
+const SP = 0x20;
+const TAB = 0x09;
+const isWs = (b: number) => b === SP || (b >= 0x09 && b <= 0x0d);
+const isDigit = (b: number) => b >= 0x30 && b <= 0x39;
+
+/**
+ * Index in `src` where a line's visible content starts: past a `<pod>/<container>\t` prefix (multi only) and an RFC3339
+ * timestamp plus its space. Mirrors `splitLine`, on bytes.
+ */
+export function contentStart(src: Uint8Array, from: number, to: number, multi: boolean): number {
+    let p = from;
+    if (multi) {
+        let i = p;
+        while (i < to && !isWs(src[i]) && src[i] !== 0x2f) i++;
+        if (i > p && i < to && src[i] === 0x2f) {
+            const j0 = i + 1;
+            let j = j0;
+            while (j < to && !isWs(src[j])) j++;
+            if (j > j0 && j < to && src[j] === TAB) p = j + 1;
+        }
+    }
+    // \d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:\d\d)<space>
+    const dig = (i: number, n: number) => {
+        for (let k = 0; k < n; k++) if (i + k >= to || !isDigit(src[i + k])) return false;
+        return true;
+    };
+    if (!(dig(p, 4) && src[p + 4] === 0x2d && dig(p + 5, 2) && src[p + 7] === 0x2d && dig(p + 8, 2) && src[p + 10] === 0x54)) return p;
+    let i = p + 11;
+    const t0 = i;
+    while (i < to && (isDigit(src[i]) || src[i] === 0x3a || src[i] === 0x2e)) i++;
+    if (i === t0) return p;
+    if (i < to && src[i] === 0x5a) i++;
+    else if (i < to && (src[i] === 0x2b || src[i] === 0x2d) && dig(i + 1, 2) && src[i + 3] === 0x3a && dig(i + 4, 2)) i += 6;
+    else return p;
+    return i < to && src[i] === SP ? i + 1 : p;
 }
 
 const encoder = new TextEncoder();

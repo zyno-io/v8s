@@ -30,7 +30,7 @@ watch(d, async (v, old) => {
     err.value = '';
     busy.value = false;
     if (v) {
-        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        if (!old) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         num.value =
             v.type === 'scale' ? (v.current == null ? '' : String(v.current)) : v.type === 'rollback' ? String(Math.max(0, v.current - 1) || '') : '';
         await nextTick();

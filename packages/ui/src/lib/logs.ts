@@ -79,6 +79,10 @@ export const DEFAULT_TAIL = 1000;
 export const CAPACITY_PHONE = 5000;
 export const CAPACITY_DESKTOP = 50000;
 
+export const MAX_BYTES_DESKTOP = 32 * 1024 * 1024;
+export const MAX_BYTES_PHONE = 8 * 1024 * 1024;
+export const logMaxBytes = (phone: boolean): number => (phone ? MAX_BYTES_PHONE : MAX_BYTES_DESKTOP);
+
 export const logCapacity = (phone: boolean): number => (phone ? CAPACITY_PHONE : CAPACITY_DESKTOP);
 
 export interface StreamOptions {
@@ -98,7 +102,8 @@ export function streamParams(target: ObjectRef, o: StreamOptions): LogOpenOption
         timestamps: true,
         follow: o.follow && !o.previous,
         tailLines: o.tailLines,
-        capacity: logCapacity(o.phone)
+        capacity: logCapacity(o.phone),
+        maxBytes: logMaxBytes(o.phone)
     };
     if (kind === 'pod') {
         if (o.container) base.container = o.container;
@@ -111,9 +116,12 @@ export function streamParams(target: ObjectRef, o: StreamOptions): LogOpenOption
 }
 
 /** Params for the full-log download: same target, no tail limit, no follow. */
-export function downloadParams(target: ObjectRef, o: Pick<StreamOptions, 'container' | 'previous'>): Omit<LogOpenOptions, 'capacity' | 'multi'> {
+export function downloadParams(
+    target: ObjectRef,
+    o: Pick<StreamOptions, 'container' | 'previous'>
+): Omit<LogOpenOptions, 'capacity' | 'maxBytes' | 'multi'> {
     const p = streamParams(target, { ...o, follow: false, tailLines: 0, phone: false });
-    const { capacity: _c, multi: _m, tailLines: _t, ...rest } = p;
+    const { capacity: _c, maxBytes: _b, multi: _m, tailLines: _t, ...rest } = p;
     return rest;
 }
 

@@ -1,60 +1,41 @@
 <script setup lang="ts">
 import type { ShellHandle } from '@v8s/client';
 
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue';
 
 import { getAgent } from '@/lib/agent.ts';
 import { errorText, isCancelled } from '@/lib/mutations.ts';
-import { nodeShellRequest } from '@/lib/node-shell.ts';
+import { nodeShellNamespace, nodeShellRequest } from '@/lib/node-shell.ts';
+import { createSessionSlot } from '@/lib/session-slot.ts';
 import { nodeShellParams, privilegedDenied } from '@/lib/shell.ts';
 import { withWriteConfirm } from '@/lib/write-confirm.ts';
 
 const TerminalView = defineAsyncComponent(() => import('./TerminalView.vue'));
 
 const req = nodeShellRequest;
-const handle = shallowRef<ShellHandle | null>(null);
-const opening = ref(false);
+const slot = createSessionSlot<ShellHandle>();
+const { handle, opening, release } = slot;
 const error = ref('');
 const height = ref(360);
-let seq = 0;
 
 const ready = computed(() => handle.value?.ready.value ?? null);
 const exit = computed(() => handle.value?.exit.value ?? null);
 const connecting = computed(() => opening.value || handle.value?.state.value === 'connecting');
 const problem = computed(() => error.value || exit.value?.error || '');
+const nsName = computed(() => (req.value ? nodeShellNamespace(req.value.cluster) : ''));
 const denied = computed(() => privilegedDenied(problem.value));
-
-function release() {
-    seq++;
-    const h = handle.value;
-    handle.value = null;
-    opening.value = false;
-    if (h) {
-        h.onData = null;
-        h.close();
-    }
-}
 
 async function open() {
     const r = req.value;
-    if (!r || opening.value) return;
-    release();
-    const mine = seq;
+    if (!r) return;
     error.value = '';
-    opening.value = true;
     try {
         const agent = getAgent();
-        const h = await withWriteConfirm(r.cluster, extra => agent.openStream('nodeshell', { ...nodeShellParams(r.cluster, r.node), ...extra }));
-        if (mine !== seq) {
-            h.onData = null;
-            h.close();
-            return;
-        }
-        handle.value = h;
+        await slot.open(() =>
+            withWriteConfirm(r.cluster, extra => agent.openStream('nodeshell', { ...nodeShellParams(r.cluster, r.node), ...extra }))
+        );
     } catch (e) {
-        if (mine === seq && !isCancelled(e)) error.value = errorText(e);
-    } finally {
-        if (mine === seq) opening.value = false;
+        if (!isCancelled(e)) error.value = errorText(e);
     }
 }
 
@@ -127,13 +108,13 @@ function dragKey(e: KeyboardEvent) {
             <button type="button" class="btn sm" @click="close">Close</button>
         </header>
         <p v-if="error" class="notice danger" role="alert">
-            {{ error }}<template v-if="denied"> — this cluster does not allow privileged pods in v8s-system.</template>
+            {{ error }}<template v-if="denied"> — this cluster does not allow privileged pods in {{ nsName }}.</template>
         </p>
         <div v-if="exit" class="notice" role="status">
             <strong>Session ended</strong>
             <span>
                 exit code {{ exit.code }}<template v-if="exit.error">: {{ exit.error }}</template
-                ><template v-if="denied && !error"> — this cluster does not allow privileged pods in v8s-system.</template>
+                ><template v-if="denied && !error"> — this cluster does not allow privileged pods in {{ nsName }}.</template>
             </span>
             <button type="button" class="btn sm" @click="open">Reconnect</button>
         </div>

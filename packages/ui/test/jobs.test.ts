@@ -47,9 +47,23 @@ describe('start/cancel', () => {
         callMutating.mockResolvedValue({ jobId: 'j1' });
         const a = await startJob('c1', 'drain', { x: 1 });
         expect(a.jobId).toBe('j1');
-        expect(callMutating).toHaveBeenCalledWith('c1', 'jobs.start', { requestId: a.requestId, type: 'drain', params: { x: 1 } });
+        expect(callMutating).toHaveBeenCalledWith(
+            'c1',
+            'jobs.start',
+            { requestId: a.requestId, type: 'drain', params: { x: 1 } },
+            expect.any(Object)
+        );
         await startJob('c1', 'drain', {}, { requestId: a.requestId });
         expect(callMutating.mock.calls[1][2].requestId).toBe(a.requestId);
+        // A write_confirm retry replaces the requestId; the one returned (and reported) is the replacement.
+        callMutating.mockImplementationOnce(async (_c: string, _m: string, _p: unknown, o: { onRequestId?: (id: string) => void }) => {
+            o.onRequestId?.('fresh');
+            return { jobId: 'j2' };
+        });
+        const seen: string[] = [];
+        const b = await startJob('c1', 'drain', {}, { requestId: a.requestId, onRequestId: id => seen.push(id) });
+        expect(b.requestId).toBe('fresh');
+        expect(seen).toEqual(['fresh']);
     });
     it('cancels', async () => {
         await cancelJob('j1');

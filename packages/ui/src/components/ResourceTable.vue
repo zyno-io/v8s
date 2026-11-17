@@ -12,10 +12,10 @@ import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
-import { openObject } from '@/lib/drawer.ts';
+import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
 import { setPageKeyHandler } from '@/lib/keys.ts';
-import { tabsFor } from '@/lib/route.ts';
+import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
@@ -386,6 +386,24 @@ setPageKeyHandler(e => {
             if (!ui.value.focusId || !tabsFor(props.gvr).includes(tab)) return false;
             openRow(ui.value.focusId, tab);
             return true;
+        }
+        case 'e':
+        case 'd': {
+            // `e` edits the YAML and `d` describes (the Overview tab) of the focused row, else of the object open in the drawer.
+            const tab: DrawerTab = e.key === 'e' ? 'yaml' : 'overview';
+            if (!tabsFor(props.gvr).includes(tab)) return false;
+            if (e.key === 'e') editRequest.value = true;
+            if (ui.value.focusId && props.handle.rows.has(ui.value.focusId)) {
+                openRow(ui.value.focusId, tab);
+                return true;
+            }
+            const open = parseDrawer(props.gvr, router.currentRoute.value.query);
+            if (open) {
+                void openObject(router, open.ref, tab, true);
+                return true;
+            }
+            editRequest.value = false;
+            return false;
         }
         case 'Enter':
             if (ui.value.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {

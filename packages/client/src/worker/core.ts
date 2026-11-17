@@ -60,7 +60,7 @@ interface View {
 type Pending =
     | { kind: 'passthrough'; rid: number }
     | { kind: 'subscribe'; qid: number }
-    | { kind: 'logopen'; sid: number; capacity: number; multi: boolean }
+    | { kind: 'logopen'; sid: number; capacity: number; maxBytes?: number; multi: boolean }
     | { kind: 'ignore' };
 
 /** `ws://host/ws?x` → `ws://host/stream?x`. */
@@ -132,7 +132,7 @@ export class DataCore {
             }
             case 'log.open': {
                 const rid = this.nextRid++;
-                this.pending.set(rid, { kind: 'logopen', sid: msg.sid, capacity: msg.capacity, multi: msg.multi });
+                this.pending.set(rid, { kind: 'logopen', sid: msg.sid, capacity: msg.capacity, maxBytes: msg.maxBytes, multi: msg.multi });
                 this.sendRequest(rid, 'stream.open', { ...msg.params, type: 'logs' });
                 break;
             }
@@ -246,6 +246,9 @@ export class DataCore {
         for (const [, p] of this.pending) {
             if (p.kind === 'passthrough') {
                 this.io.post({ t: 'response', rid: p.rid, error: { code: 'unavailable', message: 'connection closed' } });
+            } else if (p.kind === 'logopen' && !this.cancelledLogs.delete(p.sid)) {
+                // A stream.open that never gets its response: settle the opener so the pane can offer Reconnect.
+                this.io.post({ t: 'log.error', sid: p.sid, error: { code: 'unavailable', message: 'connection closed' } });
             }
         }
         this.pending.clear();
@@ -272,7 +275,7 @@ export class DataCore {
             }
             const sid = p.sid;
             const session = new LogSession(
-                { sid, capacity: p.capacity, multi: p.multi },
+                { sid, capacity: p.capacity, maxBytes: p.maxBytes, multi: p.multi },
                 {
                     send: text => this.io.sendStream(sid, text),
                     closeSocket: () => this.io.closeStream(sid),

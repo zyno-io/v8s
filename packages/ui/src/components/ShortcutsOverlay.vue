@@ -17,6 +17,8 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['x', 'select the focused row'],
             ['l', 'open logs of the focused pod or workload'],
             ['s', 'open a shell in the focused pod'],
+            ['e', 'edit the YAML of the focused or open object'],
+            ['d', 'describe: open the focused object, Overview tab'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['?', 'show this list']

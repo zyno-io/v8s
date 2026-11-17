@@ -70,6 +70,17 @@ describe('DataCore streams and jobs', () => {
         expect(h.streams.length).toBe(0);
     });
 
+    it('a socket drop settles a pending log open with log.error unavailable (not a cancelled one)', () => {
+        const h = setup();
+        h.core.handleMain({ t: 'log.open', sid: 3, params: { type: 'logs' }, capacity: 10, multi: true });
+        h.core.handleMain({ t: 'log.open', sid: 4, params: { type: 'logs' }, capacity: 10, multi: true });
+        h.core.handleMain({ t: 'log.close', sid: 4 });
+        h.core.handleClosed('gone');
+        const errs = h.posted.filter(m => m.t === 'log.error');
+        expect(errs).toHaveLength(1);
+        expect(errs[0]).toMatchObject({ sid: 3, error: { code: 'unavailable' } });
+    });
+
     it('forwards Job frames', () => {
         const h = setup();
         h.core.handleFrame(encodeFrame(KindJob, 0, 0, { jobId: 'j1', type: 'drain', state: 'running', startedAt: 1, progress: [] }));
