@@ -149,7 +149,7 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
    └──────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
-- Each cluster progresses independently; a slow or broken cluster never blocks others. Its state shows in the cluster selector and in every multi-cluster view's toolbar (`syncing prod-eu 4,210/~12,000`).
+- Each cluster progresses independently; a slow or broken cluster never blocks others. Its state shows in the cluster selector and in every multi-cluster view's toolbar (`syncing prod-eu · 4,210 rows` on desktop; a percentage in hosted mode, so no unfiltered cluster-wide total is shown).
 - `authenticating` serializes identical exec-plugin commands so one IdP login serves several contexts.
 - `degraded` lists what is missing ("no permission to list `ingresses`; Ingress checks disabled").
 - `reconnecting` keeps last-known rows visible but greyed with "stale since T"; the outage is itself a `cluster.unreachable` problem.

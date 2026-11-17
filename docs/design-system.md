@@ -65,7 +65,7 @@ The core component. It is not built from PixelCI's `list-row` (14px × 18px padd
 - **Row hover** Row Hover fill; **selected** rows (checkbox column) Accent Soft fill; **focused** row the inset 2px focus ring (The Inset Ring Rule).
 - **Bulk action bar** appears at the bottom of the table, in the decision-bar style (Desk Grey strip, hairline top), when rows are selected: "3 selected · Delete · Restart · Suspend". One primary action at most.
 - **Keyboard**: `j`/`k` move focus, `Enter` opens detail, `x` toggles selection, `/` focuses filter, `e` edit YAML, `l` logs, `s` shell, `d` describe. Shown in a legend like PixelCI's shortcut legend.
-- **Empty, loading, partial** states: an empty filtered result says what filter hid what. While a cluster is still syncing, its rows stream in and the toolbar shows "syncing prod-eu (4,210 / ~12,000)". Never a full-table spinner.
+- **Empty, loading, partial** states: an empty filtered result says what filter hid what. While a cluster is still syncing, its rows stream in and the toolbar shows "syncing prod-eu · 4,210 rows" (desktop) or "syncing prod-eu · 35%" (hosted, where totals are never unfiltered). Never a full-table spinner.
 
 ### Filter bar
 

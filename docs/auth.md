@@ -37,7 +37,7 @@ The API server trusts the same IdP. v8s sends the user's own IdP-issued token as
 - **When it works**: self-managed clusters with `--oidc-*` flags or, better, **Structured Authentication Configuration** (`AuthenticationConfiguration`, GA since Kubernetes 1.34), which allows several JWT issuers and audiences and CEL claim mappings; EKS with an associated OIDC identity provider; AKS with Entra ID integration (via token exchange below); GKE via Identity Service or Workforce Identity Federation; Rancher-, Pinniped-, or Teleport-fronted clusters with their own variants.
 - **Audience: one per cluster, by default.** v8s performs an **RFC 8693 token exchange** (Keycloak, Okta, and others) or an on-behalf-of flow (Entra) at the IdP for a short-lived token whose `aud` is that cluster alone. A token handed to cluster `dev` is then useless against cluster `prod`, so neither a `dev` operator reading request logs nor a compromised connector can replay it elsewhere.
 - **Never forward the v8s login ID token.** Its audience is v8s itself.
-- **Shared audience is an explicit opt-in** ("these clusters are one trust domain"), for IdPs without token exchange. The cluster settings screen states the consequence: any cluster in the domain can replay a user's token against the others.
+- **Shared audience is an explicit opt-in** ("these clusters are one trust domain"), for IdPs without token exchange. It uses a **separate OIDC client registered for that trust domain** (not the v8s login client): v8s obtains that client's token for the user via the IdP's refresh flow, and every cluster in the domain trusts that client's audience. The cluster settings screen states the consequence: any cluster in the domain can replay a user's token against the others.
 - **Refresh**: the server refreshes tokens before expiry using the stored refresh token; a failed refresh marks the user's clusters `auth expired` and prompts re-login.
 - **Risk profile**: best of the four. v8s holds no cluster credential. It does hold IdP refresh tokens for users with live sessions, so a server compromise yields the ability to mint tokens for those users until their sessions expire or the refresh tokens are revoked at the IdP. Mitigations: refresh tokens encrypted with a KMS-held key, deleted at logout/expiry, IdP-side refresh-token rotation and short absolute lifetimes, and per-cluster audiences so stolen access tokens are narrow.
 
@@ -75,7 +75,7 @@ The hosted server must reach the API server. For clusters on private networks, P
 browser ──(session cookie, WS)──▶ v8s server
     session → user (sub, username, groups, IdP tokens)
     cluster → strategy
-        oidc-passthrough:  Authorization: Bearer <user id_token or exchanged token>
+        oidc-passthrough:  Authorization: Bearer <token exchanged for this cluster's audience>
         cloud-exchange:    Authorization: Bearer <EKS/AKS/GKE token for this user>
         impersonation:     Authorization: Bearer <impersonator token>
                            Impersonate-User: <mapped username>
@@ -101,6 +101,12 @@ Two paths, by sensitivity ([performance.md §10](performance.md#10-hosted-mode-f
 
 ## RBAC awareness
 
-Independent of strategy, the agent first resolves the user's identity **as the API server sees it** with `SelfSubjectReview` (exact username, groups, and extras after the cluster's own prefixes and claim mappings), then asks what the user can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions) and caches results for 60 s per user per cluster. The UI disables what the user cannot do and says why. In hosted mode this also decides which clusters appear in a user's selector: a cluster appears if the user can read **anything** in it, i.e. cluster-wide `list` on any tier-0 kind, or at least one `(namespace, GVR)` allowed by the per-namespace check in [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing) (namespaces enumerated from the hub cache, not from the user's own `list namespaces`, which namespace-scoped users usually lack). Clusters where the user can read nothing are hidden unless an admin pins them.
+Independent of strategy, the agent first resolves the user's identity **as the API server sees it** with `SelfSubjectReview` (exact username, groups, and extras after the cluster's own prefixes and claim mappings), then asks what the user can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions) and caches results for 60 s per user per cluster. The UI disables what the user cannot do and says why. In hosted mode this also decides which clusters appear in a user's selector, using **cheap signals only** (proving that a user has no access anywhere would need a SubjectAccessReview per namespace on webhook-authorizer clusters):
+
+- a cluster-wide `list` on any tier-0 kind (a handful of SubjectAccessReviews), or
+- a namespace configured for the user's groups on that cluster by an admin, or the user's own saved namespaces, confirmed by one SubjectAccessReview each, or
+- an admin pin for a group.
+
+Namespace-scoped users therefore see their clusters as long as an admin has mapped their groups to namespaces (or they have added a namespace themselves), without a sweep. Clusters with no positive signal are hidden.
 
 On desktop, a namespace-scoped user's namespaces cannot be discovered from the API (rules reviews take a namespace as input). v8s uses the kubeconfig context's namespace plus a per-cluster namespace list in settings, and offers to add namespaces as the user navigates to them.

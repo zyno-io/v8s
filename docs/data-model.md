@@ -11,7 +11,7 @@ resourceVersion                                                                 
 ```
 
 - URLs use the address: `/c/prod-eu/apps/deployments/payments/api`. Bookmarks survive object recreation.
-- The agent's store keys rows by an interned **row id** (`u32`, per cluster per GVR), mapped from `uid`. Row ids are what cross the wire; the UI never hashes uids per frame.
+- Inside the agent, rows are addressed by dense `u32` **handles** per `(cluster, GVR)`, mapped from `uid`. Handles never leave the agent. The wire carries **per-subscription ids** that are never reused ([performance.md §9](performance.md#9-wire-protocol-and-sync)), and actions resolve them back to `(cluster, uid)` in the agent.
 - A **cluster id** is a stable local id derived from the kubeconfig context (desktop) or the cluster record (hosted), not the API server URL, so two contexts to the same cluster stay distinct (they may carry different identities).
 
 ## Resource tiers

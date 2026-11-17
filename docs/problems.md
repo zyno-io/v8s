@@ -38,7 +38,7 @@ interface Problem {
 }
 ```
 
-**Stable IDs.** IDs hash the subject's **name**, not its uid, so a Deployment deleted and recreated by GitOps keeps its problem and its acknowledgement. The discriminator is class-specific: container name for crash loops, report name for policy failures, image `repository:tag` for vulnerability problems, `(src, dst, reason)` for drops. Pod-level problems that roll up to a workload use the workload's identity, so pod churn does not create new problems.
+**Stable IDs.** IDs hash the subject's **name**, not its uid, so a Deployment deleted and recreated by GitOps keeps its problem and its acknowledgement. The discriminator is class-specific: container name for crash loops, none for policy failures (one problem per resource; Kyverno names reports by the resource's uid, so the report name must not be used), image `repository:tag` for vulnerability problems, `(src, dst, reason)` for drops. Pod-level problems that roll up to a workload use the workload's identity, so pod churn does not create new problems.
 
 **No persistence needed for "since".** `since` comes from the evidence itself (the condition's `lastTransitionTime`, the container's `startedAt`, the Job's failure time), so it survives agent restarts without a database. Only acknowledgements are persisted.
 
