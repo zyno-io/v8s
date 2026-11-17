@@ -8,15 +8,15 @@ Open a pod's detail drawer and choose the **Logs** tab. The same tab exists on D
 
 | Control        | What it does                                                                      |
 | -------------- | --------------------------------------------------------------------------------- |
-| Container      | Choose a container, or all of them                                                |
+| Container      | Choose a container, or all pods and containers merged                             |
 | Follow         | Stream new lines as they arrive. Scrolling up pauses following                    |
 | Timestamps     | Show the line timestamps                                                          |
 | Wrap           | Wrap long lines                                                                   |
 | Previous       | Show the previous container instance (useful after a crash loop)                  |
-| Search         | Highlight matches and jump between them                                           |
+| Search         | Highlight matches and jump between them, with match case                          |
 | Download       | Save the full log to a file                                                       |
 
-- **Start.** v8s loads the last 1,000 lines, then follows. The tail length is a setting.
+- **Start.** v8s loads the last 1,000 lines by default, then follows. Choose 1,000, 5,000, or 10,000 in **Tail lines**.
 - **Merged workload logs.** Open Logs on a Deployment (or another workload, or a selector) to see every pod's output merged by timestamp. Merging happens in the agent, so it stays smooth. Merged logs are best on a desktop screen.
 - **Bounded memory.** The view keeps a ring buffer (about 50,000 lines on desktop, 5,000 on a phone). When older lines fall off, the view says "N earlier lines dropped, download full log".
 - **Download** streams straight from the cluster to a file; it does not pass through the UI, so a huge log does not slow the app.
@@ -29,7 +29,7 @@ v8s reads logs live from the pod. It stores nothing: when a pod is gone, so is i
 
 ## Pod shell and debug containers
 
-Open a pod and choose the **Shell** tab.
+Open a pod and choose the **Shell** tab, or press `s` on the pod's row. A shell opens only when you press **Connect**, and **Disconnect** ends it.
 
 - v8s tries `/bin/bash`, then `/bin/sh`, then `/busybox/sh` in the container you selected.
 - The terminal is a full terminal: resize, UTF-8, copy on select.
@@ -127,7 +127,7 @@ On a Node, choose **Cordon** or **Uncordon** (a patch to `spec.unschedulable`). 
    - unmanaged pods that will be lost;
    - pods using `emptyDir`;
    - DaemonSet pods that will be skipped.
-3. Set options if needed: ignore DaemonSets (on by default), delete `emptyDir` data, grace period, timeout, and, behind a second confirm, delete instead of evict.
+3. Set options if needed: ignore DaemonSets (on by default), delete `emptyDir` data, force (for pods without a controller), grace period, timeout, and, behind a second confirm, disable eviction so pods are deleted and PodDisruptionBudgets are not honoured.
 4. Confirm.
 
 Progress streams per pod (evicting, waiting on PDB, terminated). A drain is an agent-side **job**, so it survives a reload or a brief disconnect: reopen the node and its state is there. **Cancel** stops further evictions and leaves the node cordoned. If v8s stops mid-drain, the node stays cordoned (the safe state) and the node offers **Resume drain**. Running a drain again is safe.

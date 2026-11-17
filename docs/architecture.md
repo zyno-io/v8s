@@ -1,6 +1,6 @@
 # v8s architecture and product plan
 
-**Status:** proposal for review. Nothing here is built yet beyond a [decode spike](../spikes/decode-bench/README.md).
+**Status:** design document. v0.1.0 implements most of it; the [Status in v0.1.0](#status-in-v0-1-0) note in the Roadmap says what shipped and what did not. Where this page and the [user guide](guide/getting-started.md) differ, the guide describes what v0.1.0 does. The [decode spike](../spikes/decode-bench/README.md) backs the performance decisions.
 
 v8s is an open-source, multi-cluster Kubernetes manager built around one constraint: **it must stay fast on large clusters, many clusters at once, on a laptop and on a phone.** It ships as a desktop app and as a self-hosted web app that also works in a phone's browser, with first-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble support and a cross-cluster Problems view.
 
@@ -194,6 +194,20 @@ None of these needed a maintainer decision: each has a perf or ecosystem rationa
 
 ## Roadmap
 
+### Status in v0.1.0
+
+Phases P0 to P4 shipped, and the P5 items Hubble and Kubescape did too. In detail:
+
+- **Shipped:** the Go agent and the Vue UI (P0); the desktop app and `v8s serve`, multi-cluster selection, groups, linked contexts, YAML edit with dry run, create, logs, stars, bookmarks, search, the command bar (P1); shells, node shell, cordon and drain, port-forward on desktop, Flux, Helm, multi-pod logs (P2); the Problems engine and view with 51 classes, Kyverno, Trivy, and Kubescape views, the per-workload Security tab, cert-manager and Gateway API problem classes (P3); `v8s server` with OIDC pass-through, impersonation and kiosk strategies, the Helm chart, and the phone layout (P4); Hubble flows, drops, service map, and network problem classes, and the Kubescape summary ingest (P5).
+- **Not in v0.1.0:**
+  - **Installable PWA, offline Problems snapshot, and web push.** The phone uses the hosted web app in the browser.
+  - **Hosted shared cache.** Hosted mode runs per-user watches only.
+  - **Cloud token exchange and per-cluster audiences** (EKS, AKS on-behalf-of, GKE workforce). Pass-through uses the one cluster app ID token.
+  - **Hosted HTTP preview.** Port-forward is refused in hosted mode.
+  - **CEL user-defined detectors.**
+  - **Prometheus links and sparklines.**
+  - Also not built: SQLite or Postgres (hosted settings are JSON files), user sharding, desktop auto-update and `v8s://` links, the cross-cluster CVE index (`vuln.critical-fixable`), CSV and JSON export of vulnerabilities, Kubescape ApplicationProfile and NetworkNeighborhood viewers, and Problems presets per group in the UI.
+
 Each phase has exit criteria, including performance budgets that must pass in CI. Phases are sequential in emphasis, not strictly gated.
 
 ### P0 · Foundations
@@ -242,7 +256,7 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 
 ### P4 · Hosted, identity pass-through, mobile web
 
-- `v8s server` (self-hosted): OIDC login, cluster registry with linked contexts, groups, per-user state, Postgres/SQLite, Helm chart.
+- `v8s server` (self-hosted): OIDC login, cluster registry with linked contexts, groups, per-user state, Postgres/SQLite (v0.1.0: per-user JSON files under `dataDir`), Helm chart.
 - **OIDC pass-through**: per-user IdP tokens (an ID token for the cluster app registration, obtained by a server-side authorization-code flow) held for the session only and sent on every request, direct or through Warpgate; per-user watches, views, and problems, connected only while a client is open.
 - Optional strategies: per-cluster audiences, scoped impersonation, read-only kiosk; optional shared cache with per-user authorization filter for those.
 - **Mobile web**: responsive layouts (cards, bottom nav), touch targets, reduced-fan-out subscriptions, hold-to-confirm. Browser only; no install.

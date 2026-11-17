@@ -118,7 +118,7 @@ interface Detector {
 
 ### Integrations
 
-From [integrations.md](integrations.md): `helm.failed`, `helm.stuck-pending`, `flux.not-ready`, `flux.stalled`, `flux.stale`, `flux.source-failed`, `flux.controller-down`, `flux.dependency-blocked`, `flux.suspended` (off), `policy.fail`, `policy.error`, `policy.not-ready`, `policy.admission-denied`, `vuln.critical`, `vuln.high` (off), `vuln.critical-fixable` (off; needs the CVE index job), `misconfig.critical`, `misconfig.high` (off), `secret.exposed`, `rbac.high` (off), `network.policy-drops` (off), `network.l7-errors` (off), `network.dns-errors` (off), `hubble.relay-down`.
+From [integrations.md](integrations.md): `helm.failed`, `helm.stuck-pending`, `flux.not-ready`, `flux.stalled`, `flux.stale`, `flux.source-failed`, `flux.controller-down`, `flux.dependency-blocked`, `flux.suspended` (off), `policy.fail`, `policy.error`, `policy.not-ready`, `policy.admission-denied`, `vuln.critical`, `vuln.high` (off), `misconfig.critical`, `misconfig.high` (off), `secret.exposed`, `rbac.high` (off), `network.policy-drops` (off), `network.l7-errors` (off), `network.dns-errors` (off), `hubble.relay-down`.
 
 ## The problems baseline (always-on watches)
 

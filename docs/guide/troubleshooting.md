@@ -30,7 +30,7 @@ On Linux and Windows, the app uses the environment it was started with.
 - Plugins that prompt for an MFA code in the terminal cannot be answered from v8s. Run them once in a terminal, then retry.
 - Many contexts can share one IdP client. v8s serializes the first sign-in so you see one browser tab, not one per cluster. If you see several, the contexts use different plugin commands or arguments.
 
-In [hosted mode](/guide/hosted), an expired token marks your clusters `auth expired` and prompts you to sign in to v8s again.
+In [hosted mode](/guide/hosted#sign-in-and-sign-out), a lapsed cluster token shows a banner, "Sign in to the clusters to continue", with a **Sign in to clusters** button. Press it, and the clusters recover. If your v8s session itself ended, you are sent to sign in again.
 
 ## Write context rejected
 

@@ -8,7 +8,7 @@ v8s reads your kubeconfig, watches the clusters you select, and shows them in on
 2. **Open v8s.** It starts its own agent in the background. Nothing is connected yet, on purpose.
 3. **Pick clusters.** Open the cluster selector in the top bar. v8s lists every context from your kubeconfig. Tick the ones you want, or click a group chip, then press **Connect**. See [Clusters](/guide/clusters).
 4. **Find a problem.** Press `:` and type `pb`, then Enter. The [Problems view](/guide/problems) lists what is broken across every connected cluster, worst first.
-5. **Open it.** Press Enter on a row (or click it). The detail drawer shows status, events, and YAML. Use the Logs tab to read the pod's output and the Shell tab to get a terminal in it. See [Operations](/guide/operations).
+5. **Open it.** Press Enter on a problem to expand its evidence and quick actions, then `o` (or the open button) to open the object in the detail drawer. The drawer shows status, events, and YAML. Use the Logs tab (or press `l` on the row) to read the pod's output, and the Shell tab (or `s`) to get a terminal in it. See [Operations](/guide/operations).
 
 ::: tip You are not locked into one cluster
 Everything you just did spanned every cluster you selected. Add another with `:ctx +staging`, drop one with `:ctx -staging`. See [Navigation](/guide/navigation#the-command-bar).
@@ -78,5 +78,6 @@ Fake mode keeps its settings in memory unless you pass `--settings <file>`. Use 
 
 - Learn the [command bar and shortcuts](/guide/navigation).
 - Understand [clusters, groups, and linked contexts](/guide/clusters).
-- Set up [Problems presets](/guide/problems#presets-per-group) for your production group.
+- Choose which [problem classes](/guide/problems#what-it-finds) are on.
+- See everything the CLI can do in the [CLI reference](/guide/cli).
 - If something does not connect, see [Troubleshooting](/guide/troubleshooting).

@@ -20,12 +20,14 @@ You can see releases if you can `list` Secrets in the namespace; `get` is needed
 
 ## Release detail
 
-- **History.** Every revision and its status.
+The release drawer has six tabs:
+
+- **Overview.** Description, last updated, chart and app version, and the release's hooks (name, kind, events, weight).
+- **History.** Every revision and its status. Pick one revision to roll back to, or tick two to compare.
 - **Values.** Switch between the values you supplied and the computed values.
 - **Manifest.** The rendered manifest.
+- **Notes.** The chart's notes.
 - **Diff.** Pick any two revisions and see the difference in values and in the manifest. The diff is computed in the agent.
-- **Notes** and **hooks.**
-- **Resources.** The objects in the manifest, joined to the live objects with their health, so "deployed, but a Deployment is unhealthy" is visible.
 
 ## Actions
 
@@ -35,7 +37,7 @@ You can see releases if you can `list` Secrets in the namespace; `get` is needed
 | Uninstall | Remove the release. Options: keep history, wait, timeout, cascade policy. Type to confirm in production groups         |
 | Retry     | For a `failed` or stuck `pending-*` release, re-run the last upgrade with the chart and values stored in the release. No chart repository access is needed |
 
-For a stuck `pending-*` release, **Retry** first offers **Mark failed**, which is what people do by hand today so the release can be retried.
+For a stuck `pending-*` release, **Retry** offers **Mark failed** (on by default), which is what people do by hand today so the release can be retried.
 
 Each action is a [job](/guide/operations#the-jobs-tray), so a reload or a dropped connection does not lose track of it, and it keeps running for a few minutes if you close the window.
 

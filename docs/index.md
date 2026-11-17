@@ -37,7 +37,7 @@ features:
       link: /guide/flux
       linkText: Flux and Helm
     - title: Security and network
-      details: Kyverno policies and reports, Trivy Operator and Kubescape findings, and Hubble flows, drops, and service maps as built-in views instead of raw CRDs.
+      details: Kyverno policies with Audit and Enforce switches, Trivy Operator and Kubescape findings by image, and Hubble flows, drops, and service maps as built-in views instead of raw CRDs.
       link: /guide/security
       linkText: Security and network
     - title: Desktop, web, and phone
@@ -45,11 +45,11 @@ features:
       link: /guide/mobile
       linkText: On a phone
     - title: Your credential, all the way through
-      details: Requests carry your own credential to the API server or to an access gateway such as Warpgate. A linked write context takes over for writes. Secrets stay masked until you reveal a key.
+      details: Requests carry your own credential to the API server or to an access gateway such as Warpgate. A linked write context takes over for writes. Secrets stay masked until you reveal the object.
       link: /guide/clusters#linked-read-and-write-contexts
       linkText: Linked contexts
     - title: Keyboard first
-      details: A k9s-style command bar (`:ctx prod-us staging`, `:po payments`, `:deploy payments/api`), a search palette, and shortcuts for everything you do all day.
+      details: A k9s-style command bar (`:ctx prod-us staging`, `:po payments`, `:deploy payments/api`), a search palette, and shortcuts such as `l` for logs, `s` for a shell, `e` to edit YAML, and `d` to describe.
       link: /guide/navigation
       linkText: Navigation
 ---

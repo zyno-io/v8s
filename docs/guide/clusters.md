@@ -49,7 +49,6 @@ A group is a named set of clusters, such as `production`, `staging`, or `eu`.
 - Click a group chip to select exactly that group. Shift-click to add it.
 - **Manage** lets you rename a group, change its members to the current ticks, or delete it.
 - Mark a group as **production**. Destructive actions on clusters in a production group always require typing the object name (or the count) to confirm.
-- Groups also carry [Problems presets](/guide/problems#presets-per-group), so `production` can show everything while `staging` hides noisy classes.
 
 On a phone, group chips are the fast way to pick clusters. See [On a phone](/guide/mobile).
 

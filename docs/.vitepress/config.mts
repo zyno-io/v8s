@@ -90,7 +90,10 @@ export default defineConfig({
             },
             {
                 text: 'Reference',
-                items: [{ text: 'Agent-UI protocol', link: '/protocol' }]
+                items: [
+                    { text: 'CLI', link: '/guide/cli' },
+                    { text: 'Agent-UI protocol', link: '/protocol' }
+                ]
             },
             {
                 text: 'Design',

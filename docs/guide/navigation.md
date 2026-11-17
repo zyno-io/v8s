@@ -5,7 +5,8 @@ v8s is keyboard-first. Almost everything you can reach with the mouse is also re
 ## Layout
 
 - **Top bar.** The cluster selector, search, the problems badge, and the theme and user menu.
-- **Sidebar.** Resource types grouped as Starred, Overview, Problems, Workloads, Network, Config, Storage, Access, then integration sections (Flux, Helm, Security, Network flows) and Custom resources. Integration sections appear only when the integration is detected in at least one selected cluster. Custom resource groups are discovered from each cluster's CRDs and expand on demand.
+- **Sidebar.** Starred types first, then a Cluster section with **Overview**, **Problems**, and the cluster-level types, then Security (Vulnerabilities, Policies, and Trivy report types) and Network flows (Drops, Service map, Hubble status), then Workloads, Network, Config, Storage, Access, Flux, Helm, and More, and last Custom resources. Security, Network flows, and Flux appear only when the integration is detected in at least one selected cluster. Custom resource groups are discovered from each cluster's CRDs and expand on demand. On a desktop v8s opens on Pods, on a phone on Problems.
+- **Overview.** One card per selected cluster: connection state and version, node and pod counts (running, failing, pending, completed), problem counts by severity, GitOps health for Flux and Helm, and the integrations detected there. Open it from the sidebar.
 - **Table.** The current resource type across all selected clusters.
 - **Detail drawer.** Opens on the right when you select a row. See [Viewing and changing resources](/guide/resources).
 
@@ -26,18 +27,26 @@ Every resource list is the same component, so the controls work everywhere.
 
 ## Keyboard shortcuts
 
-| Key                | Action                                                      |
-| ------------------ | ----------------------------------------------------------- |
-| `:`                | Open the command bar                                        |
-| `/`                | Focus the filter                                            |
-| `j` / `k`          | Move the focus down / up (arrow keys also work)             |
-| `Enter`            | Open the focused row in the drawer                          |
-| `x`                | Select or deselect the focused row                          |
-| `Esc`              | Clear the filter, then the selection, then close the drawer |
-| `Ctrl+K` / `Cmd+K` | Open the search palette                                     |
-| `?`                | Show the shortcut list                                      |
+Press `?` for the same list in the app.
 
-`Esc` works in order, so repeated presses unwind your view one layer at a time. Inside the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits. v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs.
+| Key                | Action                                                                          |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `:`                | Open the command bar                                                            |
+| `/`                | Focus the filter                                                                |
+| `j` / `k`          | Move the focus down / up (arrow keys also work)                                 |
+| `Enter`            | Open the focused row in the drawer                                              |
+| `x`                | Select or deselect the focused row                                              |
+| `l`                | Open the Logs tab of the focused pod or workload                                |
+| `s`                | Open the Shell tab of the focused pod                                           |
+| `e`                | Edit the YAML of the focused row, or of the object open in the drawer           |
+| `d`                | Describe: open the focused row, or the open object, on the Overview tab         |
+| `Esc`              | Clear the filter, then the selection, then close the drawer                     |
+| `Ctrl+K` / `Cmd+K` | Open the search palette                                                         |
+| `?`                | Show the shortcut list                                                          |
+
+`l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).
+
+`Esc` works in order, so repeated presses unwind your view one layer at a time. Inside the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits. v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs. Shortcuts are off while you type in a text field.
 
 ## The command bar
 
@@ -97,7 +106,7 @@ The address always reflects what you are looking at. An open object adds the clu
 /r/apps/v1/deployments?c=prod-eu&ns=payments&n=api&tab=yaml
 ```
 
-Copy the URL from the browser, or use the one in your bookmark. In hosted mode, anyone who can sign in and has access to that cluster can open it. The desktop app also registers `v8s://` links.
+Copy the URL from the browser, or use the one in your bookmark. In hosted mode, anyone who can sign in and has access to that cluster can open it.
 
 ## Themes
 

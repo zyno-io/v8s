@@ -108,7 +108,7 @@ v8s sends `User-Agent: v8s/<version> (corr <id>)`, where the correlation id is a
 | | Desktop | Hosted |
 | --- | --- | --- |
 | Who authenticates to clusters | the user's kubeconfig credential | the user's own IdP token (OIDC pass-through, default); impersonation or kiosk only where an admin configures it |
-| Where credentials live | user's machine (plugins' own caches; OS keychain for v8s-held secrets) | v8s server memory and encrypted storage, for the session's lifetime only; never in the browser |
+| Where credentials live | user's machine (plugins' own caches) | v8s server memory, for the session's lifetime only; never in the browser. Impersonator and kiosk tokens come from the server's configuration (environment or files) |
 | Exec plugins | yes, natively | no (no user machine); replaced by server-side OIDC flows |
 | Cluster list | user's kubeconfig contexts | admin-configured cluster records, filtered to clusters the user can reach |
 | Linked write context | used automatically when an action needs it | same, plus optional step-up re-auth |

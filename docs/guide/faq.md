@@ -26,7 +26,7 @@ Yes. To v8s a gateway is a Kubernetes endpoint with OIDC, configured like any ot
 
 ## Are Secrets safe to browse?
 
-Secret lists show names and metadata only: values are never downloaded for a list. Values stay hidden until you reveal them, which needs `get` on that Secret. Secret values never go into the recent activity list. See [Secrets](/guide/resources#secrets).
+Secret lists show names and metadata only: values are never downloaded for a list. Values stay hidden until you choose **Reveal all** on the Secret, which fetches the whole object and needs `get` on that Secret. Secret values never go into the recent activity list. See [Secrets](/guide/resources#secrets).
 
 ## Can v8s keep my logs?
 

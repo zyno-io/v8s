@@ -57,11 +57,11 @@ macOS binaries are signed and notarized. The Windows executable is signed. Put t
 | Command       | What it does                                                                                                      |
 | ------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `v8s serve`   | Runs the agent on loopback, serves the embedded UI, and opens your browser. Flags: `--port`, `--no-browser`, `--kubeconfig` |
-| `v8s server`  | Runs hosted multi-user mode. See [Hosted mode](/guide/hosted)                                                     |
+| `v8s server`  | Runs hosted multi-user mode. Flag: `--config`. See [Hosted mode](/guide/hosted)                                   |
 | `v8s agent`   | Runs the bare agent. The desktop app launches this. Also used for [demo mode](/guide/getting-started#try-it-without-a-cluster-demo-mode) |
 | `v8s version` | Prints the version                                                                                                |
 
-`v8s <command> --help` lists every flag.
+Every flag is listed in the [CLI reference](/guide/cli).
 
 ## Verify downloads
 
@@ -91,34 +91,32 @@ gh attestation verify v8s_0.1.0_linux_amd64.tar.gz --repo zyno-io/v8s
 ## Container image
 
 ```sh
-docker run --rm -p 7931:7931 -v ~/.kube:/home/nonroot/.kube:ro ghcr.io/zyno-io/v8s:latest
+docker run --rm -p 7931:7931 \
+  -v $PWD/config.yaml:/etc/v8s/config.yaml:ro \
+  ghcr.io/zyno-io/v8s:0.1.0
 ```
 
 The image is distroless, runs as non-root, and is published for `linux/amd64` and `linux/arm64`. Tags are the exact version (`0.1.0`) and `latest` (stable releases only).
 
-The image's entrypoint is `v8s`, so you choose the mode by arguments. Hosted mode is the intended use:
-
-```sh
-docker run --rm -p 7931:7931 \
-  -v $PWD/config.yaml:/etc/v8s/config.yaml:ro \
-  ghcr.io/zyno-io/v8s:0.1.0 server --config /etc/v8s/config.yaml
-```
+The entrypoint is `v8s` and the default command is `server --config /etc/v8s/config.yaml`, so the image runs [hosted mode](/guide/hosted) and needs that configuration file. Pass other arguments to run another command. For example `docker run ghcr.io/zyno-io/v8s:0.1.0 version` prints the version.
 
 ::: warning Single-user mode in a container
-`agent` and `serve` run as one user with whatever credentials the container can reach, and have no login. Do not publish that port to a network other people can reach. Use `server` for shared deployments.
+`agent` and `serve` run as one user with whatever credentials the container can reach, and have no login. `serve` also binds to loopback inside the container, so a published port cannot reach it. Use `server` for shared deployments, and the [desktop app or a local `v8s serve`](/guide/getting-started) for personal use.
 :::
 
 ## Helm chart
 
-The Helm chart in `charts/v8s` deploys hosted mode: one Deployment running `v8s server`, a Service, and a ConfigMap for the configuration file. Secrets (OIDC client secret, impersonation tokens) are referenced from Kubernetes Secrets, not written into values.
+The Helm chart in `charts/v8s` deploys hosted mode: one Deployment running `v8s server`, a Service, a ConfigMap for the configuration file, an optional Ingress, and a PersistentVolumeClaim for the per-user settings. Secrets (OIDC client secret, private keys, impersonation tokens) are referenced from Kubernetes Secrets, not written into values. The chart is not published to a chart registry in v0.1.0: install it from a checkout of the repository at the release tag.
 
 ```sh
-helm install v8s ./charts/v8s \
+git clone --branch v0.1.0 https://github.com/zyno-io/v8s.git
+helm install v8s ./v8s/charts/v8s \
   --namespace v8s --create-namespace \
+  --set image.tag=0.1.0 \
   --values my-values.yaml
 ```
 
-The chart's values mirror the server configuration. See [Hosted mode](/guide/hosted#install-with-helm) for a full example and the chart's `values.yaml` for the exact keys in your version.
+Set `image.tag` explicitly: the chart's default tag is its `appVersion`, which is a development placeholder in this release. The values mirror the server configuration. [Hosted mode](/guide/hosted#with-helm) lists them and has a full example, and `charts/v8s/values.yaml` documents every key.
 
 ## Build from source
 

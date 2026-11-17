@@ -182,11 +182,11 @@ The strategy:
 ### Actions
 
 - **Rescan**: delete the report; the operator recreates it on its next reconcile. The button says exactly that ("Delete report to trigger a rescan").
-- Export CSV/JSON of a filtered vulnerability view (streamed from the agent).
+- Export CSV/JSON of a filtered vulnerability view (streamed from the agent). *Not built in v0.1.0.*
 
 ### Problems
 
-`vuln.critical` (critical count > 0, on by default), `vuln.high` (off by default), `vuln.critical-fixable` (critical with a fix available; needs the CVE index job, off by default, desktop-primary), `misconfig.critical`/`misconfig.high`, `secret.exposed`, `rbac.high`. Vulnerability problems are **per image, not per CVE**, so 300 CVEs in one image are one problem row ("nginx:1.25 · 4 critical, 31 high · 12 workloads").
+`vuln.critical` (critical count > 0, on by default), `vuln.high` (off by default), `misconfig.critical`/`misconfig.high`, `secret.exposed`, `rbac.high`. Vulnerability problems are **per image, not per CVE**, so 300 CVEs in one image are one problem row ("nginx:1.25 · 4 critical, 31 high · 12 workloads").
 
 ---
 

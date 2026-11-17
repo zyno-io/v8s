@@ -24,7 +24,7 @@ The server does the watching, so your phone's battery and data plan do not pay f
 | Choose clusters and groups                      | Yes. Group chips are the fast path                          |
 | Search objects by name                          | Yes                                                         |
 | Object detail: status, conditions, events       | Yes, full screen                                            |
-| Logs                                            | Yes, tail mode: last 500 lines, follow, search. Merged multi-pod logs are desktop-first |
+| Logs                                            | Yes: tail, follow, search, with a 5,000-line buffer. Merged multi-pod logs are desktop-first |
 | Flux status, suspend, resume, reconcile         | Yes. One-tap reconcile is the most common phone action      |
 | Helm status, history, rollback                  | Yes. Rollback is hold-to-confirm                            |
 | Scale, restart, delete a pod, trigger a CronJob | Yes, hold-to-confirm                                        |
@@ -36,7 +36,7 @@ The server does the watching, so your phone's battery and data plan do not pay f
 | Node shell                                      | Desktop only. Hidden on phones                              |
 | Port-forward                                    | Desktop only                                                |
 | Dense multi-cluster tables                      | Works as cards, but steers you to filtered views            |
-| Hubble service map, Flux graphs                 | Desktop-first. The phone shows lists instead of graphs      |
+| Hubble service map, Flux graphs                 | Desktop only. The phone has the Drops and Hubble status views |
 | Bulk actions across clusters                    | Desktop only. Too easy to fat-finger                        |
 
 ## Layout differences
@@ -52,4 +52,4 @@ On a phone, v8s subscribes narrowly: a summary of problems (about 1 KB), a small
 
 ## Not yet
 
-Installing v8s as an app (PWA) and push notifications are not part of the first release. v8s only evaluates problems while a client is open, so there is nothing to push from.
+Installing v8s as an app (PWA), offline use, and push notifications are not part of v0.1.0. v8s only evaluates problems while a client is open, so there is nothing to push from.

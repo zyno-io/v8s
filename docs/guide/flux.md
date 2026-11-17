@@ -18,7 +18,7 @@ v8s reads whichever API version your cluster serves, so it works across Flux upg
 
 The Flux overview spans every selected cluster:
 
-- Counts by kind and readiness, with failing objects first and a suspended count.
+- Readiness by kind: total, ready, not ready, reconciling or unknown, and suspended, with the failing objects listed first.
 - The health of Flux's own controllers (the Deployments in `flux-system`).
 - Objects that have not reconciled in three times their interval.
 
@@ -47,9 +47,8 @@ Select one or more objects, in one cluster or several, and use the action bar.
 | Suspend / Resume     | Sets `spec.suspend`                                                                                       |
 | Reconcile            | Requests a reconcile by setting `reconcile.fluxcd.io/requestedAt`                                         |
 | Reconcile with source| Reconciles the referenced source first, waits for it to finish, then reconciles the object              |
-| Force (HelmRelease)  | Forces a fresh install or upgrade run                                                                     |
+| Force reconcile (HelmRelease) | Forces a fresh install or upgrade run                                                            |
 | Reset failures (HelmRelease) | Clears the failure counters so remediation starts over                                              |
-| Open in Git          | Opens the repository at the revision, when the source is a known forge                                   |
 
 ### Reconcile feedback
 
@@ -57,9 +56,9 @@ After you request a reconcile, the row shows `Reconciling…` until Flux reports
 
 ## Kustomization detail
 
-- **Inventory.** The objects the Kustomization manages, each joined to the live object and its health. "This Kustomization is Ready but two of its Deployments are crash looping" is visible at a glance.
-- **Dependency graph.** The `dependsOn` graph for the cluster, drawn as a graph. If a chain is blocked, the root cause is the one marked.
-- **Events** for the object and its controller.
+- **Inventory** (a tab on the Kustomization). The objects it manages, each joined to the live object and its health. "This Kustomization is Ready but two of its Deployments are crash looping" is visible at a glance.
+- **Dependency graph** (Flux, Dependency graph in the sidebar). The `dependsOn` graph across sources, Kustomizations, and HelmReleases. If a chain is blocked, the root cause is the one marked.
+- **Events** for the object.
 
 Inventories can hold thousands of entries. v8s keeps them compact and joins them to live objects only when you open the detail.
 
@@ -69,11 +68,11 @@ A HelmRelease and the Helm release underneath it are the same thing seen from tw
 
 ## Sources
 
-A source's detail shows its artifact revision, size, and last fetch, and **Used by**: every Kustomization and HelmRelease whose `sourceRef` points at it.
+A source's detail shows its status, artifact revision, and conditions on the Overview tab. The `sourceRef` of each Kustomization and HelmRelease is a column in their tables, so you can sort and filter to find what uses a source.
 
 ## Editing Flux-managed objects
 
-If you edit an object that Flux manages, the YAML editor shows a banner naming the Kustomization or HelmRelease and offers **Open source**. Flux will revert a direct change at the next reconcile, so the change usually belongs in Git, or you can suspend the owner first. See [Viewing and changing resources](/guide/resources#gitops-banner).
+If you edit an object that Flux manages, the review step shows a banner naming the Kustomization or HelmRelease, and the object's Overview tab offers **Open source**. Flux will revert a direct change at the next reconcile, so the change usually belongs in Git, or you can suspend the owner first. See [Viewing and changing resources](/guide/resources#gitops-banner).
 
 ## Problems from Flux
 
