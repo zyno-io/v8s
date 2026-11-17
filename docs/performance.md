@@ -174,7 +174,7 @@ ViewQuery { clusters[], gvr | "v8s/problems", namespaces[] | "*", labelSelector,
 
 ### Everything else is passthrough
 
-The agent fully models read paths (ingest, views, problems, related-object queries). Everything else (GET/PUT/PATCH/DELETE of arbitrary objects, subresources, discovery, OpenAPI) is an **authenticated passthrough** that adds identity, rate limits, audit, and dry-run, without modelling the kind.
+The agent fully models read paths (ingest, views, problems, related-object queries). Everything else (GET/PUT/PATCH/DELETE of arbitrary objects, subresources, discovery, OpenAPI) is an **authenticated passthrough** that adds identity, rate limits, and dry-run, without modelling the kind.
 
 ## 7. UI rendering
 
@@ -301,8 +301,8 @@ Every OIDC pass-through cluster, direct or behind a gateway such as Warpgate, mu
   | Active team | Memory at budget | Watches (typical / worst case) |
   | --- | --- | --- |
   | 10 people × 6 clusters × 10k pods | ≈ 3 GB | 1,200–3,000 / ≤ 5,800 |
-  | 20 people × 10 clusters × 2k pods | ≈ 2 GB | 4,000–10,000 / ≤ 19,000 |
-  | 20 people × 10 clusters × 10k pods | ≈ 10 GB | 4,000–10,000 / ≤ 19,000 |
+  | 20 people × 10 clusters × 2k pods | ≈ 2 GB | 4,000–10,000 / ≤ 19,200 |
+  | 20 people × 10 clusters × 10k pods | ≈ 10 GB | 4,000–10,000 / ≤ 19,200 |
 
   "Active" means a v8s client is open; a team rarely has everyone in at once. Above ~10 GB the server shards by user (P5). The gateway's capacity for that many concurrent watch streams, and the size of its recordings, are the numbers to verify in P0.
 - **Read QPS** is limited per `(user, cluster)` with a per-cluster ceiling (§5). Ten users cold-syncing one cluster at once share that ceiling, so "first rows" for the later ones can exceed budget during a thundering-herd start; WatchList keeps each sync cheap for the API server.
@@ -321,8 +321,8 @@ For clusters where an admin has configured a v8s-held identity anyway (impersona
   5. Filtering is a namespace-bitset lookup per row on interned namespace ids, so it is effectively free.
 - **Never from the shared cache**: Secrets (including Helm release metadata, which is a per-user metadata watch), full-object GETs, logs, exec, port-forward, interactive Hubble flows, and every write. All of these go to the API server **as the user**, so the API server remains the authority for anything sensitive or mutating.
 - **Counts and aggregates are masked, not just rows.** Every count (sidebar, starred types, filter chips, the mobile problems summary, a Node's pod count, "12 workloads" on a vulnerability problem) is the sum of per-namespace counts over the user's visible-namespace bitset. Aggregated problems (per image, per drop pair, cross-cluster collapses) are stored as per-namespace parts and re-aggregated per authorization scope; cross-cluster collapse happens **after** filtering. A problem with several subjects (a drop between two workloads) is shown only if the user can see every subject's namespace.
-- **Problems** from shared-cache inputs are computed once per cluster and filtered as above. Detectors whose inputs are user-only run per user: Helm classes use the user's own Helm release watch (or a Flux HelmRelease's status, which is in the shared cache). Hubble network classes use the cluster's **direct relay URL** (an Ingress or internal Service the operator exposes for v8s) rather than a port-forward, so the hub needs no `pods/portforward` at all; `pods/portforward` in `kube-system` would let the hub forward to every pod there, since relay pod names are random and `resourceNames` cannot narrow it. Without a direct relay URL, hosted network classes are unavailable for that cluster. Results are filtered per user like any multi-subject problem.
-- **Hubble on shared-cache clusters**: the relay has no authorization of its own. Interactive flow subscriptions carry a server-injected `FlowFilter` restricting results to flows with at least one end in a namespace the user can see, and the server **redacts the other end** when its namespace is not visible: pod name, labels, workload, and IP are replaced by the namespace name, or by `world`/the Cilium reserved identity for non-pod endpoints. Users see that their pod talked to *something in* `payments`, never what. A direct relay URL is used on shared-cache clusters only with this filtering and redaction. On pass-through clusters Hubble always goes through a port-forward carrying the user's token ([integrations.md](integrations.md#hubble-cilium)).
+- **Problems** from shared-cache inputs are computed once per cluster and filtered as above. Detectors whose inputs are user-only run per user: Helm classes use the user's own Helm release watch (or a Flux HelmRelease's status, which is in the shared cache). Hubble network classes run through a port-forward with the cluster's configured identity (impersonating the user), and their results are filtered per user like any multi-subject problem.
+- **Hubble on shared-cache clusters**: the relay has no authorization of its own. Interactive flow subscriptions carry a server-injected `FlowFilter` restricting results to flows with at least one end in a namespace the user can see, and the server **redacts the other end** when its namespace is not visible: pod name, labels, workload, and IP are replaced by the namespace name, or by `world`/the Cilium reserved identity for non-pod endpoints. Users see that their pod talked to *something in* `payments`, never what. Hubble is always reached through a port-forward, never a direct relay URL ([integrations.md](integrations.md#hubble-cilium)).
 - **Views are shared** across sessions with the same normalized query and authorization scope; each session holds only its window and last-sent state (≤ 1 MB per session).
 - **Opt-in only**: the shared cache is enabled per cluster by an admin, and only for impersonation or kiosk clusters.
 

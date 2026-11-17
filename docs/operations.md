@@ -70,7 +70,7 @@ The container's own command already entered the host namespaces, so the agent **
 
 - **Namespace.** `v8s-system` by default, created on first use with `pod-security.kubernetes.io/enforce: privileged`. Clusters that forbid privileged pods anywhere simply cannot use node shell; v8s says so instead of trying to bypass it.
 - **Who can.** Node shell requires `create` on `pods` and `pods/attach` in that namespace. Cluster operators gate it with RBAC (a `v8s-node-shell` Role, documented). Hosted mode adds an org-level policy switch, off by default for viewer roles.
-- **Cleanup in three layers**, all through the profile that created the pod (usually elevated): the agent deletes the pod when the session ends; `activeDeadlineSeconds` (1 h) kills it if the agent dies or the gateway session expires first; and the next time the user uses that profile on the cluster, the agent deletes any `v8s-node-shell-*` pod whose `expires-at` has passed. Clusters can instead grant the default profile `delete pods` in `v8s-system` (a dedicated namespace, so the grant is narrow), letting cleanup run without elevation.
+- **Cleanup in three layers**, all through the profile that created the pod (usually elevated): the agent deletes the pod when the session ends; `activeDeadlineSeconds` kills it 1 h after it starts no matter what (if the agent dies, or if the elevated gateway session ends first and the delete fails); and the next time the user uses that profile on the cluster, the agent deletes any `v8s-node-shell-*` pod whose `expires-at` has passed. Clusters can instead grant the default profile `delete pods` in `v8s-system` (a dedicated namespace, so the grant is narrow), letting cleanup run without elevation.
 - **Image.** Pinned by digest and configurable per cluster (air-gapped registries). No `:latest`.
 - **Recording.** v8s records nothing; the gateway records the session. Session start/end appear in recent activity.
 - **Windows nodes** are out of scope for MVP (no nsenter equivalent).
@@ -81,7 +81,7 @@ The container's own command already entered the host namespaces, so the agent **
 - **Cordon/uncordon** patch `spec.unschedulable`. Bulk over a selection, cross-cluster allowed with type-to-confirm.
 - **Drain** follows `kubectl drain` semantics exactly (the agent embeds the same logic rather than reimplementing it): cordon, then evict via the **Eviction API** so PodDisruptionBudgets are respected; options for ignore-DaemonSets (default on), delete-emptyDir-data, grace period, timeout, pod selector, and disable-eviction (delete instead, behind a second confirm).
 - **Pre-flight** shows what will happen before anything is evicted: pods to evict, pods blocked by PDBs (with the PDB and its `disruptionsAllowed`), unmanaged pods that will be lost, emptyDir pods, DaemonSet pods skipped.
-- **Progress** streams per pod (evicting, waiting on PDB, terminated) and survives the UI closing: drain is an agent-side job with an ID, and reopening the node shows its state. Cancel stops further evictions and leaves the node cordoned.
+- **Progress** streams per pod (evicting, waiting on PDB, terminated) and survives a reload or a brief disconnect: drain is an agent-side job with an ID, and reopening the node shows its state. Cancel stops further evictions and leaves the node cordoned.
 - **Crash-safe**: if the agent dies mid-drain, the node stays cordoned (the safe state) and the UI offers "Resume drain". Drain is idempotent to re-run.
 - **Multi-node drain** runs nodes sequentially by default, configurable concurrency, stops on first PDB timeout.
 
@@ -101,7 +101,8 @@ The container's own command already entered the host namespaces, so the agent **
 ## Idempotency and long-running jobs
 
 - Every action carries a client-generated UUID; the agent dedupes for 10 minutes, so a retry after a reconnect cannot double-apply (two deletes, two rollbacks).
-- Drains, Helm actions, node-shell sessions, and multi-object bulk operations are **agent-owned jobs** with IDs. The UI can close, reconnect, or move to another device (hosted) and reattach to the job's progress.
+- Drains, Helm actions, node-shell sessions, and multi-object bulk operations are **agent-owned jobs** with IDs, so a reload or reconnect reattaches to the job's progress.
+- **The one bounded exception to "nothing runs without a client"**: a job the user already started continues after their last client closes until it finishes or for at most 15 minutes, whichever comes first, so a Helm rollback is not abandoned halfway. Then it stops. A stopped drain leaves the node cordoned (the safe state), and node-shell pods are deleted (or expire). Job state lives in memory only.
 - Targeted actions (scale, suspend, cordon, restart) use merge or strategic-merge patches, not full PUTs, so they never clobber concurrent changes.
 
 ## Recent activity

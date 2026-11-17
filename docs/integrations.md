@@ -198,7 +198,7 @@ Kubescape's operator stores results through its **storage component, an aggregat
 
 Kinds include VulnerabilityManifest, VulnerabilityManifestSummary (namespaced; the listing kind), WorkloadConfigurationScan and its summary, SBOMSyft, ApplicationProfile, NetworkNeighborhood, and a newer ContainerProfile. The exact set varies by version, so the agent builds its watch list from discovery and maps known kinds; unknown kinds fall back to generic browsing. **Verify** the kind list and scopes against a live install in P0.
 
-Runtime threat-detection alerts from Kubescape's node-agent are **not** stored in the Kubernetes API; they go to exporters (Alertmanager, HTTP, syslog, stdout). v8s does not ingest them in MVP. A later option is an HTTP exporter target on the agent for hosted installs.
+Runtime threat-detection alerts from Kubescape's node-agent are **not** stored in the Kubernetes API; they go to exporters (Alertmanager, HTTP, syslog, stdout). v8s does not ingest them.
 
 ### Strategy
 
@@ -223,7 +223,7 @@ The same classes as Trivy (`vuln.*`, `misconfig.*`), tagged with source `kubesca
 
 Hubble Relay exposes a **gRPC** `observer.Observer` service (GetFlows server-streaming, GetNodes, GetNamespaces, ServerStatus, GetAgentEvents, GetDebugEvents). The relay listens on 4245; its Service is port 80 (443 with TLS). Relay server TLS is off by default. There is no HTTP/JSON API.
 
-**Access path.** The agent opens a Kubernetes **port-forward** (through the API server, as the user) to a ready `hubble-relay` pod and speaks gRPC over it. This needs `create pods/portforward` in the relay's namespace, which v8s states plainly when it is missing. API-server service proxy is not used: it does not reliably carry HTTP/2 streaming. Directly reached clusters whose operators expose relay through an Ingress can configure a direct relay URL (and TLS) instead, on desktop. The relay has **no authorization of its own** (anyone who reaches it sees every flow), so a direct relay URL bypasses both RBAC and any gateway: it is **not allowed for clusters reached through a gateway**, and in hosted mode it is allowed only on shared-cache clusters, with server-injected per-user `FlowFilter`s and redaction of the far end ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)). Everywhere else, flows come through a port-forward carrying the user's own token.
+**Access path.** The agent opens a Kubernetes **port-forward** (through the API server, as the user) to a ready `hubble-relay` pod and speaks gRPC over it. This needs `create pods/portforward` in the relay's namespace, which v8s states plainly when it is missing. API-server service proxy is not used: it does not reliably carry HTTP/2 streaming. There are **no direct relay URLs**: the relay has no authorization of its own (anyone who reaches it sees every flow), so v8s always reaches it through a port-forward carrying the same credential as every other request for that cluster, whether the cluster is reached directly or through a gateway. On shared-cache clusters in hosted mode, flows are additionally filtered and redacted per user ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
 
 This is one of the reasons the agent is written in Go: the Cilium Observer client and flow types are Go, and gRPC streaming over a port-forward is straightforward there.
 

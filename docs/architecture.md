@@ -8,7 +8,7 @@ v8s is an open-source, multi-cluster Kubernetes manager built around one constra
 
 | Chapter | What it covers |
 | --- | --- |
-| **This document** | Vision, non-goals, competitive landscape, system architecture, key decisions, roadmap, open questions, repo layout |
+| **This document** | Vision, non-goals, competitive landscape, system architecture, key decisions, roadmap, decisions log, repo layout |
 | [performance.md](performance.md) | **The most important chapter.** Ingest and watch strategy, agent store and view engine, wire protocol, UI rendering, streaming, hosted fan-out, budgets, what not to do, CI benchmarks |
 | [data-model.md](data-model.md) | Object identity, resource coverage matrix (MVP vs later), generic CRD support, stars and bookmarks, persisted state |
 | [problems.md](problems.md) | Problems engine: detectors, incremental evaluation, problem classes, cross-cluster merge, filter UX |
@@ -103,7 +103,7 @@ Why one smart agent everywhere:
 - **A browser cannot talk to most API servers directly** (no CORS, client certificates, exec plugins, private networks), so a proxy exists in every mode regardless.
 - A **dumb proxy** (the Lens and Headlamp pattern) pushes full lists into the renderer. That is exactly how those tools fail at 10k+ objects.
 - With decoding, indexing, sorting, windowing, and problem detection in the agent, **UI cost scales with the viewport**. Mobile becomes a window-size setting, not a separate architecture. Desktop, hosted, and phone share one code path.
-- **Smart on reads, thin on the long tail.** The agent fully models the read paths (ingest, views, problems, related-object queries). Arbitrary GET/PUT/PATCH/DELETE, subresources, discovery, and OpenAPI go through an authenticated passthrough that adds identity, rate limits, dry run, and audit without modelling every kind.
+- **Smart on reads, thin on the long tail.** The agent fully models the read paths (ingest, views, problems, related-object queries). Arbitrary GET/PUT/PATCH/DELETE, subresources, discovery, and OpenAPI go through an authenticated passthrough that adds identity, rate limits, and dry run without modelling every kind.
 
 ### Binary modes
 
@@ -112,7 +112,6 @@ Why one smart agent everywhere:
 | `v8s agent --desktop` | Single user, kubeconfig credentials, loopback only, launched by Electron |
 | `v8s serve` | The same, plus serves the embedded UI on localhost and opens the browser |
 | `v8s server` | Multi-tenant hosted server |
-| `v8s auth token --cluster X` | Exec-credential plugin for kubeconfigs that v8s writes (built-in OIDC) |
 
 ### Agent components
 
@@ -167,7 +166,7 @@ A cluster can be reached through several **access profiles**, for example two Wa
 
 ### Cluster groups
 
-- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional colour dot and an optional "production" flag that turns on stricter confirms (type-to-confirm, optional reason prompt, optional step-up auth in hosted).
+- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional colour dot and an optional "production" flag that turns on stricter confirms (type-to-confirm, optional step-up auth in hosted).
 - Desktop: user-defined; v8s **suggests** groups from context-name patterns (`*-prod*`, `*-stg*`) on first run without applying them. Hosted: admin-defined groups plus personal groups.
 - Group chips in the cluster selector: click selects exactly that group, shift-click adds it.
 - Problem-class presets and default namespaces can be set per group.
@@ -318,7 +317,7 @@ v8s/
 ├── package.json                    # yarn workspaces: packages/*
 ├── go.work                         # agent + spikes
 ├── agent/                          # Go module: github.com/zyno-io/v8s/agent
-│   ├── cmd/v8s/                    # one binary: agent | serve | server | auth
+│   ├── cmd/v8s/                    # one binary: agent | serve | server
 │   ├── internal/
 │   │   ├── kube/                   # clients, kubeconfig, exec plugins, OIDC, passthrough, rate limits
 │   │   ├── ingest/                 # discovery, projecting ListerWatchers, tiers, linger, GC

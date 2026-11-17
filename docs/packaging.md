@@ -6,7 +6,7 @@ One Vue bundle and one Go binary produce every surface:
 | --- | --- | --- | --- |
 | **Desktop app** (macOS, Windows, Linux) | Electron renderer, byte-identical to the hosted bundle | `v8s agent --desktop`, a child process of Electron main | the user's kubeconfig |
 | **`v8s serve`** | the system browser on `http://127.0.0.1:<port>` | the same binary, serving the embedded UI | the user's kubeconfig |
-| **Hosted web** (desktop and phone browsers) | browser | `v8s server` (self-hosted, multi-user) | each user's own token, forwarded through the access gateway ([auth.md](auth.md)) |
+| **Hosted web** (desktop and phone browsers) | browser | `v8s server` (self-hosted, multi-user) | each user's own token, forwarded to the API server or through an access gateway ([auth.md](auth.md)) |
 | **Installable PWA** (later) | installed web app | `v8s server` | same as hosted |
 
 ## Desktop: Electron + Go agent
@@ -36,10 +36,10 @@ The agent can serve the embedded UI itself and open the system browser. Useful o
 ## Hosted: `v8s server`
 
 - **One binary, one Deployment** for the self-hosted install: OIDC login, cluster registry, groups, per-user state, per-user watches and problems, the passthrough, and the embedded UI.
-- **State store**: SQLite for single-replica installs, Postgres for HA. Stored: cluster records and identity strategies, impersonator credentials (only for clusters that use impersonation) encrypted under a KMS or file-provided key, users' groups/stars/bookmarks/layouts/acknowledgements, and records of running jobs (drains, Helm actions). Not stored: IdP tokens (session memory only) and logs of user activity.
+- **State store**: SQLite for single-replica installs, Postgres for HA. Stored: cluster records, identity strategies, and IdP-group mappings; the app-registration certificate and any impersonator credentials, encrypted under a KMS or file-provided key; users' groups, stars, bookmarks, layouts, and acknowledgements. Not stored: IdP tokens (session memory only), job state (memory only), and logs of user activity.
 - **Scaling**: watches are per `(user, cluster)`, so horizontal scaling shards **users** across replicas (consistent hashing on user id; all of a user's sessions land on one replica). MVP is single replica; sharding is P5 and only needed past roughly 10 GB of active per-user state ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
 - **Helm chart** and a container image (distroless, non-root, read-only root filesystem). Flux-friendly: the chart's values cover OIDC, cluster records, and storage.
-- **Origins**: the app on `v8s.example.com`; proxied pod HTTP previews (port-forward replacement) on a **separate registrable domain** (`<random-label>.v8s-preview.example.net`). A subdomain of the app's domain would be same-site, so SameSite cookies would not stop in-cluster content from making requests to the app, and that content could set cookies on the parent domain. Session cookies are `__Host-` prefixed (host-only). Previews share one registrable domain with each other, so each preview's token is also a `__Host-` cookie (a sibling preview cannot set or overwrite it), and the hosted SaaS registers its preview domain on the Public Suffix List so previews are cross-site to each other; self-hosters are told to do the same or accept the residual risk.
+- **Origins**: the app on `v8s.example.com`; proxied pod HTTP previews (port-forward replacement) on a **separate registrable domain** (`<random-label>.v8s-preview.example.net`). A subdomain of the app's domain would be same-site, so SameSite cookies would not stop in-cluster content from making requests to the app, and that content could set cookies on the parent domain. Session cookies are `__Host-` prefixed (host-only). Previews share one registrable domain with each other, so each preview's token is also a `__Host-` cookie (a sibling preview cannot set or overwrite it), and installs that expose previews to several users should register the preview domain on the Public Suffix List so previews are cross-site to each other.
 - **Self-hosted only.** No SaaS is planned, so there is no account or billing control plane and no in-cluster connector.
 
 ## Mobile web

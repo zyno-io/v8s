@@ -20,7 +20,7 @@ Start with [docs/architecture.md](docs/architecture.md). The performance chapter
 
 | Document | Topic |
 | --- | --- |
-| [architecture.md](docs/architecture.md) | Vision, landscape, architecture, decisions, roadmap, open questions, repo layout |
+| [architecture.md](docs/architecture.md) | Vision, landscape, architecture, decisions, roadmap, decisions log, repo layout |
 | [performance.md](docs/performance.md) | Watch strategy, agent store and views, wire protocol, rendering, streaming, budgets, CI |
 | [data-model.md](docs/data-model.md) | Identity, resource coverage matrix, CRDs, stars and bookmarks |
 | [problems.md](docs/problems.md) | Problems engine and view |
