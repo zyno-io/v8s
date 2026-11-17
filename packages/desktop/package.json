@@ -16,7 +16,7 @@
     },
     "devDependencies": {
         "@types/node": "^26.6.6",
-        "electron": "^39.0.0",
+        "electron": "39.8.10",
         "electron-builder": "^26.0.12",
         "esbuild": "^0.27.0",
         "typescript": "npm:typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2"

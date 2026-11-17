@@ -1,8 +1,12 @@
-# Minimal config: unsigned, local builds only (signing/notarization come later, see docs/packaging.md).
+# Release builds run in CI (.github/workflows/release.yml). Local unsigned build:
+#   scripts/build-agent.sh --no-ui --layout desktop --host   (from the repo root)
+#   CSC_IDENTITY_AUTO_DISCOVERY=false yarn workspace @v8s/desktop dist --publish never
 appId: io.zyno.v8s
 productName: v8s
+copyright: Copyright (c) Signal24
 directories:
   output: release
+  buildResources: build
 files:
   - out/**
   - package.json
@@ -10,15 +14,56 @@ extraResources:
   # Built UI, served through the app:// protocol.
   - from: ../ui/dist
     to: ui
-  # Agent binary for the target platform: `cd agent && go build -o bin/v8s ./cmd/v8s` (gitignored).
-  - from: ../../agent/bin
-    to: agent
+# The agent for each target is built by scripts/build-agent.sh --layout desktop into agent/bin/<os>-<arch>/
+# (gitignored); ${os} is mac|linux|win and ${arch} is x64|arm64. The packaged app finds it at resources/agent/v8s[.exe].
 mac:
   category: public.app-category.developer-tools
-  identity: null
-  target: [dir, dmg]
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  extraResources:
+    - from: ../../agent/bin/${os}-${arch}/v8s
+      to: agent/v8s
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # The nested agent binary must be signed with the hardened runtime too, or notarization rejects the app.
+  binaries:
+    - Contents/Resources/agent/v8s
+  # Signing: CSC_LINK / CSC_KEY_PASSWORD. Notarization: APPLE_API_KEY (path to the .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER.
+  # With CSC_IDENTITY_AUTO_DISCOVERY=false (local builds) the app is left unsigned and notarization is skipped.
+  notarize: true
+dmg:
+  sign: false
 linux:
-  target: [AppImage]
   category: Development
+  maintainer: Zyno Consulting <support@zyno.io>
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  extraResources:
+    - from: ../../agent/bin/${os}-${arch}/v8s
+      to: agent/v8s
 win:
-  target: [dir]
+  target:
+    - target: nsis
+      arch: [x64]
+  extraResources:
+    - from: ../../agent/bin/${os}-${arch}/v8s.exe
+      to: agent/v8s.exe
+  # Azure Artifact Signing; credentials come from AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET.
+  azureSignOptions:
+    publisherName: Signal24 LLC
+    endpoint: https://eus.codesigning.azure.net/
+    codeSigningAccountName: Signal24
+    certificateProfileName: zc-distribution
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+artifactName: v8s-${version}-${os}-${arch}.${ext}

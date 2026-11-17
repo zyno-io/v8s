@@ -1,7 +1,7 @@
 {
     "name": "v8s",
-    "private": true,
     "version": "0.0.0",
+    "private": true,
     "license": "MIT",
     "workspaces": [
         "packages/*"
@@ -14,12 +14,17 @@
         "lint": "oxlint",
         "format": "oxfmt --write .",
         "test:perf": "yarn workspace @v8s/ui test:perf",
+        "docs:dev": "vitepress dev docs",
+        "docs:build": "vitepress build docs",
+        "docs:preview": "vitepress preview docs",
+        "build:agent": "scripts/build-agent.sh",
         "protocol:gen": "cd agent && go run github.com/gzuidhof/tygo@v0.2.18 generate"
     },
     "devDependencies": {
         "lefthook": "^2.2.2",
         "oxfmt": "^0.78.0",
-        "oxlint": "^1.93.0"
+        "oxlint": "^1.93.0",
+        "vitepress": "^1.6.4"
     },
     "packageManager": "yarn@4.18.1"
 }

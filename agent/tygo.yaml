@@ -1,7 +1,7 @@
 packages:
-  - path: "github.com/zyno-io/v8s/agent/pkg/protocol"
-    output_path: "../packages/client/src/protocol.gen.ts"
+  - path: 'github.com/zyno-io/v8s/agent/pkg/protocol'
+    output_path: '../packages/client/src/protocol.gen.ts'
     type_mappings:
-      any: "unknown"
+      any: 'unknown'
     frontmatter: |
       // Generated from agent/pkg/protocol by tygo (`yarn protocol:gen`). Do not edit.

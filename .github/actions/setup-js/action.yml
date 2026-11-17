@@ -1,0 +1,26 @@
+name: Set up JS
+description: Node, Yarn 4 (via Corepack), the Yarn cache, and `yarn install --immutable` (build scripts disabled).
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 26.x
+        check-latest: true
+    # Node 25+ no longer bundles Corepack.
+    - name: Enable Corepack
+      shell: bash
+      run: npm install -g corepack@latest && corepack enable
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .yarn/cache
+        key: yarn-${{ runner.os }}-${{ hashFiles('yarn.lock') }}
+        restore-keys: yarn-${{ runner.os }}-
+    # Build scripts stay off (repo policy); jobs that need Electron run its installer explicitly.
+    - name: Install dependencies
+      shell: bash
+      env:
+        YARN_ENABLE_SCRIPTS: 'false'
+        YARN_ENABLE_TELEMETRY: '0'
+      run: yarn install --immutable

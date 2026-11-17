@@ -1,0 +1,14 @@
+.git
+.github
+.yarn
+**/node_modules
+**/dist
+**/out
+**/test-results
+**/playwright-report
+agent/bin
+packages/desktop/release
+spikes
+test
+docs
+*.md

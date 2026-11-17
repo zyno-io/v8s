@@ -1,4 +1,4 @@
-// Command v8s is the v8s agent. Subcommand: agent.
+// Command v8s is the v8s agent. Subcommands: agent, serve, version.
 package main
 
 import (
@@ -24,6 +24,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
+	"github.com/zyno-io/v8s/agent/internal/webui"
 	"github.com/zyno-io/v8s/agent/internal/wire"
 )
 
@@ -33,17 +34,16 @@ func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "agent" {
-		fmt.Fprintln(os.Stderr, "usage: v8s agent [flags]")
-		os.Exit(2)
-	}
-	if err := runAgent(os.Args[2:]); err != nil {
+	if err := dispatch(os.Args[1:]); err != nil {
+		if err == errUsage {
+			os.Exit(2)
+		}
 		fmt.Fprintln(os.Stderr, "v8s:", err)
 		os.Exit(1)
 	}
 }
 
-func runAgent(args []string) error {
+func runAgent(args []string, hooks agentHooks) error {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	listen := fs.String("listen", "127.0.0.1:0", "listen address")
 	kubeconfig := fs.String("kubeconfig", "", "kubeconfig path (default: client-go loading rules, $KUBECONFIG merged)")
@@ -110,13 +110,21 @@ func runAgent(args []string) error {
 		Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "",
 		StaticDir: *staticDir, Log: log,
 	})
-	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	handler := srv.Handler()
+	if *staticDir == "" && webui.Available() {
+		handler = withEmbeddedUI(handler)
+	}
+	hs := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
-	line, _ := json.Marshal(struct {
-		Port  int    `json:"port"`
-		Token string `json:"token"`
-	}{port, token})
-	fmt.Fprintf(os.Stdout, "%s\n", line)
+	if hooks.onReady != nil {
+		hooks.onReady(port, token)
+	} else {
+		line, _ := json.Marshal(struct {
+			Port  int    `json:"port"`
+			Token string `json:"token"`
+		}{port, token})
+		fmt.Fprintf(os.Stdout, "%s\n", line)
+	}
 	log.Info("agent listening", "addr", ln.Addr().String(), "version", version.Version, "mode", src.Mode())
 
 	if *lifeline {

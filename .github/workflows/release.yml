@@ -1,0 +1,361 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8s-release
+  cancel-in-progress: false
+
+env:
+  YARN_ENABLE_SCRIPTS: 'false'
+  YARN_ENABLE_TELEMETRY: '0'
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      prerelease: ${{ steps.parse.outputs.prerelease }}
+    steps:
+      - name: Parse tag
+        id: parse
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not vMAJOR.MINOR.PATCH[-prerelease]"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+  ui:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-js
+      - run: yarn workspace @v8s/ui build-only
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  # Static CLI binaries with the UI embedded. Linux and macOS cross-compile on ubuntu (macOS is signed with rcodesign and
+  # notarized there); Windows builds on windows-latest so the exe can be signed with Azure Artifact Signing.
+  cli:
+    needs: [meta, ui]
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, runner: ubuntu-latest }
+          - { goos: linux, goarch: arm64, runner: ubuntu-latest }
+          - { goos: darwin, goarch: amd64, runner: ubuntu-latest }
+          - { goos: darwin, goarch: arm64, runner: ubuntu-latest }
+          - { goos: windows, goarch: amd64, runner: windows-latest }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ui-dist
+          path: ui-dist
+
+      - name: Build
+        run: scripts/build-agent.sh --ui-dist ui-dist "$GOOS/$GOARCH"
+
+      # --- macOS: sign (hardened runtime) and notarize with rcodesign, as sp2p does ---
+      - name: Install rcodesign
+        if: matrix.goos == 'darwin'
+        run: |
+          RCODESIGN_VERSION="0.27.0"
+          curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$RUNNER_TEMP/rcodesign.tar.gz"
+          echo "a0e0c548b313026abf4f40a6e06554d352c6f4e1add6a87d626c94134a4ee564  $RUNNER_TEMP/rcodesign.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/rcodesign.tar.gz" -C "$RUNNER_TEMP"
+          sudo mv "$RUNNER_TEMP"/apple-codesign-*/rcodesign /usr/local/bin/
+
+      - name: Sign and notarize (macOS)
+        if: matrix.goos == 'darwin'
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          p12="$RUNNER_TEMP/apple-cert.p12"
+          pw="$RUNNER_TEMP/apple-cert-password"
+          raw="$RUNNER_TEMP/api-key-raw.json"
+          p8="$RUNNER_TEMP/apple-api-key.p8"
+          key="$RUNNER_TEMP/app-store-connect-key.json"
+          echo "$APPLE_CERTIFICATE_P12" | base64 -d > "$p12"
+          printf '%s' "$APPLE_CERTIFICATE_PASSWORD" > "$pw"
+          echo "$APP_STORE_CONNECT_API_KEY" | base64 -d > "$raw"
+          jq -r '.private_key' "$raw" > "$p8"
+          rcodesign encode-app-store-connect-api-key "$(jq -r '.issuer_id' "$raw")" "$(jq -r '.key_id' "$raw")" "$p8" -o "$key"
+          rm -f "$raw" "$p8"
+
+          bin="dist/${GOOS}_${GOARCH}/v8s"
+          rcodesign sign --p12-file "$p12" --p12-password-file "$pw" --code-signature-flags runtime "$bin"
+          zip -j "$RUNNER_TEMP/notarize.zip" "$bin"
+          rcodesign notary-submit --api-key-file "$key" --wait "$RUNNER_TEMP/notarize.zip"
+          rm -f "$p12" "$pw" "$key"
+
+      # --- Windows: Azure Artifact Signing (same account and service principal as sp2p) ---
+      - name: Sign (Windows)
+        if: matrix.goos == 'windows'
+        uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net/
+          signing-account-name: Signal24
+          certificate-profile-name: zc-distribution
+          files-folder: ${{ github.workspace }}\dist\windows_amd64
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify signature (Windows)
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature -FilePath dist\windows_amd64\v8s.exe
+          if ($sig.Status -ne 'Valid') { throw "Signature verification failed: $($sig.Status)" }
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          name="v8s_${VERSION}_${GOOS}_${GOARCH}"
+          mkdir -p release "stage/$name"
+          cp LICENSE README.md "stage/$name/"
+          if [[ "$GOOS" == windows ]]; then
+            cp "dist/${GOOS}_${GOARCH}/v8s.exe" "stage/$name/"
+            (cd stage && 7z a -tzip "../release/$name.zip" "$name" >/dev/null)
+          else
+            cp "dist/${GOOS}_${GOARCH}/v8s" "stage/$name/"
+            tar czf "release/$name.tar.gz" -C stage "$name"
+          fi
+          ls -l release
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Electron installers. Each runner first builds the matching agent into agent/bin/<os>-<arch>/.
+  desktop:
+    needs: [meta, ui]
+    runs-on: ${{ matrix.runner }}
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos, runner: macos-latest, targets: 'darwin/arm64 darwin/amd64', expect: 2 }
+          - { name: windows, runner: windows-latest, targets: 'windows/amd64', expect: 1 }
+          - { name: linux, runner: ubuntu-latest, targets: 'linux/amd64', expect: 1 }
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: ./.github/actions/setup-js
+      # Yarn build scripts are disabled, so fetch the Electron binary explicitly.
+      - name: Install Electron binary
+        run: node node_modules/electron/install.js
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+      - name: Install rpm tooling
+        if: matrix.name == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
+      - name: Build agent
+        run: scripts/build-agent.sh --no-ui --layout desktop ${{ matrix.targets }}
+      - name: Build main process
+        run: yarn workspace @v8s/desktop build
+
+      - name: Package (macOS)
+        if: matrix.name == 'macos'
+        env:
+          # electron-builder accepts the certificate base64-encoded in CSC_LINK.
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Notarization wants the API key as a .p8 file plus key id and issuer.
+          raw="$RUNNER_TEMP/api-key-raw.json"
+          echo "$APP_STORE_CONNECT_API_KEY" | base64 -d > "$raw"
+          jq -r '.private_key' "$raw" > "$RUNNER_TEMP/AuthKey.p8"
+          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+          APPLE_API_KEY_ID="$(jq -r '.key_id' "$raw")"
+          APPLE_API_ISSUER="$(jq -r '.issuer_id' "$raw")"
+          export APPLE_API_KEY_ID APPLE_API_ISSUER
+          rm -f "$raw"
+          yarn workspace @v8s/desktop exec electron-builder --mac --arm64 --x64 --publish never "-c.extraMetadata.version=$VERSION"
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Package (Windows)
+        if: matrix.name == 'windows'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: yarn workspace @v8s/desktop exec electron-builder --win --x64 --publish never "-c.extraMetadata.version=$VERSION"
+
+      - name: Package (Linux)
+        if: matrix.name == 'linux'
+        run: yarn workspace @v8s/desktop exec electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION"
+
+      # electron-builder only warns when an extraResources source is missing; fail instead of shipping an app without its agent.
+      - name: Verify the agent is bundled
+        env:
+          EXPECT: ${{ matrix.expect }}
+        run: |
+          set -euo pipefail
+          found=$(find packages/desktop/release -type f \( -path '*/Resources/agent/v8s' -o -path '*/resources/agent/v8s' -o -path '*/resources/agent/v8s.exe' \) | tee /dev/stderr | wc -l)
+          if [[ "$found" -ne "$EXPECT" ]]; then
+            echo "::error::Expected $EXPECT bundled agent binaries, found $found"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-${{ matrix.name }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.exe
+            packages/desktop/release/*.AppImage
+            packages/desktop/release/*.deb
+            packages/desktop/release/*.rpm
+          if-no-files-found: error
+          retention-days: 1
+
+  container:
+    needs: meta
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: tags
+        env:
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          tags="ghcr.io/zyno-io/v8s:${VERSION}"
+          if [[ "$PRERELEASE" != true ]]; then tags+=$'\n'"ghcr.io/zyno-io/v8s:latest"; fi
+          { echo 'tags<<EOF'; echo "$tags"; echo EOF; } >> "$GITHUB_OUTPUT"
+      # The Dockerfile builds the UI and cross-compiles the agent on the build platform, so no QEMU is needed.
+      - id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: VERSION=${{ env.VERSION }}
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.licenses=MIT
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/zyno-io/v8s
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  publish:
+    needs: [meta, cli, desktop, container]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # checkout can leave an annotated tag as a lightweight ref; refetch it so the tag message is available for the notes.
+      - name: Fetch tag object
+        run: git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: '{cli-*,desktop-*}'
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -l
+          find . -maxdepth 1 -type f -printf '%P\n' | LC_ALL=C sort | xargs sha256sum > "$RUNNER_TEMP/checksums.txt"
+          mv "$RUNNER_TEMP/checksums.txt" checksums.txt
+          cat checksums.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+          args=()
+          if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          mapfile -t assets < <(find dist -maxdepth 1 -type f | LC_ALL=C sort)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${args[@]}" "${assets[@]}"
+          fi

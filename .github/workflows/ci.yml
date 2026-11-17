@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Benchmark smoke
+        run: go test -run '^$' -bench . -benchtime 1x ./...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-js
+      - run: yarn lint
+      - run: yarn oxfmt --check .
+      - run: yarn typecheck
+      - run: yarn workspace @v8s/client test
+      - run: yarn workspace @v8s/ui test
+      - run: yarn workspace @v8s/ui build-only
+
+  perf:
+    name: Perf
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Informational until the budgets have been stable on shared runners.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - uses: ./.github/actions/setup-js
+      - name: Install Playwright Chromium
+        run: yarn workspace @v8s/ui playwright install --with-deps chromium
+      - name: Perf test
+        run: yarn test:perf
+      - name: Print numbers
+        if: always()
+        run: |
+          f=packages/ui/test-results/perf.json
+          if [ -f "$f" ]; then
+            jq . "$f"
+            { echo '### Perf'; echo '```json'; jq . "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no $f"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: perf
+          path: packages/ui/test-results/perf.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-js
+      - run: yarn docs:build

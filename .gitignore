@@ -1,5 +1,9 @@
 node_modules/
 dist/
+# Embedded UI: a copy of the UI build; only the placeholder is tracked so `go build` works without a UI build.
+!/agent/internal/webui/dist/
+/agent/internal/webui/dist/*
+!/agent/internal/webui/dist/.keep
 .DS_Store
 *.local
 /spikes/**/out/
@@ -10,3 +14,4 @@ playwright-report/
 /agent/bin/
 /packages/desktop/release/
 /test/e2e/out/
+.vitepress/cache/
