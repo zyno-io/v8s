@@ -31,8 +31,14 @@ type Service struct{ cfg Config }
 func New(cfg Config) *Service { return &Service{cfg: cfg} }
 
 // parseInventoryID splits "<namespace>_<name>_<group>_<kind>". Group and kind never contain "_", so
-// they are taken from the right and the name keeps any underscores; odd ids fall back to best effort.
+// they are taken from the right and the name keeps any underscores; odd ids fall back to best effort. cli-utils
+// encodes ":" in names (RBAC objects: "system:controller:x") as "__", which is decoded here.
 func parseInventoryID(id string) (ns, name, group, kind string) {
+	ns, name, group, kind = splitInventoryID(id)
+	return ns, strings.ReplaceAll(name, "__", ":"), group, kind
+}
+
+func splitInventoryID(id string) (ns, name, group, kind string) {
 	parts := strings.Split(id, "_")
 	n := len(parts)
 	if n >= 4 {

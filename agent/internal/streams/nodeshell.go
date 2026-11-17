@@ -211,17 +211,18 @@ func (m *Manager) openNodeShell(ctx context.Context, p protocol.StreamOpenParams
 		lctx, lim := m.limitsFor(ctx, via)
 		defer lim.Stop()
 		s := &interactive{t: t, touch: lim.Touch}
-		_ = s.finish2(lctx, m.runNodeShell(lctx, s, rt, cs, set, cluster, node, used))
+		_ = s.finish2(lctx, m.runNodeShell(lctx, s, rt, cs, set, cluster, node, routed))
 	}})
 	return res, nil
 }
 
 // runNodeShell starts (or joins) the node's shell pod and runs the session. It returns the session's error.
-func (m *Manager) runNodeShell(ctx context.Context, s *interactive, rt kubeRuntime, cs kubernetes.Interface, set protocol.NodeShellSettings, cluster, node, used string) error {
+func (m *Manager) runNodeShell(ctx context.Context, s *interactive, rt kubeRuntime, cs kubernetes.Interface, set protocol.NodeShellSettings, cluster, node string, routed *ops.Routed) error {
+	used := routed.ContextID
 	now := m.cfg.Now()
 	gcNodeShells(ctx, cs, set.Namespace, now) // layer 3 of the cleanup: expired pods of earlier sessions
 	if err := ensureNamespace(ctx, cs, set.Namespace); err != nil {
-		return fmt.Errorf("namespace %s: %s", set.Namespace, ops.MapError(err, false).Error())
+		return fmt.Errorf("namespace %s: %s", set.Namespace, m.mapRouted(ctx, err, routed, "get", "v1/namespaces", "", "", set.Namespace).Error())
 	}
 	ready := protocol.StreamReady{UsedContext: used, Container: "shell"}
 	// Another live node shell pod on this node: an attach would share the first session's TTY, so a further
@@ -241,7 +242,7 @@ func (m *Manager) runNodeShell(ctx context.Context, s *interactive, rt kubeRunti
 	pod.Name = nodeShellPrefix + randSuffix(5)
 	created, err := cs.CoreV1().Pods(set.Namespace).Create(ctx, pod, metav1.CreateOptions{FieldManager: "v8s"})
 	if err != nil {
-		return fmt.Errorf("could not create the node shell pod: %s", ops.MapError(err, false).Error())
+		return fmt.Errorf("could not create the node shell pod: %s", m.mapRouted(ctx, err, routed, "create", podsGVR, "", set.Namespace, "").Error())
 	}
 	name := created.Name
 	defer func() { // layer 1: delete the pod when the session ends

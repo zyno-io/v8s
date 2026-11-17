@@ -431,7 +431,9 @@ func TestEndToEndFake(t *testing.T) {
 		if first == nil {
 			first = &vp
 			rows = len(vp.Rows)
-			if vp.Total != 3000 || len(vp.IDs) != 4*300 || rows < 300 {
+			// the fake clusters churn (adds and deletes) while the test runs, so the total is only about 3000;
+			// the ids always cover the window, whose size is bounded by the total
+			if vp.Total < 2900 || vp.Total > 3100 || len(vp.IDs) != 4*300 || rows < 300 {
 				t.Fatalf("first patch: total=%d ids=%d rows=%d", vp.Total, len(vp.IDs), rows)
 			}
 			r := vp.Rows[0]

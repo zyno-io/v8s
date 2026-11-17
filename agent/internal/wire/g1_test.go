@@ -7,6 +7,7 @@ import (
 
 	"github.com/vmihailenco/msgpack/v5"
 	"github.com/zyno-io/v8s/agent/internal/fake"
+	"github.com/zyno-io/v8s/agent/internal/flux"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
@@ -57,7 +58,7 @@ func TestG1ViewsObjectsSettingsSearchOverWire(t *testing.T) {
 	if !strings.Contains(colKeys(sub.Columns), "upToDate") || sub.Columns[3].Label == "" {
 		t.Fatalf("deployment columns: %s", colKeys(sub.Columns))
 	}
-	c.waitTotal(1, 800)
+	c.waitTotal(1, 808) // 400 apps + 4 Flux controllers per cluster
 
 	// Flux kinds are curated mode B modules; their view spans both clusters
 	decodeResult(t, c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 2, Gen: 1,
@@ -66,7 +67,15 @@ func TestG1ViewsObjectsSettingsSearchOverWire(t *testing.T) {
 	if colKeys(sub.Columns) != "cluster,name,namespace,ready,suspended,revision,source,interval,lastReconcile,message,requestedAt,lastHandled,dependsOn,statusTone,createdAt" {
 		t.Fatalf("generic columns: %s", colKeys(sub.Columns))
 	}
-	c.waitTotal(2, 26)
+	nks := 0 // the demo Flux objects of both clusters
+	for _, cl := range []string{"prod-us", "prod-eu"} {
+		for _, o := range flux.DemoObjects(cl, time.Now()) {
+			if o.GetKind() == "Kustomization" {
+				nks++
+			}
+		}
+	}
+	c.waitTotal(2, nks)
 	if r := c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 3, Gen: 1, Query: protocol.ViewQuery{GVR: "nope.io/v1/nothing"}}, nil); r.Error == nil || r.Error.Code != "not_found" {
 		t.Fatalf("unserved kind: %+v", r.Error)
 	}

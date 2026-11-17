@@ -1,0 +1,146 @@
+{
+ "kind": "Table",
+ "apiVersion": "meta.k8s.io/v1",
+ "metadata": {
+  "resourceVersion": "54491"
+ },
+ "columnDefinitions": [
+  {
+   "name": "Name",
+   "type": "string",
+   "format": "name",
+   "description": "Name must be unique within a namespace. Is required when creating resources, although some resources may allow a client to request the generation of an appropriate name automatically. Name is primarily intended for creation idempotence and configuration definition. Cannot be updated. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names",
+   "priority": 0
+  },
+  {
+   "name": "Kind",
+   "type": "string",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .scope.kind",
+   "priority": 0
+  },
+  {
+   "name": "Name",
+   "type": "string",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .scope.name",
+   "priority": 0
+  },
+  {
+   "name": "Pass",
+   "type": "integer",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .summary.pass",
+   "priority": 0
+  },
+  {
+   "name": "Fail",
+   "type": "integer",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .summary.fail",
+   "priority": 0
+  },
+  {
+   "name": "Warn",
+   "type": "integer",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .summary.warn",
+   "priority": 0
+  },
+  {
+   "name": "Error",
+   "type": "integer",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .summary.error",
+   "priority": 0
+  },
+  {
+   "name": "Skip",
+   "type": "integer",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .summary.skip",
+   "priority": 0
+  },
+  {
+   "name": "Age",
+   "type": "date",
+   "format": "",
+   "description": "Custom resource definition column (in JSONPath format): .metadata.creationTimestamp",
+   "priority": 0
+  }
+ ],
+ "rows": [
+  {
+   "cells": [
+    "2561a689-85b5-49bb-96f2-3917e02a4a27",
+    "Deployment",
+    "catalog-api",
+    0,
+    1,
+    0,
+    0,
+    0,
+    "149m"
+   ],
+   "object": {
+    "kind": "PartialObjectMetadata",
+    "apiVersion": "meta.k8s.io/v1",
+    "metadata": {
+     "name": "2561a689-85b5-49bb-96f2-3917e02a4a27",
+     "namespace": "payments",
+     "uid": "d64b15e1-88d6-48c6-ab21-c2283b746afa",
+     "resourceVersion": "36209",
+     "generation": 5,
+     "creationTimestamp": "2026-11-17T08:13:30Z",
+     "labels": {
+      "app.kubernetes.io/managed-by": "kyverno"
+     },
+     "ownerReferences": [
+      {
+       "apiVersion": "apps/v1",
+       "kind": "Deployment",
+       "name": "catalog-api",
+       "uid": "2561a689-85b5-49bb-96f2-3917e02a4a27"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "cells": [
+    "b84dca7e-a8b5-4486-bd7f-4b22f7024590",
+    "Deployment",
+    "payments-api",
+    0,
+    1,
+    0,
+    0,
+    0,
+    "149m"
+   ],
+   "object": {
+    "kind": "PartialObjectMetadata",
+    "apiVersion": "meta.k8s.io/v1",
+    "metadata": {
+     "name": "b84dca7e-a8b5-4486-bd7f-4b22f7024590",
+     "namespace": "payments",
+     "uid": "bd95371e-2a14-4707-918a-3f56d65897e8",
+     "resourceVersion": "44618",
+     "generation": 4,
+     "creationTimestamp": "2026-11-17T08:13:30Z",
+     "labels": {
+      "app.kubernetes.io/managed-by": "kyverno"
+     },
+     "ownerReferences": [
+      {
+       "apiVersion": "apps/v1",
+       "kind": "Deployment",
+       "name": "payments-api",
+       "uid": "b84dca7e-a8b5-4486-bd7f-4b22f7024590"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

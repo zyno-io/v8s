@@ -82,6 +82,13 @@ type Hello struct {
 //	"flux.graph"         FluxGraphParams → FluxGraphResult
 //	"helm.release"       HelmReleaseParams → HelmRelease
 //	"helm.diff"          HelmDiffParams → HelmDiffResult
+//	"problems.classes"   → ProblemsClassesResult (no params)
+//	"problems.evidence"  ProblemsEvidenceParams → ProblemsEvidenceResult
+//	"problems.ack"       ProblemsAckParams → (empty)
+//	"problems.unack"     ProblemsUnackParams → (empty)
+//	"hubble.status"      HubbleStatusParams → HubbleStatus
+//	"hubble.serviceMap"  HubbleServiceMapParams → HubbleServiceMap
+//	"hubble.drops"       HubbleDropsParams → HubbleDrops
 type Request struct {
 	Method string `msgpack:"method" json:"method"`
 	Params any    `msgpack:"params,omitempty" json:"params,omitempty" tstype:"unknown"`
@@ -301,6 +308,10 @@ type ObjectRef struct {
 	GVR       string `msgpack:"gvr" json:"gvr"`
 	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
 	Name      string `msgpack:"name,omitempty" json:"name,omitempty"` // empty only for object.dryRun/apply in create mode
+	// UID, when set, pins the request to one incarnation of the object: object.delete sends it as a precondition,
+	// object.action and update-mode object.apply verify the live uid first and fail with code "conflict" and the
+	// message "object was replaced" when the object was deleted and recreated; streams and jobs check it too.
+	UID string `msgpack:"uid,omitempty" json:"uid,omitempty"`
 }
 
 type ObjectGetParams struct {
@@ -620,6 +631,8 @@ type StreamOpenParams struct {
 	Image        string       `msgpack:"image,omitempty" json:"image,omitempty"`
 	Node         string       `msgpack:"node,omitempty" json:"node,omitempty"`
 	Port         int          `msgpack:"port,omitempty" json:"port,omitempty"`
+	// Flows: type "flows" (Hubble), see hubble.go.
+	Flows *FlowsStreamParams `msgpack:"flows,omitempty" json:"flows,omitempty"`
 	// UseWriteContext as on ObjectApplyParams.
 	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }

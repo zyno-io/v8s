@@ -1,0 +1,103 @@
+{
+ "kind": "Table",
+ "apiVersion": "meta.k8s.io/v1",
+ "metadata": {
+  "resourceVersion": "54491",
+  "continue": "eyJ2IjoibWV0YS5rOHMuaW8vdjEiLCJydiI6NTQ0OTEsInN0YXJ0IjoiL2t1YmUtcHVibGljL3JvbGUtNTU0Y2Y2ZmNjZFx1MDAwMCJ9",
+  "remainingItemCount": 23
+ },
+ "columnDefinitions": [
+  {
+   "name": "Name",
+   "type": "string",
+   "format": "name",
+   "description": "Name must be unique within a namespace. Is required when creating resources, although some resources may allow a client to request the generation of an appropriate name automatically. Name is primarily intended for creation idempotence and configuration definition. Cannot be updated. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names",
+   "priority": 0
+  },
+  {
+   "name": "Scanner",
+   "type": "string",
+   "format": "",
+   "description": "The name of the rbac assessment scanner",
+   "priority": 0
+  },
+  {
+   "name": "Age",
+   "type": "date",
+   "format": "",
+   "description": "The age of the report",
+   "priority": 0
+  },
+  {
+   "name": "Critical",
+   "type": "integer",
+   "format": "",
+   "description": "The number of failed checks with critical severity",
+   "priority": 1
+  },
+  {
+   "name": "High",
+   "type": "integer",
+   "format": "",
+   "description": "The number of failed checks with high severity",
+   "priority": 1
+  },
+  {
+   "name": "Medium",
+   "type": "integer",
+   "format": "",
+   "description": "The number of failed checks with medium severity",
+   "priority": 1
+  },
+  {
+   "name": "Low",
+   "type": "integer",
+   "format": "",
+   "description": "The number of failed checks with low severity",
+   "priority": 1
+  }
+ ],
+ "rows": [
+  {
+   "cells": [
+    "role-554cf6fccd",
+    "Trivy",
+    "149m",
+    0,
+    0,
+    0,
+    0
+   ],
+   "object": {
+    "kind": "PartialObjectMetadata",
+    "apiVersion": "meta.k8s.io/v1",
+    "metadata": {
+     "name": "role-554cf6fccd",
+     "namespace": "kube-public",
+     "uid": "68d51f0c-3e7d-4858-af06-92b8e41bc947",
+     "resourceVersion": "2499",
+     "generation": 1,
+     "creationTimestamp": "2026-11-17T08:13:49Z",
+     "labels": {
+      "app.kubernetes.io/managed-by": "trivy-operator",
+      "plugin-config-hash": "9f85fb657",
+      "resource-spec-hash": "747c5d46f4",
+      "trivy-operator.resource.kind": "Role",
+      "trivy-operator.resource.name-hash": "554cf6fccd",
+      "trivy-operator.resource.namespace": "kube-public"
+     },
+     "ownerReferences": [
+      {
+       "apiVersion": "rbac.authorization.k8s.io/v1",
+       "kind": "Role",
+       "name": "kubeadm:bootstrap-signer-clusterinfo",
+       "uid": "57a1b770-f9aa-43c2-88ae-55f21f6bc73c",
+       "controller": true,
+       "blockOwnerDeletion": false
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

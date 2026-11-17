@@ -10,6 +10,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/store"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -80,6 +81,9 @@ type runner struct {
 
 	disc     atomic.Pointer[discState]
 	discKick chan struct{}
+
+	pe     *problems.Engine // the cluster's problems engine (nil: problems are not enabled)
+	gcOnce sync.Once
 }
 
 func (r *runner) state() protocol.ClusterState {
@@ -91,6 +95,18 @@ func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
 	if r.phase.Load() != p || r.message.Load() != msg {
 		r.phase.Store(p)
 		r.message.Store(msg)
+		if r.pe != nil {
+			r.pe.SetPhase(p, msg)
+			if p == protocol.PhaseReady {
+				r.gcOnce.Do(func() {
+					time.AfterFunc(30*time.Second, func() {
+						if r.ctx.Err() == nil && r.m.problems != nil {
+							r.m.problems.GCAcks(r.id)
+						}
+					})
+				})
+			}
+		}
 		r.m.kick()
 	}
 }
@@ -114,6 +130,13 @@ func (r *runner) discoverLoop() {
 				d.byG[d.list[i].GVR()] = &d.list[i]
 			}
 			r.disc.Store(d)
+			if r.pe != nil {
+				grs := make(map[string]bool, len(res))
+				for i := range res {
+					grs[problems.GR(res[i].GVR())] = true
+				}
+				r.pe.SetDiscovery(grs)
+			}
 			r.m.kick()
 			r.m.reconcileAll()
 		}
@@ -253,6 +276,9 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	refl := cache.NewReflectorWithOptions(lw, &ingest.Row{}, w.st, cache.ReflectorOptions{Name: gvr + "/" + r.id, TypeDescription: gvr})
 	refl.WatchListPageSize = 500 // the fallback LIST (and relists) page instead of one huge response
 	r.watches[gvr] = w
+	if r.pe != nil {
+		r.pe.Attach(gvr, w.st)
+	}
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -291,6 +317,9 @@ func (r *runner) stopLocked(w *watchEntry) {
 		w.linger = nil
 	}
 	r.m.eng.DetachKind(r.id, w.gvr)
+	if r.pe != nil {
+		r.pe.Detach(w.gvr)
+	}
 	w.cancel()
 	go func() {
 		<-w.done
@@ -386,7 +415,7 @@ func (r *runner) startOptionalBaseline() {
 			continue
 		}
 		m := ingest.ResolveDiscovered(res.Group, res.Version, res.Resource, res.Kind, res.Namespaced)
-		if m == nil || !m.Optional || !m.Tier0 || r.watches[m.GVR] != nil {
+		if m == nil || !m.Optional || r.watches[m.GVR] != nil || !(m.Tier0 || r.gated(m)) {
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {
@@ -395,9 +424,32 @@ func (r *runner) startOptionalBaseline() {
 	}
 }
 
+// gated reports whether a module is part of the baseline because the problem class it feeds is enabled.
+func (r *runner) gated(m *ingest.Module) bool {
+	return m.GateClass != "" && r.m.problems != nil && r.m.problems.ClassEnabled(r.id, m.GateClass)
+}
+
+// startGatedBaseline starts the watches of built-in kinds that only feed an optional problem class (HPAs for
+// hpa.unable, PVs for pv.failed) once that class is enabled.
+func (r *runner) startGatedBaseline() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range ingest.CuratedModules() {
+		if m.Optional || m.Tier0 || m.GateClass == "" || r.watches[m.GVR] != nil || !r.gated(m) {
+			continue
+		}
+		if _, err := r.startLocked(m.GVR, true); err != nil {
+			r.m.log.Debug("gated baseline watch failed", "cluster", r.id, "gvr", m.GVR, "err", err)
+		}
+	}
+}
+
 func (r *runner) attachAll() {
 	r.mu.Lock()
 	r.attached = true
+	if r.pe != nil {
+		r.m.eng.AttachKind(r.id, problems.GVR, r.pe.Store())
+	}
 	for gvr, w := range r.watches {
 		r.m.eng.AttachKind(r.id, gvr, w.st)
 	}

@@ -104,6 +104,10 @@ func Classify(pods []corev1.Pod, pdbs []policyv1.PodDisruptionBudget, opts proto
 			res.Unmanaged = append(res.Unmanaged, dp)
 			continue
 		}
+		if c.Kind == "DaemonSet" { // only reached with ignoreDaemonSets off: kubectl refuses the drain
+			res.Blocked = append(res.Blocked, dp)
+			continue
+		}
 		if pdb := blockingPDB(p, pdbs); pdb != nil && !opts.DisableEviction {
 			dp.PDB = pdb
 			res.Blocked = append(res.Blocked, dp)
@@ -122,7 +126,8 @@ func Classify(pods []corev1.Pod, pdbs []policyv1.PodDisruptionBudget, opts proto
 	return res
 }
 
-// blockingPDB returns a PDB covering p that allows no disruption right now.
+// blockingPDB returns a PDB covering p that allows no disruption right now. A nil selector matches no pod; an
+// empty one matches every pod in the namespace.
 func blockingPDB(p *corev1.Pod, pdbs []policyv1.PodDisruptionBudget) *protocol.DrainPDB {
 	for i := range pdbs {
 		b := &pdbs[i]
@@ -130,7 +135,7 @@ func blockingPDB(p *corev1.Pod, pdbs []policyv1.PodDisruptionBudget) *protocol.D
 			continue
 		}
 		s, err := metav1.LabelSelectorAsSelector(b.Spec.Selector)
-		if err != nil || s.Empty() || !s.Matches(labels.Set(p.Labels)) {
+		if err != nil || !s.Matches(labels.Set(p.Labels)) {
 			continue
 		}
 		if b.Status.DisruptionsAllowed <= 0 {
@@ -210,7 +215,7 @@ func (s *Service) Prepare(ctx context.Context, p protocol.DrainParams) (jobs.Run
 	prep := &Prepared{Cluster: p.Cluster, Subject: p.Node, UsedContext: routed.ContextID}
 	return func(ctx context.Context, jc *jobs.Ctx) error {
 		jc.SetContext(routed.ContextID)
-		return s.run(ctx, jc, rt.Clientset(), p, routed.ViaWrite)
+		return s.run(ctx, jc, rt.Clientset(), p, routed)
 	}, prep, nil
 }
 
@@ -233,7 +238,7 @@ func (w progressWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func (s *Service) run(ctx context.Context, jc *jobs.Ctx, cs kubernetes.Interface, p protocol.DrainParams, viaWrite bool) error {
+func (s *Service) run(ctx context.Context, jc *jobs.Ctx, cs kubernetes.Interface, p protocol.DrainParams, routed *ops.Routed) error {
 	o := p.Options
 	timeout := time.Duration(o.TimeoutSeconds) * time.Second
 	if timeout == 0 {
@@ -265,14 +270,14 @@ func (s *Service) run(ctx context.Context, jc *jobs.Ctx, cs kubernetes.Interface
 	}
 	node, err := cs.CoreV1().Nodes().Get(ctx, p.Node, metav1.GetOptions{})
 	if err != nil {
-		return failWith(ops.MapError(err, viaWrite))
+		return failWith(s.mapRouted(ctx, err, routed, "get", p.Node))
 	}
 	if node.Spec.Unschedulable {
 		jc.Progress("node is already cordoned", p.Node, "cordoned")
 	} else {
 		jc.Progress("cordoning node", p.Node, "cordoning")
 		if err := kdrain.RunCordonOrUncordon(h, node, true); err != nil {
-			return failWith(ops.MapError(err, viaWrite))
+			return failWith(s.mapRouted(ctx, err, routed, "patch", p.Node))
 		}
 		jc.Progress("node cordoned", p.Node, "cordoned")
 	}
@@ -298,6 +303,17 @@ func (s *Service) run(ctx context.Context, jc *jobs.Ctx, cs kubernetes.Interface
 	}
 	jc.Progress("drain complete", p.Node, "done")
 	return nil
+}
+
+// mapRouted maps an error of a call through the routed context: a 403 through the write context that the
+// write context itself would deny is write_unavailable (the Router, ops.Service, does the classification).
+func (s *Service) mapRouted(ctx context.Context, err error, r *ops.Routed, verb, node string) error {
+	if mm, ok := s.cfg.Router.(interface {
+		MapRouted(ctx context.Context, err error, r *ops.Routed, verb, gvr, sub, ns, name string) error
+	}); ok {
+		return mm.MapRouted(ctx, err, r, verb, "v1/nodes", "", "", node)
+	}
+	return ops.MapError(err, r.ViaWrite)
 }
 
 func failWith(err error) error {

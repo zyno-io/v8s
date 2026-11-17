@@ -16,6 +16,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
@@ -39,6 +40,8 @@ type Manager struct {
 	Budget         int
 	DiscoveryEvery time.Duration
 
+	problems *problems.Hub
+
 	reconcileMu sync.Mutex
 	mu          sync.Mutex
 	runners     map[string]*runner // includes clusters in their deselect grace period
@@ -61,6 +64,16 @@ func NewManager(ctx context.Context, src Source, eng *view.Engine, log *slog.Log
 }
 
 func (m *Manager) Source() Source { return m.src }
+
+// SetProblems attaches the problems hub: every selected cluster gets an engine fed by its watches and served
+// as the synthetic view "v8s/v1/problems". Set before the first Select.
+func (m *Manager) SetProblems(h *problems.Hub) {
+	m.problems = h
+	h.OnPrefsChange = m.reconcileAll
+}
+
+// Problems returns the problems hub (nil when not set).
+func (m *Manager) Problems() *problems.Hub { return m.problems }
 
 // SetSettings attaches the settings store: remembered selection, groups and linked write contexts.
 func (m *Manager) SetSettings(s *settings.Store) { m.set = s }
@@ -254,6 +267,9 @@ func (m *Manager) stopIfDeselected(id string) {
 	m.mu.Unlock()
 	before := heapAlloc()
 	r.stop()
+	if m.problems != nil {
+		m.problems.Drop(id)
+	}
 	m.src.Release(id)
 	m.log.Info("cluster stopped", "cluster", id)
 	runtime.GC()
@@ -287,6 +303,12 @@ func (m *Manager) start(id string) (*runner, error) {
 		discKick: make(chan struct{}, 1), attached: true}
 	r.phase.Store(protocol.PhaseConnecting)
 	r.message.Store("")
+	if m.problems != nil {
+		r.pe = m.problems.Cluster(id)
+		m.eng.AttachKind(id, problems.GVR, r.pe.Store())
+		r.wg.Add(1)
+		go func() { defer r.wg.Done(); r.pe.Run(ctx) }()
+	}
 	r.startTier0()
 	return r, nil
 }
@@ -503,6 +525,7 @@ func (m *Manager) reconcileAll() {
 		if r.disc.Load() != nil {
 			r.startInvalidation()
 			r.startOptionalBaseline()
+			r.startGatedBaseline()
 		}
 	}
 	for _, s := range scopes {
@@ -515,6 +538,9 @@ func (m *Manager) reconcile(s *Scope) {
 	defer m.reconcileMu.Unlock()
 	if s.closed {
 		return
+	}
+	if mod := ingest.Lookup(s.gvr); mod != nil && mod.Synthetic {
+		return // computed by the agent: nothing to watch
 	}
 	in := map[string]*runner{}
 	for _, r := range m.selectedRunners() {

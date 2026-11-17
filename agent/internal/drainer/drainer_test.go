@@ -58,8 +58,8 @@ func TestClassify(t *testing.T) {
 	// ignoreDaemonSets off: the DaemonSet pod is evicted (kubectl would refuse; the preflight shows it plainly)
 	no := false
 	r = Classify(pods, pdbs, protocol.DrainOptions{IgnoreDaemonSets: &no})
-	if len(r.DaemonSets) != 0 || !strings.Contains(names(r.Evict), "a/ds-1") {
-		t.Fatalf("%s", names(r.Evict))
+	if len(r.DaemonSets) != 0 || strings.Contains(names(r.Evict), "a/ds-1") || !strings.Contains(names(r.Blocked), "a/ds-1") {
+		t.Fatalf("evict=%s blocked=%s", names(r.Evict), names(r.Blocked))
 	}
 	// disable eviction: PDBs are not honoured, so nothing is blocked
 	r = Classify(pods, pdbs, protocol.DrainOptions{DisableEviction: true})

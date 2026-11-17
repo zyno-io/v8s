@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -19,6 +20,8 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/helm"
 	"github.com/zyno-io/v8s/agent/internal/jobs"
 	"github.com/zyno-io/v8s/agent/internal/ops"
+	"github.com/zyno-io/v8s/agent/internal/problems"
+	"github.com/zyno-io/v8s/agent/internal/rpc"
 	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/streams"
 	"github.com/zyno-io/v8s/agent/internal/view"
@@ -34,11 +37,14 @@ type Options struct {
 	Ops      *ops.Service
 	Settings *settings.Store
 	// Optional G2 services (nil: the corresponding requests answer "unavailable").
-	Streams      *streams.Manager
-	Jobs         *jobs.Manager
-	Drain        *drainer.Service
-	Flux         *flux.Service
-	Helm         *helm.Service
+	Streams  *streams.Manager
+	Jobs     *jobs.Manager
+	Drain    *drainer.Service
+	Flux     *flux.Service
+	Helm     *helm.Service
+	Problems *problems.Hub
+	// Handlers adds request methods (security.*, hubble.*); built-in methods win.
+	Handlers     map[string]rpc.Handler
 	Token        string
 	Mode         string // "desktop" | "serve" | "fake"
 	AgentVersion string
@@ -55,9 +61,10 @@ type Options struct {
 
 // Server is the HTTP handler for /ws, /healthz and the static UI.
 type Server struct {
-	opt Options
-	log *slog.Logger
-	mux *http.ServeMux
+	opt     Options
+	clients atomic.Int32
+	log     *slog.Logger
+	mux     *http.ServeMux
 }
 
 func NewServer(opt Options) *Server {
@@ -82,6 +89,9 @@ func NewServer(opt Options) *Server {
 }
 
 func (s *Server) Handler() http.Handler { return s.mux }
+
+// ClientCount is the number of connected data sockets (the Hubble problem subscriptions run only while > 0).
+func (s *Server) ClientCount() int { return int(s.clients.Load()) }
 
 // SetPort records the listener port once known (own-origin allowance).
 func (s *Server) SetPort(p int) { s.opt.Port = p }
@@ -150,6 +160,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	s.clients.Add(1)
+	defer s.clients.Add(-1)
 	newConn(s, ws).run(r.Context())
 }
 

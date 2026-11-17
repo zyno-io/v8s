@@ -69,7 +69,9 @@ cilium-up)
     helm repo add cilium https://helm.cilium.io/ >/dev/null
     helm repo update >/dev/null
     helm upgrade --install cilium cilium/cilium -n kube-system \
-        --set hubble.relay.enabled=true --set hubble.enabled=true --set ipam.mode=kubernetes --wait --timeout 10m
+        --set hubble.relay.enabled=true --set hubble.enabled=true --set ipam.mode=kubernetes \
+        --set kubeProxyReplacement=true --set k8sServiceHost="$name-cilium-control-plane" --set k8sServicePort=6443 \
+        --set operator.replicas=1 --wait --timeout 10m
     kubectl apply -f "$here/fixtures/cilium.yaml"
     echo "ready: KUBECONFIG=$KUBECONFIG (context kind-$name-cilium)"
     ;;

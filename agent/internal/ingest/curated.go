@@ -131,6 +131,7 @@ func registerWorkloads() {
 			r.putN(int64(d.Status.AvailableReplicas))
 			r.putS(images(&d.Spec.Template.Spec))
 			r.tone = scaleTone(d.Status.AvailableReplicas, want)
+			setFacts(r, deploymentFacts(d))
 			return r
 		})
 
@@ -143,6 +144,7 @@ func registerWorkloads() {
 			r.putS(ready(s.Status.ReadyReplicas, want))
 			r.putS(images(&s.Spec.Template.Spec))
 			r.tone = scaleTone(s.Status.ReadyReplicas, want)
+			setFacts(r, statefulSetFacts(s))
 			return r
 		})
 
@@ -160,6 +162,7 @@ func registerWorkloads() {
 			r.putN(int64(s.NumberAvailable))
 			r.putS(images(&d.Spec.Template.Spec))
 			r.tone = scaleTone(s.NumberReady, s.DesiredNumberScheduled)
+			setFacts(r, daemonSetFacts(d))
 			return r
 		})
 
@@ -208,6 +211,7 @@ func registerWorkloads() {
 			}
 			r.putS(status)
 			r.tone = tone
+			setFacts(r, jobFacts(j))
 			return r
 		})
 
@@ -229,6 +233,7 @@ func registerWorkloads() {
 			if susp {
 				r.tone = ToneWarning
 			}
+			r.facts = cronFacts(c)
 			return r
 		})
 }
@@ -318,6 +323,7 @@ func registerNetworking() {
 			if len(addr) == 0 {
 				r.tone = ToneWarning
 			}
+			setFacts(r, ingressFacts(in))
 			return r
 		})
 
@@ -431,6 +437,7 @@ func registerClusterKinds() {
 			r.putN(pods.Value())
 			r.putN(int64(len(n.Spec.Taints)))
 			r.tone = tone
+			setFacts(r, nodeFacts(n))
 			return r
 		})
 
@@ -473,7 +480,7 @@ func registerClusterKinds() {
 			return r
 		})
 
-	typed(&Module{GVR: "v1/persistentvolumes", Kind: "PersistentVolume", Short: []string{"pv"},
+	typed(&Module{GVR: "v1/persistentvolumes", Kind: "PersistentVolume", Short: []string{"pv"}, GateClass: "pv.failed",
 		Cols: []Col{cCluster(), cName(), cDict("status", "Status", 90), cStr("claim", "Claim", 240), cDict("capacity", "Capacity", 80),
 			cDict("accessModes", "Access modes", 100), cDict("reclaimPolicy", "Reclaim", 90), cDict("storageClass", "Storage class", 130), cTone(), cAge()}},
 		func(l *corev1.PersistentVolumeList) []corev1.PersistentVolume { return l.Items },
@@ -621,7 +628,7 @@ func hpaTargets(h *autoscalingv2.HorizontalPodAutoscaler) string {
 }
 
 func registerPolicyKinds() {
-	typed(&Module{GVR: "autoscaling/v2/horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler", Namespaced: true, Short: []string{"hpa"},
+	typed(&Module{GVR: "autoscaling/v2/horizontalpodautoscalers", Kind: "HorizontalPodAutoscaler", Namespaced: true, Short: []string{"hpa"}, GateClass: "hpa.unable",
 		Cols: []Col{cCluster(), cName(), cNS(), cStr("reference", "Reference", 220), cStr("targets", "Targets", 220), cInt("minPods", "Min", 56),
 			cInt("maxPods", "Max", 56), cInt("replicas", "Replicas", 72), cTone(), cAge()}},
 		func(l *autoscalingv2.HorizontalPodAutoscalerList) []autoscalingv2.HorizontalPodAutoscaler {
@@ -642,6 +649,7 @@ func registerPolicyKinds() {
 			if r.tone == ToneNeutral && h.Status.CurrentReplicas >= h.Spec.MaxReplicas && h.Spec.MaxReplicas > 0 {
 				r.tone = ToneWarning
 			}
+			setFacts(r, hpaFacts(h))
 			return r
 		})
 
@@ -661,4 +669,11 @@ func registerPolicyKinds() {
 			}
 			return r
 		})
+}
+
+// setFacts attaches typed facts only when non-nil (a nil *T stored in an interface is not nil).
+func setFacts[T any](r *Row, f *T) {
+	if f != nil {
+		r.facts = f
+	}
 }

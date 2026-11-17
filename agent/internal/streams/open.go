@@ -216,7 +216,7 @@ func (m *Manager) openExec(ctx context.Context, p protocol.StreamOpenParams) (pr
 	if container == "" {
 		pod, gerr := rt.Clientset().CoreV1().Pods(ref.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
 		if gerr != nil {
-			return res, ops.MapError(gerr, routed.ViaWrite)
+			return res, m.mapRouted(ctx, gerr, routed, "get", podsGVR, "", ref.Namespace, ref.Name)
 		}
 		container = defaultContainer(pod)
 	}

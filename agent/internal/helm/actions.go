@@ -36,6 +36,18 @@ func timeoutOf(sec int) time.Duration {
 	return time.Duration(sec) * time.Second
 }
 
+// budgetTimeout is timeoutOf clamped to what is left of the job's budget (the context deadline), so a Helm call
+// that cannot be cancelled still ends before the job is due.
+func budgetTimeout(ctx context.Context, sec int) time.Duration {
+	d := timeoutOf(sec)
+	if dl, ok := ctx.Deadline(); ok {
+		if rem := time.Until(dl); rem < d {
+			d = max(rem, time.Second)
+		}
+	}
+	return d
+}
+
 func waitStrategy(wait bool) kube.WaitStrategy {
 	if wait {
 		return kube.StatusWatcherStrategy
@@ -102,11 +114,11 @@ func (s *Service) PrepareRollback(ctx context.Context, p protocol.HelmRollbackPa
 		}
 		a := action.NewRollback(cfg)
 		a.Version = p.Revision
-		a.Timeout = timeoutOf(p.TimeoutSeconds)
+		a.Timeout = budgetTimeout(ctx, p.TimeoutSeconds)
 		a.WaitStrategy = waitStrategy(p.Wait)
 		a.CleanupOnFail = p.CleanupOnFail
 		a.ForceReplace = p.ForceReplace
-		if err := runCtx(ctx, func() error { return a.Run(p.Name) }); err != nil {
+		if err := runUncancellable(ctx, jc, subject, func() error { return a.Run(p.Name) }); err != nil {
 			return s.fail(jc, subject, err)
 		}
 		jc.Progress(fmt.Sprintf("Rolled back to revision %d", target), subject, "done")
@@ -136,13 +148,13 @@ func (s *Service) PrepareUninstall(ctx context.Context, p protocol.HelmUninstall
 		}
 		a := action.NewUninstall(cfg)
 		a.KeepHistory = p.KeepHistory
-		a.Timeout = timeoutOf(p.TimeoutSeconds)
+		a.Timeout = budgetTimeout(ctx, p.TimeoutSeconds)
 		a.WaitStrategy = waitStrategy(p.Wait)
 		a.DeletionPropagation = p.Cascade
 		if a.DeletionPropagation == "" {
 			a.DeletionPropagation = "background"
 		}
-		if err := runCtx(ctx, func() error { _, err := a.Run(p.Name); return err }); err != nil {
+		if err := runUncancellable(ctx, jc, subject, func() error { _, err := a.Run(p.Name); return err }); err != nil {
 			return s.fail(jc, subject, err)
 		}
 		jc.Progress("Uninstalled release", subject, "done")
@@ -190,7 +202,7 @@ func (s *Service) PrepareRetry(ctx context.Context, p protocol.HelmRetryParams) 
 		jc.Progress("Upgrading with the stored chart and values", subject, "upgrading")
 		up := action.NewUpgrade(cfg)
 		up.Namespace = p.Namespace
-		up.Timeout = timeoutOf(p.TimeoutSeconds)
+		up.Timeout = budgetTimeout(ctx, p.TimeoutSeconds)
 		up.WaitStrategy = waitStrategy(p.Wait)
 		up.ReuseValues = false
 		if _, err := up.RunWithContext(ctx, p.Name, rel.Chart, rel.Config); err != nil {
@@ -206,17 +218,22 @@ func isPending(st common.Status) bool {
 	return st == common.StatusPendingInstall || st == common.StatusPendingUpgrade || st == common.StatusPendingRollback
 }
 
-// runCtx runs a Helm call that does not take a context and returns early when ctx ends (the call itself is
-// bounded by its own timeout).
-func runCtx(ctx context.Context, fn func() error) error {
+// runUncancellable runs a Helm call that takes no context (Helm v4 rollback / uninstall). Abandoning it would
+// leave a release operation running behind a finished job, so on cancellation the job stays running (progress
+// state "cancelling") until the call returns; its own timeout (clamped to the job budget) bounds the wait.
+func runUncancellable(ctx context.Context, jc *jobs.Ctx, subject string, fn func() error) error {
 	ch := make(chan error, 1)
 	go func() { ch <- fn() }()
 	select {
 	case err := <-ch:
 		return err
 	case <-ctx.Done():
+	}
+	jc.Progress("Cancelling: waiting for the Helm operation to finish", subject, "cancelling")
+	if err := <-ch; err != nil {
 		return context.Cause(ctx)
 	}
+	return nil
 }
 
 // fail reports a failed step and maps the error to a job failure (cancellation passes through).
