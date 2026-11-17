@@ -32,6 +32,21 @@ On Linux and Windows, the app uses the environment it was started with.
 
 In [hosted mode](/guide/hosted#sign-in-and-sign-out), a lapsed cluster token shows a banner, "Sign in to the clusters to continue", with a **Sign in to clusters** button. Press it, and the clusters recover. If your v8s session itself ended, you are sent to sign in again.
 
+## Hosted sign-in fails with an Entra error
+
+**Symptom.** Signing in to [hosted mode](/guide/hosted) stops on a Microsoft error page, or v8s reports a failed sign-in with an `AADSTS` code.
+
+**Cause.** Usually the redirect URI is missing, or it is registered under a platform that does not match how v8s authenticates. See [Which Entra platform to register](/guide/hosted#which-entra-platform-to-register).
+
+**Fix.**
+
+| Code            | Meaning                                                                                                       | Fix                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `AADSTS50011`   | The redirect URI is not registered on the app                                                                 | Register exactly `<publicUrl>/auth/callback`, including the port if `publicUrl` has one                                  |
+| `AADSTS7000218` | The URI is under **Web**, which needs a credential, but v8s has `publicClient: true`                          | Move the URI to **Mobile and desktop applications**, or give v8s a `clientSecret` or certificate and drop `publicClient` |
+| `AADSTS700025`  | The URI is under **Mobile and desktop applications** (a public client), but v8s sends a secret or certificate | Set `publicClient: true` and remove the credential, or move the URI to **Web**                                           |
+| `AADSTS9002327` | The URI is under **Single-page application**                                                                  | Move it to **Mobile and desktop applications** (or **Web** with a credential). v8s cannot use SPA redirects              |
+
 ## Write context rejected
 
 **Symptom.** An action fails with a "write context rejected" message, and the cluster has a [linked write context](/guide/clusters#linked-read-and-write-contexts).

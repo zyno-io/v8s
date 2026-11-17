@@ -88,19 +88,19 @@ Surrounding whitespace is trimmed, and an empty value is an error. OIDC client s
 
 ### `oidc`
 
-The login provider. Redirect URI to register: `<publicUrl>/auth/callback`.
+The login provider. Redirect URI to register: `<publicUrl>/auth/callback`. In Entra ID, the platform depends on the credential: see [Which Entra platform to register](#which-entra-platform-to-register).
 
-| Key             | Meaning                                                                                                               | Default                    |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `issuer`        | OIDC issuer URL. https required (http only for localhost)                                                             | required                   |
-| `clientId`      | Client ID of the login app                                                                                            | required                   |
-| `publicClient`  | `true` for an app with no credential: PKCE only. See [Public client](#public-client-no-secret)                        | `false`                    |
-| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`, unless `publicClient` is `true`                 |                            |
-| `privateKey`    | Secret reference to a PEM RSA private key (PKCS#1 or PKCS#8), for `private_key_jwt` client authentication             |                            |
-| `certificate`   | Secret reference to the PEM certificate matching `privateKey`. Sent as the `x5t#S256` header, which Entra ID requires | none                       |
-| `scopes`        | Scopes to request                                                                                                     | `[openid, profile, email]` |
-| `usernameClaim` | ID token claim used as the user name. Falls back to a verified `email`, then to the subject                           | `preferred_username`       |
-| `groupsClaim`   | ID token claim that holds the user's groups                                                                           | `groups`                   |
+| Key             | Meaning                                                                                                                    | Default                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `issuer`        | OIDC issuer URL. https required (http only for localhost)                                                                  | required                   |
+| `clientId`      | Client ID of the login app                                                                                                 | required                   |
+| `publicClient`  | `true` for an app with no credential: PKCE only. See [Which Entra platform to register](#which-entra-platform-to-register) | `false`                    |
+| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`, unless `publicClient` is `true`                      |                            |
+| `privateKey`    | Secret reference to a PEM RSA private key (PKCS#1 or PKCS#8), for `private_key_jwt` client authentication                  |                            |
+| `certificate`   | Secret reference to the PEM certificate matching `privateKey`. Sent as the `x5t#S256` header, which Entra ID requires      | none                       |
+| `scopes`        | Scopes to request                                                                                                          | `[openid, profile, email]` |
+| `usernameClaim` | ID token claim used as the user name. Falls back to a verified `email`, then to the subject                                | `preferred_username`       |
+| `groupsClaim`   | ID token claim that holds the user's groups                                                                                | `groups`                   |
 
 Pick a username claim that is unique and that users cannot edit. It becomes the impersonated user name on impersonation clusters.
 
@@ -162,7 +162,27 @@ A cluster with an empty `groups` list is an error unless `adminGroups` is set, b
 
 ### Example: Entra ID, clusters and Warpgate trusting one app
 
-This is the common setup. Your clusters and Warpgate already trust one Entra app registration, the one `kubelogin` uses. Register `https://v8s.example.com/auth/callback` as a redirect URI on that same app, and let v8s use it for both signing people in and for the ID token it forwards. Because `oidc` and `clusterApp` have the same `clientId`, v8s reuses the login tokens and never runs a second flow.
+This is the common setup. Your clusters and Warpgate already trust one Entra app registration, the one `kubelogin` uses. v8s signs people in with that same app and forwards the ID token it gets. Because `oidc` and `clusterApp` have the same `clientId`, v8s reuses the login tokens and never runs a second flow.
+
+#### Which Entra platform to register
+
+Entra asks for a platform when you add a redirect URI. The platform decides how the app proves itself when it trades the sign-in code for tokens:
+
+| Platform                            | Meant for                                                      | At the token step                                                        | Use it for v8s when                                                                        |
+| ----------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **Mobile and desktop applications** | Public clients with no secret: CLIs (`kubelogin`), native apps | No credential; PKCE protects the code                                    | The app has no secret or certificate (typical for a `kubelogin` app). `publicClient: true` |
+| **Web**                             | Server apps that hold a credential                             | A client secret or certificate is required                               | The app has a secret or certificate you give v8s                                           |
+| **Single-page application**         | JavaScript that gets tokens in the browser                     | Entra only accepts the exchange from a browser; refresh tokens last 24 h | Never: v8s exchanges codes on the server, so Entra rejects it                              |
+
+#### Register the redirect URI
+
+1. In the Entra admin center, open **App registrations**, then the app your clusters and Warpgate trust.
+2. Go to **Authentication** and choose **Add a platform** (or **Add URI** under an existing platform of the right type).
+3. Pick **Mobile and desktop applications** for a public client, or **Web** if v8s gets a credential (see the table).
+4. Add the custom redirect URI `<publicUrl>/auth/callback`, for example `https://v8s.example.com/auth/callback`. Leave the suggested `msal…` and `nativeclient` URIs unchecked.
+5. Save. Nothing else changes for `kubelogin`: its device-code sign-in keeps working.
+
+#### Configuration: public client (no secret)
 
 ```yaml
 listen: ':7931'
@@ -176,17 +196,12 @@ session:
 oidc:
     issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
     clientId: <cluster-app-client-id> # the client ID your clusters and Warpgate trust
-    privateKey:
-        file: /etc/v8s/app.key # PEM, RSA
-    certificate:
-        file: /etc/v8s/app.crt # uploaded to the app registration
+    publicClient: true # redirect URI under "Mobile and desktop applications"
     usernameClaim: preferred_username
     groupsClaim: groups
 
 clusterApp:
     clientId: <cluster-app-client-id> # same as oidc.clientId: login tokens are reused
-    privateKey:
-        file: /etc/v8s/app.key # optional and unused in this mode: the login credential is used
 
 adminGroups:
     - <platform-admins-group-object-id>
@@ -206,7 +221,31 @@ clusters:
       displayGroups: [production]
 ```
 
-If you would rather keep a separate login app, give `clusterApp` its own `clientId`, and register `https://v8s.example.com/auth/cluster-callback` on it. v8s then signs people in to that app a second time, silently through their Entra session. Entra requires a confidential client for a web redirect, so give the cluster app a certificate (`privateKey` and `certificate`) or a `clientSecret`.
+With `publicClient: true`, v8s sends only `client_id` to the token endpoint, and PKCE binds each authorization code to the server that started the sign-in. It must be set explicitly: leaving out a secret by mistake is still a configuration error, and `publicClient` together with a secret, key, or certificate is rejected.
+
+#### Configuration: app with a certificate or secret
+
+If the app has a credential, register the redirect URI under **Web** instead, and give v8s the credential in place of `publicClient`:
+
+```yaml
+oidc:
+    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+    clientId: <cluster-app-client-id>
+    privateKey:
+        file: /etc/v8s/app.key # PEM, RSA
+    certificate:
+        file: /etc/v8s/app.crt # uploaded to the app registration
+    # or: clientSecret: {file: /etc/v8s/oidc-secret}
+
+clusterApp:
+    clientId: <cluster-app-client-id> # same app: no credential of its own needed
+```
+
+#### A separate login app
+
+If you would rather keep a separate login app, give `clusterApp` its own `clientId`, and register `<publicUrl>/auth/cluster-callback` on it. v8s then signs people in to that app a second time, silently through their Entra session. The same platform rules apply to each app: **Mobile and desktop applications** with `publicClient: true`, or **Web** with a `clientSecret` or a certificate (`privateKey` and `certificate`).
+
+#### Groups and the API server
 
 Entra emits group object IDs in the `groups` claim, so `groups:` lists IDs. `groups: ['*']` means every signed-in user.
 
@@ -223,22 +262,6 @@ jwt:
           username: { claim: preferred_username, prefix: 'oidc:' }
           groups: { claim: groups, prefix: 'oidc:' }
 ```
-
-### Public client (no secret)
-
-If the app your clusters trust is a public client, as the one `kubelogin` uses with the device-code grant usually is, v8s can sign in with it without a secret. Set `publicClient: true` and no `clientSecret`, `privateKey`, or `certificate`. v8s then sends only `client_id` to the token endpoint, and PKCE binds each authorization code to the server that started the login.
-
-```yaml
-oidc:
-    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
-    clientId: <cluster-app-client-id>
-    publicClient: true
-
-clusterApp:
-    clientId: <cluster-app-client-id> # same app: the login tokens are the cluster tokens
-```
-
-In Entra ID, register `<publicUrl>/auth/callback` under **Mobile and desktop applications**, not **Web** (Web redirects need a credential) and not **Single-page application** (those tokens must be redeemed from a browser). `publicClient` is explicit on purpose: leaving out a secret by mistake is still a configuration error.
 
 ### Shared audience
 
