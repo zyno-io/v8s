@@ -37,6 +37,8 @@ const log = (msg: string) => console.log(`[v8s] ${msg}`);
 
 let win: BrowserWindow | null = null;
 let quitting = false;
+/** Agent endpoint last handed to a renderer; null until the page has fetched one. */
+let servedAgent: string | null = null;
 
 const supervisor = new AgentSupervisor({
     origin: ORIGIN,
@@ -44,8 +46,11 @@ const supervisor = new AgentSupervisor({
     bundledBin: bundledAgentDir,
     log,
     onChange(info) {
-        // A restarted agent has a new port and token; reloading makes the renderer fetch them again.
-        if (info && win && !win.isDestroyed() && win.webContents.getURL()) win.webContents.reload();
+        if (!info) return;
+        // A restarted agent has a new port and token; reloading makes the renderer fetch them again. The first banner needs no
+        // reload: the renderer's getAgent() call waits for it. Likewise skip when the page already has this agent.
+        const changed = servedAgent !== null && servedAgent !== `${info.url}#${info.token}`;
+        if (changed && win && !win.isDestroyed() && win.webContents.getURL()) win.webContents.reload();
     }
 });
 
@@ -119,14 +124,28 @@ app.on('second-instance', () => {
     }
 });
 
+function denyPermission(_wc: unknown, _perm: string, respond: (granted: boolean) => void) {
+    respond(false);
+}
+
+async function stopThenQuit() {
+    try {
+        await supervisor.stop();
+    } finally {
+        app.quit();
+    }
+}
+
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
     void app.whenReady().then(() => {
-        session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+        session.defaultSession.setPermissionRequestHandler(denyPermission);
         ipcMain.handle('v8s:get-agent', async e => {
             if (!isTrustedSender(e.senderFrame?.url ?? '')) throw new Error('untrusted sender');
-            return await supervisor.whenReady();
+            const info = await supervisor.whenReady();
+            servedAgent = `${info.url}#${info.token}`;
+            return info;
         });
         if (!DEV_URL) registerAppProtocol();
         supervisor.start();
@@ -145,6 +164,6 @@ if (!app.requestSingleInstanceLock()) {
         quitting = true;
         // Hold the quit until the agent is gone so it never outlives the app.
         e.preventDefault();
-        void supervisor.stop().finally(() => app.quit());
+        void stopThenQuit();
     });
 }

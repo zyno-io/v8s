@@ -170,6 +170,30 @@ describe('DataCore patches', () => {
         expect(h.of('rows').at(-1)!.rows[0][1]).toBe(2);
     });
 
+    it('prunes rows missing from a new ids list even without removed', () => {
+        const h = harness();
+        const qid = h.subscribed();
+        h.frame(
+            KindPatch,
+            qid,
+            4,
+            patch({
+                total: 3,
+                ids: encodeIds([1, 2, 3]),
+                rows: [
+                    [1, 1, 0, 'a', 0, 0],
+                    [2, 1, 0, 'b', 0, 0],
+                    [3, 1, 0, 'c', 0, 0]
+                ]
+            })
+        );
+        h.advance(FLUSH_MS);
+        expect(h.core.rowCount(qid)).toBe(3);
+        h.frame(KindPatch, qid, 5, patch({ total: 3, ids: encodeIds([3, 4]), rows: [[4, 1, 0, 'd', 0, 0]] }));
+        h.advance(FLUSH_MS);
+        expect(h.core.rowCount(qid)).toBe(2);
+    });
+
     it('omits ids when membership did not change', () => {
         const h = harness();
         const qid = h.subscribed();

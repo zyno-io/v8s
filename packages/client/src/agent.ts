@@ -129,7 +129,12 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 const v = views.get(m.qid);
                 if (!v || m.gen < v.gen) break;
                 if (m.removed) for (const id of m.removed) v.rows.delete(id);
-                if (m.ids) v.ids = m.ids;
+                if (m.ids) {
+                    v.ids = m.ids;
+                    // `removed` is advisory; the window's id list is authoritative (O(window)).
+                    const keep = new Set<number>(m.ids);
+                    for (const id of v.rows.keys()) if (!keep.has(id)) v.rows.delete(id);
+                }
                 if (v.total.value !== m.total) v.total.value = m.total;
                 if (v.offset.value !== m.offset) v.offset.value = m.offset;
                 v.version.value++;

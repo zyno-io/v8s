@@ -257,7 +257,17 @@ export class DataCore {
         }
         view.total = patch.total;
         view.offset = patch.offset;
-        if (patch.ids) view.ids = decodeIds(patch.ids);
+        if (patch.ids) {
+            view.ids = decodeIds(patch.ids);
+            // `removed` is advisory (stale-gen patches or abandoned frames can lose it): the id list is authoritative.
+            const keep = new Set<number>(view.ids);
+            for (const id of view.rows.keys()) {
+                if (!keep.has(id)) {
+                    view.rows.delete(id);
+                    view.dirty.delete(id);
+                }
+            }
+        }
         this.scheduleFlush(view);
     }
 

@@ -139,11 +139,14 @@ function requestWindow(force = false) {
 
 // Stable scroll: remember the first visible row's id and keep it where it was when inserts shift indexes.
 const anchor = { id: 0, idx: 0 };
+/** Range displayed when the anchor was last tracked (absolute row indexes). */
+let lastRange: { first: number; last: number } | null = null;
 
 function trackAnchor() {
     const r = visibleRange();
     const h = props.handle;
     if (!r) return;
+    lastRange = { first: r.first, last: r.last };
     const k = r.first - h.offset.value;
     if (k >= 0 && k < h.ids.length) {
         anchor.id = h.ids[k];
@@ -156,12 +159,19 @@ function holdAnchor() {
     if (!el || !anchor.id || el.scrollTop <= 0) return;
     const h = props.handle;
     const k = h.ids.indexOf(anchor.id);
-    if (k < 0) return;
-    const newIdx = h.offset.value + k;
-    const d = newIdx - anchor.idx;
-    if (d !== 0) {
-        anchor.idx = newIdx;
-        el.scrollTop += d * rowH.value;
+    const newIdx = k < 0 ? -1 : h.offset.value + k;
+    const prev = lastRange;
+    // Shift only when the anchor is still in the window and landed inside the range displayed before the update.
+    // Otherwise (re-sorted far away, or vanished) keep the scroll position and re-anchor on the first visible row.
+    if (newIdx >= 0 && prev && newIdx >= prev.first && newIdx <= prev.last) {
+        const d = newIdx - anchor.idx;
+        if (d !== 0) {
+            anchor.idx = newIdx;
+            el.scrollTop += d * rowH.value;
+        }
+    } else {
+        anchor.id = 0;
+        trackAnchor();
     }
 }
 

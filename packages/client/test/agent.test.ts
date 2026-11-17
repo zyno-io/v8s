@@ -62,6 +62,17 @@ describe('connectAgent', () => {
         expect([...h.ids]).toEqual([1, 2]); // ids unchanged when the patch carries none
     });
 
+    it('prunes main-thread rows not in a new ids list even without removed', async () => {
+        const { agent, emit } = await open();
+        const h = agent.subscribeView(Q, { offset: 0, limit: 10 });
+        const row = (id: number) => [id, 1, 'c', 'n'] as unknown as Row;
+        emit({ t: 'rows', qid: h.qid, gen: 1, rows: [row(1), row(2), row(3)] });
+        emit({ t: 'commit', qid: h.qid, gen: 1, total: 3, offset: 0, ids: new Uint32Array([1, 2, 3]) });
+        emit({ t: 'rows', qid: h.qid, gen: 1, rows: [row(4)] });
+        emit({ t: 'commit', qid: h.qid, gen: 1, total: 2, offset: 0, ids: new Uint32Array([3, 4]) });
+        expect([...h.rows.keys()].sort()).toEqual([3, 4]);
+    });
+
     it('bumps gen on a query change only, and drops older-gen messages', async () => {
         const { agent, sent, emit } = await open();
         const h = agent.subscribeView(Q, { offset: 0, limit: 10 });
