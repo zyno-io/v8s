@@ -79,15 +79,17 @@ Many setups give you two contexts per cluster: one that can only read, and one t
 
 ### Link two contexts
 
-1. Open the cluster selector.
-2. On the read context's row, open **Link write context…** and choose the write context. If two context names differ only by a role suffix (`-operator` and `-cluster-admin`), v8s suggests the pair with a **Link** button, but it never links by itself. You can dismiss a suggestion.
+1. Open the cluster selector and choose **Linked contexts…** in its footer. The button shows how many links you have.
+2. Under **Link a pair…**, pick the **Read context** and the **Write context**, then press **Link**.
 3. The write context no longer appears as its own cluster.
 
-Use **Unlink write context** on the same row to undo it. Unlinked contexts are ordinary, separate clusters.
+If context names differ only by a role suffix (`-operator` and `-cluster-admin`), the dialog lists them under **Suggestions**, and the selector shows a note with a **Review** button. Press **Link** on a suggestion, **Link all** to accept every suggestion at once, or **Dismiss** to hide one. v8s never links by itself.
+
+Use **Unlink** next to a pair in the same dialog to undo it. Unlinked contexts are ordinary, separate clusters.
 
 ### Automatic switch
 
-By default, writes switch to the linked write context automatically. If you untick **Switch to the linked write context automatically when the read context is denied** in the selector, v8s asks first each time ("This will run as the write context `prod-eu-cluster-admin`") and proceeds only if you confirm.
+By default, writes switch to the linked write context automatically. If you untick **Switch to the linked write context automatically when the read context is denied** in the **Linked contexts** dialog, v8s asks first each time ("This will run as the write context `prod-eu-cluster-admin`") and proceeds only if you confirm.
 
 Before the first write through a link, v8s checks that both contexts point at the same cluster (it compares the `kube-system` namespace UID). If they do not match, nothing is written and v8s tells you the link looks wrong.
 

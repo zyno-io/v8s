@@ -624,6 +624,38 @@ async function main() {
             await page.screenshot({ path: shot('flows') });
         });
 
+        await step('linked contexts: no hover controls; link and unlink a pair in the dialog', async () => {
+            await page.locator('.cluster-btn').click();
+            const sel = page.getByRole('dialog', { name: 'Choose clusters' });
+            await sel.waitFor();
+            const row = sel.locator('.lrow').first();
+            const before = await row.boundingBox();
+            await row.hover();
+            assert.equal(await sel.getByText(/Link write context/).count(), 0, 'no per-row link control');
+            assert.equal(await sel.getByRole('button', { name: /Unlink/ }).count(), 0, 'no per-row unlink control');
+            assert.deepEqual(await row.boundingBox(), before, 'row does not resize on hover');
+            await sel.getByRole('button', { name: /^Linked contexts…/ }).click();
+            const dlg = page.getByRole('dialog', { name: 'Linked contexts' });
+            await dlg.waitFor();
+            const options = await dlg.getByTestId('lc-read').locator('option:not([value=""])').allTextContents();
+            assert.ok(options.length >= 2, 'at least two contexts to pair');
+            const [r, w] = options;
+            await dlg.getByTestId('lc-read').selectOption({ label: r });
+            await dlg.getByTestId('lc-write').selectOption({ label: w });
+            await dlg.getByTestId('lc-link').click();
+            const item = dlg.getByTestId('lc-current').locator('li', { hasText: r });
+            await item.waitFor({ timeout: 10000 });
+            assert.match((await item.textContent()) ?? '', new RegExp(w));
+            await page.screenshot({ path: shot('linked-dialog') });
+            await item.getByRole('button', { name: 'Unlink' }).click();
+            await item.waitFor({ state: 'detached', timeout: 10000 });
+            await dlg.getByRole('button', { name: 'Done' }).click();
+            await dlg.waitFor({ state: 'hidden' });
+            await sel.waitFor();
+            await sel.getByRole('button', { name: 'Cancel' }).click();
+            await sel.waitFor({ state: 'hidden' });
+        });
+
         assert.deepEqual(errors, [], 'no console or page errors');
         console.log('e2e: all flows passed');
     } catch (e) {
