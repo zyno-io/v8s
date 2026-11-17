@@ -49,9 +49,15 @@ export function nextSort(cur: readonly Sort[], col: string, additive: boolean): 
     return cur.filter((_, i) => i !== idx);
 }
 
-export type SelectionRefs = ReadonlyMap<number, ObjectRef>;
+/**
+ * Selection key: the object's identity (`cluster|namespace|name`), never the wire row id, which belongs to one subscription
+ * and is reused after a remount. (`uid` would be stronger, but ObjectRef does not carry one yet.)
+ */
+export const selectionKey = (r: Pick<ObjectRef, 'cluster' | 'namespace' | 'name'>): string => `${r.cluster}|${r.namespace ?? ''}|${r.name ?? ''}`;
 
-/** Per-kind UI state. Selection is by row id; refs are snapshotted when a row is selected (a few bytes each, never rows). */
+export type SelectionRefs = ReadonlyMap<string, ObjectRef>;
+
+/** Per-kind UI state. Selection is by object identity; refs are snapshotted when a row is selected (a few bytes each, never rows). */
 export interface TableState {
     text: string;
     namespaces: string[];
@@ -88,19 +94,25 @@ export const useTableStore = defineStore('table', () => {
         return s;
     }
 
-    function select(gvr: string, id: number, ref: ObjectRef | null) {
+    function select(gvr: string, ref: ObjectRef) {
         const s = of(gvr);
         const n = new Map(s.selected);
-        if (n.has(id)) n.delete(id);
-        else if (ref) n.set(id, ref);
+        const k = selectionKey(ref);
+        if (n.has(k)) n.delete(k);
+        else n.set(k, ref);
         s.selected = n;
     }
-    function setSelected(gvr: string, entries: Iterable<[number, ObjectRef]>) {
-        of(gvr).selected = new Map(entries);
+    function setSelected(gvr: string, refs: Iterable<ObjectRef>) {
+        of(gvr).selected = new Map([...refs].map(r => [selectionKey(r), r]));
     }
     function clearSelection(gvr: string) {
         const s = of(gvr);
         if (s.selected.size) s.selected = new Map();
+    }
+    /** Drops selection and keyboard focus: both point at rows of a subscription that is gone or changed. */
+    function resetInteraction(gvr: string) {
+        clearSelection(gvr);
+        of(gvr).focusId = 0;
     }
     function toggleTone(gvr: string, tone: number) {
         const s = of(gvr);
@@ -117,5 +129,5 @@ export const useTableStore = defineStore('table', () => {
         s.tones = [];
     }
 
-    return { currentGvr, of, select, setSelected, clearSelection, toggleTone, sortBy, clearFilters };
+    return { currentGvr, of, select, setSelected, clearSelection, resetInteraction, toggleTone, sortBy, clearFilters };
 });

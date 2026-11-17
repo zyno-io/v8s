@@ -4,6 +4,7 @@ import { connectAgent } from '@v8s/client';
 import { shallowRef } from 'vue';
 
 import { resolveEndpoint } from './bootstrap.ts';
+import { visibleKinds } from './kinds.ts';
 
 export type BootState = 'booting' | 'no-endpoint' | 'error' | 'ready';
 
@@ -41,7 +42,7 @@ export function refreshKinds(delay = 250): void {
     clearTimeout(kindsTimer);
     kindsTimer = setTimeout(async () => {
         try {
-            const next = (await agent?.listKinds())?.kinds ?? [];
+            const next = visibleKinds((await agent?.listKinds())?.kinds ?? []);
             if (kindsSignature(next) !== kindsSignature(kinds.value)) kinds.value = next;
         } catch {
             // keep the previous list

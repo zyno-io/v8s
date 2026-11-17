@@ -13,6 +13,7 @@ import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
+import { decorFor } from '@/lib/table-decor.ts';
 import { isPhone } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
@@ -40,8 +41,9 @@ const namespaced = computed(() => kind.value?.namespaced ?? true);
 const starred = computed(() => settings.isStarred(props.gvr));
 
 const showCluster = computed(() => clusters.activeIds.length > 1);
+const decor = decorFor(props.gvr);
 const plan = computed(() =>
-    planColumns(handle.columns.value, { gvr: props.gvr, showCluster: showCluster.value, layout: settings.layout(props.gvr) })
+    planColumns(handle.columns.value, { gvr: props.gvr, showCluster: showCluster.value, layout: settings.layout(props.gvr), decor })
 );
 const unavailable = computed(() => handle.columns.value !== null && handle.columns.value.length === 0);
 
@@ -79,7 +81,7 @@ const sortLabel = computed(() =>
 const selected = computed<ObjectRef[]>(() => [...state.selected.values()]);
 watch(
     () => [state.text, state.namespaces, state.tones, state.sort],
-    () => table.clearSelection(props.gvr)
+    () => table.resetInteraction(props.gvr)
 );
 
 // ---- column layout: widths saved once per resize, visibility from the Columns menu ----
@@ -188,7 +190,16 @@ function star() {
                 <p>None of the selected clusters serves <b>{{ title }}</b>.</p>
                 <p class="muted">Pick other clusters from the selector, or choose another type.</p>
             </div>
-            <ResourceTable v-else :handle="handle" :gvr="gvr" :plan="plan" :title="title" :namespaced="namespaced" @resize="saveWidth" />
+            <ResourceTable
+                v-else
+                :handle="handle"
+                :gvr="gvr"
+                :plan="plan"
+                :title="title"
+                :namespaced="namespaced"
+                :decor="decor"
+                @resize="saveWidth"
+            />
             <div v-if="selected.length" class="bulk" role="toolbar" aria-label="Bulk actions">
                 <span class="selcount">{{ selected.length }} selected</span>
                 <ActionBar :gvr="gvr" :targets="selected" :kind-label="title" variant="bar" @done="table.clearSelection(gvr)" />

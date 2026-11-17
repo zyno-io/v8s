@@ -37,6 +37,9 @@ function harness() {
         post: (msg, transfer) => posted.push({ msg, transfer }),
         connect: () => {},
         closeSocket: () => {},
+        connectStream: () => {},
+        sendStream: () => {},
+        closeStream: () => {},
         schedule: (fn, ms) => {
             timers.set(++tid, { fn, at: t + ms });
             return tid;

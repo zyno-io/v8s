@@ -8,6 +8,10 @@ import { errorText } from './mutations.ts';
 
 export type ParsedObject = Record<string, unknown>;
 
+/** Documents above this many characters are not parsed on the main thread; the Overview shows what it can without them. */
+export const PARSE_LIMIT = 256 * 1024;
+const PARSE_DEBOUNCE_MS = 100;
+
 const keyOf = (r: ObjectRef | null) => (r ? `${r.cluster}|${r.gvr}|${r.namespace ?? ''}|${r.name ?? ''}` : '');
 
 /**
@@ -25,21 +29,29 @@ export function useObjectSession(target: Readonly<Ref<ObjectRef | null>>) {
 
     let sub: ObjectSubscription | null = null;
     let seq = 0;
+    let parseTimer: ReturnType<typeof setTimeout> | undefined;
 
     function close() {
         sub?.close();
         sub = null;
     }
 
-    async function parse(p: ObjectPayload | null, my: number) {
-        if (!p) {
+    /** Debounced: a burst of frames parses once, for the latest one. */
+    function scheduleParse(p: ObjectPayload, my: number) {
+        clearTimeout(parseTimer);
+        if (p.yaml.length > PARSE_LIMIT) {
             parsed.value = null;
             return;
         }
+        parseTimer = setTimeout(() => void parse(p, my), PARSE_DEBOUNCE_MS);
+    }
+
+    async function parse(p: ObjectPayload, my: number) {
         try {
             const { load } = await import('js-yaml');
             if (my !== seq) return;
             const doc = load(p.yaml);
+            if (my !== seq) return;
             parsed.value = doc && typeof doc === 'object' ? (doc as ParsedObject) : null;
         } catch {
             parsed.value = null;
@@ -50,17 +62,18 @@ export function useObjectSession(target: Readonly<Ref<ObjectRef | null>>) {
         () => keyOf(target.value),
         async () => {
             close();
+            clearTimeout(parseTimer);
             payload.value = null;
             parsed.value = null;
             deleted.value = false;
             error.value = '';
             frames.value = 0;
+            const my = ++seq;
             const ref0 = target.value;
             if (!ref0) {
                 loading.value = false;
                 return;
             }
-            const my = ++seq;
             loading.value = true;
             try {
                 const s = await getAgent().subscribeObject(ref0, frame => {
@@ -70,12 +83,12 @@ export function useObjectSession(target: Readonly<Ref<ObjectRef | null>>) {
                         error.value = frame.error.message || frame.error.code;
                         return;
                     }
-                    if (frame.deleted) deleted.value = true;
+                    deleted.value = !!frame.deleted;
                     if (frame.yaml !== undefined) {
                         error.value = '';
                         payload.value = frame;
                         frames.value++;
-                        void parse(frame, my);
+                        scheduleParse(frame, my);
                     }
                 });
                 if (my !== seq) s.close();
@@ -92,6 +105,7 @@ export function useObjectSession(target: Readonly<Ref<ObjectRef | null>>) {
 
     onScopeDispose(() => {
         seq++;
+        clearTimeout(parseTimer);
         close();
     });
 

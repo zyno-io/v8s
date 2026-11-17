@@ -27,6 +27,11 @@ export function emptySettings(): Settings {
     };
 }
 
+/** Bookmarks are in-app paths: anything not starting with a single `/` (absolute or protocol-relative URLs, `javascript:`) is dropped. */
+export function validBookmarks<T extends { url?: unknown }>(list: readonly T[]): T[] {
+    return list.filter(b => !!b && typeof b.url === 'string' && b.url.startsWith('/') && !b.url.startsWith('//') && !b.url.startsWith('/\\'));
+}
+
 /** Fills missing collections so callers never null-check (the agent normalises, but a patch result may not be complete). */
 export function normalizeSettings(s: Partial<Settings> | null | undefined): Settings {
     const d = emptySettings();
@@ -36,7 +41,7 @@ export function normalizeSettings(s: Partial<Settings> | null | undefined): Sett
         links: s.links ?? d.links,
         autoSwitchWrite: s.autoSwitchWrite ?? d.autoSwitchWrite,
         stars: s.stars ?? d.stars,
-        bookmarks: s.bookmarks ?? d.bookmarks,
+        bookmarks: validBookmarks(s.bookmarks ?? d.bookmarks),
         selection: s.selection ?? d.selection,
         columnLayouts: s.columnLayouts ?? d.columnLayouts,
         problemPrefs: s.problemPrefs ?? d.problemPrefs,

@@ -1,9 +1,14 @@
 import type { ObjectRef } from '@v8s/client';
 import type { Router } from 'vue-router';
 
+import { shallowRef } from 'vue';
+
 import type { DrawerTab } from './route.ts';
 
 import { drawerQuery, gvrFromRoute, gvrPath } from './route.ts';
+
+/** Set by the `e` shortcut: the YAML pane starts editing as soon as it shows (and clears it). */
+export const editRequest = shallowRef(false);
 
 /** Opens an object in the drawer; the URL carries it (`?c=…&ns=…&n=…`). Pushes when opening, replaces when only the tab changes. */
 export function openObject(router: Router, ref: ObjectRef, tab?: DrawerTab, replace = false): Promise<unknown> {

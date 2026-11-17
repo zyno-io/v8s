@@ -135,6 +135,9 @@ let seq = 0;
 watch(input, q => {
     sel.value = 0;
     clearTimeout(timer);
+    // Results belong to the previous text: drop them so Enter can never open a stale hit.
+    hits.value = [];
+    seq++;
     const text = q.trim();
     if (text.length < 2) {
         hits.value = [];
@@ -164,6 +167,7 @@ function onKey(e: KeyboardEvent) {
         if (items.value.length) sel.value = (sel.value - 1 + items.value.length) % items.value.length;
     } else if (e.key === 'Enter') {
         e.preventDefault();
+        if (searching.value) return;
         items.value[sel.value]?.run();
     } else if (e.key === 'Escape') {
         e.preventDefault();

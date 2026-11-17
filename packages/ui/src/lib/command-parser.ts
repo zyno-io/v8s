@@ -1,6 +1,7 @@
 import type { Kind } from '@v8s/client';
 
 import { rank } from './fuzzy.ts';
+import { preferKind } from './kinds.ts';
 
 export interface ClusterRef {
     id: string;
@@ -64,7 +65,7 @@ export type KindLookup = { kind: Kind } | { ambiguous: string[] } | null;
 
 export function findKind(head: string, kinds: readonly Kind[]): KindLookup {
     const h = head.toLowerCase();
-    const exact = kinds.find(k => kindNames(k).includes(h));
+    const exact = preferKind(kinds.filter(k => kindNames(k).includes(h)));
     if (exact) return { kind: exact };
     const pref = kinds.filter(k => kindNames(k).some(n => n.startsWith(h)));
     if (pref.length === 1) return { kind: pref[0] };

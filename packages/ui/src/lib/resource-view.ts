@@ -2,6 +2,7 @@ import type { Column, ViewHandle } from '@v8s/client';
 
 import { computed, onScopeDispose, watch } from 'vue';
 
+import { useClustersStore } from '@/stores/clusters.ts';
 import { chipsFor, buildQuery, stateQuery, useTableStore } from '@/stores/table.ts';
 
 import { getAgent } from './agent.ts';
@@ -37,7 +38,15 @@ export function useResourceView(gvr: string) {
         { immediate: true }
     );
 
-    watch(query, q => handle.update({ query: q, window: { offset: 0, limit: initialLimit() } }));
+    // Row ids, selection and keyboard focus belong to one subscription state: reset them whenever the rows can change identity.
+    watch(query, q => {
+        table.resetInteraction(gvr);
+        handle.update({ query: q, window: { offset: 0, limit: initialLimit() } });
+    });
+    watch(
+        () => useClustersStore().activeIds.join('\n'),
+        () => table.resetInteraction(gvr)
+    );
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     watch(
@@ -51,6 +60,7 @@ export function useResourceView(gvr: string) {
     );
 
     onScopeDispose(() => {
+        table.resetInteraction(gvr);
         clearTimeout(timer);
         handle.close();
         for (const c of Object.values(counts)) c.close();

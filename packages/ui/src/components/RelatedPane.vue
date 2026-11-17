@@ -6,12 +6,13 @@ import { useRouter } from 'vue-router';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
+import { resolveKind } from '@/lib/kinds.ts';
 
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload }>();
 const router = useRouter();
 
 function gvrOfKind(kind: string): string | null {
-    return kinds.value.find(k => k.kind === kind)?.gvr ?? null;
+    return resolveKind(kinds.value, kind)?.gvr ?? null;
 }
 
 const owners = computed(() => (props.payload.owners ?? []).map(o => ({ ...o, gvr: gvrOfKind(o.kind) })));
@@ -34,7 +35,7 @@ const handle = owned
               gvr: owned.gvr,
               namespaces: props.target.namespace ? [props.target.namespace] : [],
               text: props.target.name ?? '',
-              filters: [{ col: 'owner', op: 'contains', value: props.target.name ?? '' }],
+              filters: [{ col: 'owner', op: 'eq', value: props.target.name ?? '' }],
               sort: []
           },
           { offset: 0, limit: 50 }

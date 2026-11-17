@@ -35,7 +35,7 @@ describe('connectAgent', () => {
     it('correlates request/response and rejects on error', async () => {
         const { agent, sent, emit } = await open();
         const ok = agent.listClusters();
-        const req = sent.find(m => m.t === 'request') as Extract<MainToWorker, { t: 'request' }>;
+        const req = sent.find(m => m.t === 'request' && m.method === 'clusters.list') as Extract<MainToWorker, { t: 'request' }>;
         expect(req.method).toBe('clusters.list');
         emit({ t: 'response', rid: req.rid, result: { clusters: [], selected: ['a'] } });
         expect(await ok).toEqual({ clusters: [], selected: ['a'] });

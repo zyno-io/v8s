@@ -7,17 +7,20 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useRouter } from 'vue-router';
 
 import type { ColPlan, TablePlan } from '@/lib/columns.ts';
+import type { DrawerTab } from '@/lib/route.ts';
+import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
-import { openObject } from '@/lib/drawer.ts';
+import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
 import { setPageKeyHandler } from '@/lib/keys.ts';
+import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
-import { isFiltered, useTableStore } from '@/stores/table.ts';
+import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
 
-const props = defineProps<{ handle: ViewHandle; gvr: string; plan: TablePlan; title: string; namespaced: boolean }>();
+const props = defineProps<{ handle: ViewHandle; gvr: string; plan: TablePlan; title: string; namespaced: boolean; decor?: TableDecor | null }>();
 const emit = defineEmits<{ resize: [key: string, width: number] }>();
 
 const table = useTableStore();
@@ -67,6 +70,10 @@ interface Item {
     sel: boolean;
     foc: boolean;
     age: string;
+    /** Decorated cell content per plan column (null = default rendering); only when the kind has a decor. */
+    dc: (CellContent | null)[] | null;
+    /** Decor memo key for state outside the row. */
+    x: number | string;
 }
 
 const tick = shallowRef(0);
@@ -76,6 +83,8 @@ let nowMs = Date.now();
 
 const slice = computed<Item[]>(() => {
     void tick.value;
+    const decor = props.decor;
+    if (decor?.version) void decor.version.value;
     const h = props.handle;
     void h.version.value;
     const off = h.offset.value;
@@ -101,11 +110,44 @@ const slice = computed<Item[]>(() => {
                 if (nowMs - t < OLD_AGE_MS) old = false;
             }
         }
-        out.push({ i, id, row: row ?? EMPTY_ROW, ver: row ? row[1] : -1, sel: id !== 0 && sel.has(id), foc: id !== 0 && id === foc, age });
+        let dc: (CellContent | null)[] | null = null;
+        let x: number | string = 0;
+        if (decor && row) {
+            if (decor.cell) dc = p.cols.map(c => decor.cell!(c, row));
+            if (decor.rowKey) x = decor.rowKey(row);
+        }
+        out.push({
+            i,
+            id,
+            row: row ?? EMPTY_ROW,
+            ver: row ? row[1] : -1,
+            sel: !!row && sel.has(selectionKey(refOf(row))),
+            foc: id !== 0 && id === foc,
+            age,
+            dc,
+            x
+        });
     }
     allOld = old;
     return out;
 });
+
+// Lazy per-row detail (Helm chart versions): tell the decor which loaded rows are on screen, once scrolling settles.
+let visibleTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+    () => [props.handle.version.value, virtualizer.value.range?.startIndex, virtualizer.value.range?.endIndex],
+    () => {
+        const d = props.decor;
+        if (!d?.visible) return;
+        clearTimeout(visibleTimer);
+        visibleTimer = setTimeout(() => {
+            const rows: Row[] = [];
+            for (const it of slice.value) if (it.ver >= 0) rows.push(it.row);
+            d.visible!(rows);
+        }, 200);
+    }
+);
+onBeforeUnmount(() => clearTimeout(visibleTimer));
 
 // One shared 1 s tick (30 s when every visible age is over an hour); only the age text in the memo key changes.
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -255,11 +297,11 @@ function openPending() {
 
 // ---- interaction ----
 
-function openRow(id: number) {
+function openRow(id: number, tab?: DrawerTab) {
     const row = props.handle.rows.get(id);
     if (!row) return;
     ui.value.focusId = id;
-    void openObject(router, refOf(row));
+    void openObject(router, refOf(row), tab);
 }
 
 let longPressed = false;
@@ -267,7 +309,7 @@ let pressTimer: ReturnType<typeof setTimeout> | undefined;
 
 function toggle(id: number) {
     const row = props.handle.rows.get(id);
-    table.select(props.gvr, id, row ? refOf(row) : null);
+    if (row) table.select(props.gvr, refOf(row));
 }
 
 function onPointerDown(e: PointerEvent) {
@@ -337,6 +379,32 @@ setPageKeyHandler(e => {
         case 'x':
             if (ui.value.focusId) toggle(ui.value.focusId);
             return true;
+        case 'l':
+        case 's': {
+            // `l` opens the Logs tab, `s` the Shell tab of the focused row, where the kind has one.
+            const tab: DrawerTab = e.key === 'l' ? 'logs' : 'shell';
+            if (!ui.value.focusId || !tabsFor(props.gvr).includes(tab)) return false;
+            openRow(ui.value.focusId, tab);
+            return true;
+        }
+        case 'e':
+        case 'd': {
+            // `e` edits the YAML and `d` describes (the Overview tab) of the focused row, else of the object open in the drawer.
+            const tab: DrawerTab = e.key === 'e' ? 'yaml' : 'overview';
+            if (!tabsFor(props.gvr).includes(tab)) return false;
+            if (e.key === 'e') editRequest.value = true;
+            if (ui.value.focusId && props.handle.rows.has(ui.value.focusId)) {
+                openRow(ui.value.focusId, tab);
+                return true;
+            }
+            const open = parseDrawer(props.gvr, router.currentRoute.value.query);
+            if (open) {
+                void openObject(router, open.ref, tab, true);
+                return true;
+            }
+            editRequest.value = false;
+            return false;
+        }
         case 'Enter':
             if (ui.value.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {
                 openRow(ui.value.focusId);
@@ -363,12 +431,12 @@ function toggleAll() {
         table.clearSelection(props.gvr);
         return;
     }
-    const entries: [number, ObjectRef][] = [];
+    const refs: ObjectRef[] = [];
     for (const id of props.handle.ids) {
         const row = props.handle.rows.get(id);
-        if (row) entries.push([id, refOf(row)]);
+        if (row) refs.push(refOf(row));
     }
-    table.setSelected(props.gvr, entries);
+    table.setSelected(props.gvr, refs);
 }
 
 // ---- column resize: one CSS variable on the scroller changes while dragging; the layout is saved once on release ----
@@ -416,13 +484,13 @@ const readyBad = (row: Row, idx: number) => {
     return (t === 2 || t === 3) && containersIdx.value >= 0 && n(row[idx]) < n(row[containersIdx.value]);
 };
 
-function cellClass(c: ColPlan, row: Row) {
+function cellClass(c: ColPlan, row: Row, dc?: CellContent | null) {
     return {
         name: c.kind === 'name',
-        mono: c.kind === 'mono',
+        mono: dc?.mono ?? c.kind === 'mono',
         r: c.align === 'right',
-        muted: c.kind === 'age' || c.key === 'namespace',
-        bad: (c.key === 'restarts' && n(row[c.idx]) > 5) || (c.kind === 'ready' && readyBad(row, c.idx))
+        muted: dc?.muted ?? (c.kind === 'age' || c.key === 'namespace'),
+        bad: c.idx >= 0 && ((c.key === 'restarts' && n(row[c.idx]) > 5) || (c.kind === 'ready' && readyBad(row, c.idx)))
     };
 }
 
@@ -512,7 +580,7 @@ function metricText(c: ColPlan, row: Row): string {
                 <div
                     v-for="it in slice"
                     :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, planKey]"
+                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
                     class="tr row"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_DESKTOP + 'px)' }"
@@ -524,14 +592,21 @@ function metricText(c: ColPlan, row: Row): string {
                     <template v-if="it.ver >= 0">
                         <span role="cell"><input class="cb" type="checkbox" tabindex="-1" aria-label="Select row" :checked="it.sel" /></span>
                         <span
-                            v-for="c in plan.cols"
+                            v-for="(c, ci) in plan.cols"
                             :key="c.key"
                             class="c"
-                            :class="cellClass(c, it.row)"
+                            :class="cellClass(c, it.row, it.dc?.[ci])"
                             role="cell"
                             :data-open="c.kind === 'name' ? '' : undefined"
                         >
-                            <template v-if="c.kind === 'cluster'"
+                            <template v-if="it.dc?.[ci]"
+                                ><span v-if="it.dc[ci]!.tag" class="tag" :class="it.dc[ci]!.tag!.tone" :title="it.dc[ci]!.title">{{
+                                    it.dc[ci]!.tag!.text
+                                }}</span
+                                ><span v-if="it.dc[ci]!.text" :title="it.dc[ci]!.title">{{ it.dc[ci]!.text }}</span
+                                ><template v-if="!it.dc[ci]!.tag && !it.dc[ci]!.text">—</template></template
+                            >
+                            <template v-else-if="c.kind === 'cluster'"
                                 ><span class="tag"
                                     ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx] }}</span
                                 ></template
@@ -563,7 +638,7 @@ function metricText(c: ColPlan, row: Row): string {
                 <div
                     v-for="it in slice"
                     :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, planKey]"
+                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
                     class="pcard"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_PHONE + 'px)' }"

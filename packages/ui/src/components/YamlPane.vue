@@ -7,10 +7,9 @@ import { useRouter } from 'vue-router';
 
 import { checkAccess } from '@/lib/access.ts';
 import { newRequestId } from '@/lib/actions.ts';
-import { getAgent } from '@/lib/agent.ts';
-import { errorText } from '@/lib/mutations.ts';
+import { editRequest } from '@/lib/drawer.ts';
+import { callMutating, errorText, isCancelled, newWriteDecision, runAs } from '@/lib/mutations.ts';
 import { GITOPS_LABEL } from '@/lib/overview.ts';
-import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 // CodeMirror and the diff view are lazy chunks: nothing here loads until the YAML tab is opened.
@@ -19,7 +18,6 @@ const DiffView = defineAsyncComponent(() => import('./DiffView.vue'));
 
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload; deleted: boolean; frames: number }>();
 
-const clusters = useClustersStore();
 const ui = useUiStore();
 const router = useRouter();
 
@@ -28,10 +26,7 @@ const mode = ref<Mode>('view');
 const editor = ref<{ getValue(): string; setValue(t: string): void; focus(): void } | null>(null);
 
 const LARGE = 1024 * 1024;
-const isSecret = computed(() => props.target.gvr === 'v1/secrets');
-const revealed = ref(false);
 const tooLarge = computed(() => props.payload.yaml.length > LARGE);
-const hidden = computed(() => isSecret.value && !revealed.value);
 
 // ---- the document the editor shows: live YAML in view mode, the opened version while editing ----
 const openedRV = ref('');
@@ -57,7 +52,6 @@ watch(
     () => `${props.target.cluster}|${props.target.gvr}|${props.target.namespace}|${props.target.name}`,
     () => {
         mode.value = 'view';
-        revealed.value = false;
         dirty.value = false;
         review.value = null;
         conflict.value = null;
@@ -79,7 +73,21 @@ function startEdit() {
     queueMicrotask(() => editor.value?.focus());
 }
 
+// The `e` shortcut asks for edit mode; honoured once the document is here and editable.
+watch(
+    editRequest,
+    want => {
+        if (!want) return;
+        editRequest.value = false;
+        if (mode.value === 'view' && !tooLarge.value && !props.deleted) startEdit();
+    },
+    { immediate: true }
+);
+
 function discard() {
+    // The editor still holds the edits (it only reloads when its `initial` changes): put the live document back explicitly.
+    editor.value?.setValue(props.payload.yaml);
+    dirty.value = false;
     mode.value = 'view';
     review.value = null;
     conflict.value = null;
@@ -106,8 +114,8 @@ interface Review {
 const review = shallowRef<Review | null>(null);
 const conflict = shallowRef<ObjectPayload | null>(null);
 const applying = ref(false);
-
-const writeContext = computed(() => clusters.writeContextOf(props.target.cluster));
+// The write-context answer from the dry run carries into the apply, so the user is asked once.
+const writeDecision = newWriteDecision();
 
 async function startReview() {
     const draft = editor.value?.getValue() ?? openedYaml.value;
@@ -115,19 +123,31 @@ async function startReview() {
         ui.toast('info', 'No changes to review');
         return;
     }
+    writeDecision.accepted = false;
     review.value = { draft, dry: null, failure: '', viaWrite: false, busy: true };
     conflict.value = null;
     mode.value = 'review';
     try {
         const [dry, access] = await Promise.all([
-            getAgent().call<ObjectDryRunResult>('object.dryRun', { ref: props.target, yaml: draft, mode: 'update' }),
+            callMutating<ObjectDryRunResult>(
+                props.target.cluster,
+                'object.dryRun',
+                { ref: props.target, yaml: draft, mode: 'update' },
+                { decision: writeDecision }
+            ),
             checkAccess([
                 { cluster: props.target.cluster, verb: 'update', gvr: props.target.gvr, namespace: props.target.namespace, name: props.target.name }
             ]).catch(() => [])
         ]);
         if (review.value?.draft === draft) review.value = { draft, dry, failure: '', viaWrite: !!access[0]?.viaWrite, busy: false };
     } catch (e) {
-        if (review.value?.draft === draft) review.value = { draft, dry: null, failure: errorText(e), viaWrite: false, busy: false };
+        if (isCancelled(e)) {
+            // The user declined the write context: back to the editor, nothing to report.
+            if (review.value?.draft === draft) {
+                review.value = null;
+                mode.value = 'edit';
+            }
+        } else if (review.value?.draft === draft) review.value = { draft, dry: null, failure: errorText(e), viaWrite: false, busy: false };
     }
 }
 
@@ -141,13 +161,18 @@ async function apply(overwrite = false) {
     // One id per intent: a retry after a dropped connection reuses it, so the agent cannot apply twice.
     pendingRequest ??= newRequestId();
     try {
-        const res = await getAgent().call<{ resourceVersion: string; usedContext: string }>('object.apply', {
-            requestId: pendingRequest,
-            ref: props.target,
-            yaml: r.draft,
-            mode: 'update',
-            resourceVersion: live ? live.resourceVersion : openedRV.value
-        });
+        const res = await callMutating<{ resourceVersion: string; usedContext: string }>(
+            props.target.cluster,
+            'object.apply',
+            {
+                requestId: pendingRequest,
+                ref: props.target,
+                yaml: r.draft,
+                mode: 'update',
+                resourceVersion: live ? live.resourceVersion : openedRV.value
+            },
+            { decision: writeDecision, onRequestId: id => (pendingRequest = id) }
+        );
         pendingRequest = null;
         ui.toast('success', `Applied ${props.target.name}${res.usedContext ? ` as ${res.usedContext}` : ''}`);
         mode.value = 'view';
@@ -156,7 +181,7 @@ async function apply(overwrite = false) {
     } catch (e) {
         if (!(e instanceof RpcError && e.code === 'unavailable')) pendingRequest = null;
         if (e instanceof RpcError && e.code === 'conflict' && e.live) conflict.value = e.live;
-        else ui.toast('danger', errorText(e));
+        else if (!isCancelled(e)) ui.toast('danger', errorText(e));
     } finally {
         applying.value = false;
     }
@@ -182,134 +207,112 @@ defineExpose({ startEdit, mode });
     <div class="ypane">
         <div v-if="deleted" class="notice danger" role="alert"><b>This object was deleted on the server.</b></div>
 
-        <template v-if="hidden">
-            <div class="notice" role="note">
-                <div>
-                    <b>Secret values are hidden.</b> Revealing loads the full object, including base64-encoded values, into this view.
-                    <div class="row"><button class="btn sm" type="button" data-testid="reveal" @click="revealed = true">Reveal values</button></div>
-                </div>
-            </div>
-        </template>
-        <template v-else>
-            <div v-show="mode !== 'review'" class="pane">
-                <div class="toolbar">
-                    <template v-if="mode === 'view'">
-                        <span class="tag">read-only</span>
-                        <span v-if="justUpdated" class="tag info" role="status">updated from server</span>
-                        <span class="muted small">resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
-                        <div class="grow"></div>
-                        <button class="btn sm" type="button" @click="copy">Copy</button>
-                        <button class="btn sm primary" type="button" :disabled="tooLarge || deleted" data-testid="edit-yaml" @click="startEdit">
-                            Edit
-                        </button>
-                    </template>
-                    <template v-else>
-                        <span class="tag warning">editing</span>
-                        <span class="muted small">opened at <span class="mono">{{ openedRV }}</span></span>
-                        <div class="grow"></div>
-                        <button class="btn sm" type="button" @click="discard">Discard</button>
-                        <button class="btn sm primary" type="button" :disabled="!dirty" data-testid="review" @click="startReview">
-                            Review changes
-                        </button>
-                    </template>
-                </div>
-                <div v-if="tooLarge" class="notice warn" role="note">This document is over 1 MB, so it opens read-only.</div>
-                <div v-if="changedOnServer" class="notice warn" role="alert" data-testid="changed-notice">
-                    <div>
-                        <b>Changed on the server.</b> This object is now at <span class="mono">{{ payload.resourceVersion }}</span>; you opened
-                        <span class="mono">{{ openedRV }}</span>.
-                        <div class="row">
-                            <button class="btn sm" type="button" @click="reloadLive()">Reload (discard my edits)</button>
-                            <span class="muted small">or keep editing; Apply will tell you about any conflict.</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="editor">
-                    <YamlEditor
-                        ref="editor"
-                        :initial="editorDoc"
-                        :read-only="mode === 'view' || tooLarge"
-                        :label="`YAML of ${target.name}`"
-                        @dirty="dirty = $event"
-                    />
-                </div>
-            </div>
-
-            <div v-if="mode === 'review' && review" class="pane review" data-testid="review-pane">
-                <div class="toolbar">
-                    <b>Review changes</b>
-                    <span class="muted small">against live resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
-                </div>
-                <div class="scroll">
-                    <div v-if="review.busy" class="notice" role="status">Running a server-side dry run…</div>
-                    <div v-if="conflict" class="notice danger" role="alert" data-testid="conflict-notice">
-                        <div>
-                            <b>Someone changed this object while you were editing.</b> Opened <span class="mono">{{ openedRV }}</span>, now
-                            <span class="mono">{{ conflict.resourceVersion }}</span>. Below: what changed on the server since you opened it, and your
-                            changes against the live object.
-                            <div class="row">
-                                <button class="btn sm" type="button" data-testid="conflict-reload" @click="reloadLive(conflict)">
-                                    Reload live version
-                                </button>
-                                <button
-                                    class="btn sm danger"
-                                    type="button"
-                                    data-testid="conflict-overwrite"
-                                    :disabled="applying"
-                                    @click="apply(true)"
-                                >
-                                    Overwrite with mine
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-else-if="changedOnServer" class="notice warn" role="note">
-                        The live object changed since you opened it (<span class="mono">{{ openedRV }}</span> to
-                        <span class="mono">{{ payload.resourceVersion }}</span>); Apply may report a conflict.
-                    </div>
-                    <div v-if="gitops" class="notice warn" role="note">
-                        <div>
-                            <b>Managed by {{ GITOPS_LABEL[gitops.kind] ?? gitops.kind }}.</b>
-                            {{ gitops.kind }} <span class="mono">{{ gitops.namespace ? gitops.namespace + '/' : '' }}{{ gitops.name }}</span> may
-                            revert this change. Change it at the source, or suspend it first.
-                        </div>
-                    </div>
-                    <div v-for="c in review.dry?.conflicts ?? []" :key="c.path + c.manager" class="notice warn" role="note">
-                        <div>
-                            <span class="mono">{{ c.path }}</span> is managed by <span class="mono">{{ c.manager }}</span>. It may revert this change.
-                        </div>
-                    </div>
-                    <div v-for="w in review.dry?.warnings ?? []" :key="w" class="notice warn" role="note"><div>{{ w }}</div></div>
-                    <div v-if="review.failure" class="notice danger" role="alert"><div>Dry run failed: {{ review.failure }}</div></div>
-                    <div v-else-if="review.dry && !review.dry.ok" class="notice danger" role="alert">
-                        <div><b>The server rejected this change.</b> {{ review.dry.error?.message }}</div>
-                    </div>
-                    <div v-else-if="review.dry" class="notice ok" role="status"><div>Server dry run passed.</div></div>
-                    <DiffView
-                        :left="conflict ? openedYaml : payload.yaml"
-                        :right="conflict ? conflict.yaml : review.draft"
-                        :left-label="conflict ? 'Opened' : 'Live'"
-                        :right-label="conflict ? 'Live now' : 'Yours'"
-                    />
-                    <DiffView v-if="conflict" :left="conflict.yaml" :right="review.draft" left-label="Live now" right-label="Yours" />
-                </div>
-                <div class="foot">
-                    <span class="runas small">
-                        Runs as
-                        <template v-if="review.viaWrite"
-                            ><span class="tag warning">write</span
-                            ><span class="mono">{{ writeContext || 'the linked write context' }}</span></template
-                        >
-                        <template v-else>your current context</template>
-                    </span>
+        <div v-show="mode !== 'review'" class="pane">
+            <div class="toolbar">
+                <template v-if="mode === 'view'">
+                    <span class="tag">read-only</span>
+                    <span v-if="justUpdated" class="tag info" role="status">updated from server</span>
+                    <span class="muted small">resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
                     <div class="grow"></div>
-                    <button class="btn" type="button" @click="mode = 'edit'">Back to editor</button>
-                    <button class="btn primary" type="button" :disabled="!canApply" data-testid="apply" @click="apply(false)">
-                        {{ applying ? 'Applying…' : 'Apply' }}
+                    <button class="btn sm" type="button" @click="copy">Copy</button>
+                    <button class="btn sm primary" type="button" :disabled="tooLarge || deleted" data-testid="edit-yaml" @click="startEdit">
+                        Edit
                     </button>
+                </template>
+                <template v-else>
+                    <span class="tag warning">editing</span>
+                    <span class="muted small">opened at <span class="mono">{{ openedRV }}</span></span>
+                    <div class="grow"></div>
+                    <button class="btn sm" type="button" @click="discard">Discard</button>
+                    <button class="btn sm primary" type="button" :disabled="!dirty" data-testid="review" @click="startReview">Review changes</button>
+                </template>
+            </div>
+            <div v-if="tooLarge" class="notice warn" role="note">This document is over 1 MB, so it opens read-only.</div>
+            <div v-if="changedOnServer" class="notice warn" role="alert" data-testid="changed-notice">
+                <div>
+                    <b>Changed on the server.</b> This object is now at <span class="mono">{{ payload.resourceVersion }}</span>; you opened
+                    <span class="mono">{{ openedRV }}</span>.
+                    <div class="row">
+                        <button class="btn sm" type="button" @click="reloadLive()">Reload (discard my edits)</button>
+                        <span class="muted small">or keep editing; Apply will tell you about any conflict.</span>
+                    </div>
                 </div>
             </div>
-        </template>
+            <div class="editor">
+                <YamlEditor
+                    ref="editor"
+                    :initial="editorDoc"
+                    :read-only="mode === 'view' || tooLarge"
+                    :label="`YAML of ${target.name}`"
+                    @dirty="dirty = $event"
+                />
+            </div>
+        </div>
+
+        <div v-if="mode === 'review' && review" class="pane review" data-testid="review-pane">
+            <div class="toolbar">
+                <b>Review changes</b>
+                <span class="muted small">against live resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
+            </div>
+            <div class="scroll">
+                <div v-if="review.busy" class="notice" role="status">Running a server-side dry run…</div>
+                <div v-if="conflict" class="notice danger" role="alert" data-testid="conflict-notice">
+                    <div>
+                        <b>Someone changed this object while you were editing.</b> Opened <span class="mono">{{ openedRV }}</span>, now
+                        <span class="mono">{{ conflict.resourceVersion }}</span>. Below: what changed on the server since you opened it, and your
+                        changes against the live object.
+                        <div class="row">
+                            <button class="btn sm" type="button" data-testid="conflict-reload" @click="reloadLive(conflict)">
+                                Discard my edits and reload
+                            </button>
+                            <button class="btn sm danger" type="button" data-testid="conflict-overwrite" :disabled="applying" @click="apply(true)">
+                                Overwrite with mine
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div v-else-if="changedOnServer" class="notice warn" role="note">
+                    The live object changed since you opened it (<span class="mono">{{ openedRV }}</span> to
+                    <span class="mono">{{ payload.resourceVersion }}</span>); Apply may report a conflict.
+                </div>
+                <div v-if="gitops" class="notice warn" role="note">
+                    <div>
+                        <b>Managed by {{ GITOPS_LABEL[gitops.kind] ?? gitops.kind }}.</b>
+                        {{ gitops.kind }} <span class="mono">{{ gitops.namespace ? gitops.namespace + '/' : '' }}{{ gitops.name }}</span> may revert
+                        this change. Change it at the source, or suspend it first.
+                    </div>
+                </div>
+                <div v-for="c in review.dry?.conflicts ?? []" :key="c.path + c.manager" class="notice warn" role="note">
+                    <div>
+                        <span class="mono">{{ c.path }}</span> is managed by <span class="mono">{{ c.manager }}</span>. It may revert this change.
+                    </div>
+                </div>
+                <div v-for="w in review.dry?.warnings ?? []" :key="w" class="notice warn" role="note"><div>{{ w }}</div></div>
+                <div v-if="review.failure" class="notice danger" role="alert"><div>Dry run failed: {{ review.failure }}</div></div>
+                <div v-else-if="review.dry && !review.dry.ok" class="notice danger" role="alert">
+                    <div><b>The server rejected this change.</b> {{ review.dry.error?.message }}</div>
+                </div>
+                <div v-else-if="review.dry" class="notice ok" role="status"><div>Server dry run passed.</div></div>
+                <DiffView
+                    :left="conflict ? openedYaml : payload.yaml"
+                    :right="conflict ? conflict.yaml : review.draft"
+                    :left-label="conflict ? 'Opened' : 'Live'"
+                    :right-label="conflict ? 'Live now' : 'Yours'"
+                />
+                <DiffView v-if="conflict" :left="conflict.yaml" :right="review.draft" left-label="Live now" right-label="Yours" />
+            </div>
+            <div class="foot">
+                <span class="runas small">
+                    <span v-if="review.viaWrite" class="tag warning">write</span>
+                    {{ runAs(target.cluster, review.viaWrite) }}
+                </span>
+                <div class="grow"></div>
+                <button class="btn" type="button" @click="mode = 'edit'">Back to editor</button>
+                <button class="btn primary" type="button" :disabled="!canApply" data-testid="apply" @click="apply(false)">
+                    {{ applying ? 'Applying…' : 'Apply' }}
+                </button>
+            </div>
+        </div>
     </div>
 </template>
 

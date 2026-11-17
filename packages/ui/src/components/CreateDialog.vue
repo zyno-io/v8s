@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { ObjectApplyResult, ObjectDryRunResult, ObjectRef } from '@v8s/client';
 
+import { RpcError } from '@v8s/client';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { newRequestId } from '@/lib/actions.ts';
-import { getAgent, getNamespacesView, kinds } from '@/lib/agent.ts';
+import { getNamespacesView, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
-import { errorText } from '@/lib/mutations.ts';
+import { callMutating, errorText, isCancelled, newWriteDecision } from '@/lib/mutations.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
 import { gvrFromManifest, TEMPLATES, templateFor } from '@/lib/templates.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -78,12 +79,21 @@ async function resolve(): Promise<Resolved | string> {
     return { yaml, ref: { cluster: cluster.value, gvr, namespace: first.metadata?.namespace || undefined, name: first.metadata?.name || '' } };
 }
 
+// The write-context answer from the dry run carries into the create, so the user is asked once.
+const writeDecision = newWriteDecision();
+
 async function runDry(r: Resolved): Promise<boolean> {
-    dry.value = await getAgent().call<ObjectDryRunResult>('object.dryRun', { ref: r.ref, yaml: r.yaml, mode: 'create' });
+    dry.value = await callMutating<ObjectDryRunResult>(
+        r.ref.cluster,
+        'object.dryRun',
+        { ref: r.ref, yaml: r.yaml, mode: 'create' },
+        { decision: writeDecision }
+    );
     return dry.value.ok;
 }
 
 async function dryRun() {
+    writeDecision.accepted = false;
     busy.value = true;
     failure.value = '';
     try {
@@ -91,14 +101,25 @@ async function dryRun() {
         if (typeof r === 'string') failure.value = r;
         else await runDry(r);
     } catch (e) {
-        failure.value = errorText(e);
+        if (!isCancelled(e)) failure.value = errorText(e);
     } finally {
         busy.value = false;
     }
 }
 
+const kindOf = (gvr: string) => kinds.value.find(k => k.gvr === gvr)?.kind ?? gvr;
+
+/** A multi-document create can fail part way: say which documents are already in the cluster. */
+function createErrorText(e: unknown): string {
+    const base = errorText(e);
+    const applied = e instanceof RpcError ? (e.applied ?? []) : [];
+    if (!applied.length) return base;
+    return `${base} Applied before the failure: ${applied.map(a => `${kindOf(a.gvr)} ${a.name}`).join(', ')}`;
+}
+
 let requestId: string | null = null;
 async function create() {
+    writeDecision.accepted = false;
     busy.value = true;
     failure.value = '';
     try {
@@ -109,7 +130,15 @@ async function create() {
         }
         if (!(await runDry(r))) return;
         requestId ??= newRequestId();
-        const res = await getAgent().call<ObjectApplyResult>('object.apply', { requestId, ref: r.ref, yaml: r.yaml, mode: 'create' });
+        const res = await callMutating<ObjectApplyResult>(
+            r.ref.cluster,
+            'object.apply',
+            { requestId, ref: r.ref, yaml: r.yaml, mode: 'create' },
+            {
+                decision: writeDecision,
+                onRequestId: id => (requestId = id)
+            }
+        );
         requestId = null;
         created.value = true;
         const n = res.applied?.length ?? 1;
@@ -120,7 +149,7 @@ async function create() {
         close();
         if (n === 1 && res.applied?.[0]) void openObject(router, { ...res.applied[0], cluster: r.ref.cluster });
     } catch (e) {
-        failure.value = errorText(e);
+        if (!isCancelled(e)) failure.value = createErrorText(e);
         requestId = null;
     } finally {
         busy.value = false;
