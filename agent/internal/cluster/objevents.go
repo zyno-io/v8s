@@ -34,8 +34,9 @@ var (
 //
 // Events of a namespaced object live in its namespace; events of a cluster-scoped object live in "default"
 // (docs/performance.md §5). The selector uses kind, name and namespace, never uid: the kubelet records Node
-// events with the node name as uid. Known limitation: a namespaced kind in "default" and a cluster-scoped kind
-// with the same Kind and name share one view filter (Kind/Name) and so show each other's events.
+// events with the node name as uid, and recorders vary the apiVersion. Known limitation: two kinds with the same
+// Kind and name in one namespace (a Knative Service and the core Service it creates; a namespaced kind in
+// "default" and a cluster-scoped kind) share one watch and view filter, and so show each other's events.
 type ObjectEvents struct {
 	Cluster, Kind, Name string
 	InvolvedNS          string // "" for cluster-scoped objects
@@ -93,7 +94,9 @@ func (m *Manager) OpenObjectEvents(ctx context.Context, ref protocol.ObjectRef) 
 	if r == nil {
 		return nil, nil, ErrClusterNotSelected
 	}
-	kctx, kcancel := context.WithTimeout(ctx, ObjectEventsWait)
+	// One budget for discovery and the first list together: the subscribe answers within ObjectEventsWait.
+	deadline := time.Now().Add(ObjectEventsWait)
+	kctx, kcancel := context.WithDeadline(ctx, deadline)
 	kind, namespaced, err := r.kindOf(kctx, ref.GVR)
 	kcancel()
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
@@ -135,7 +138,7 @@ func (m *Manager) OpenObjectEvents(ctx context.Context, ref protocol.ObjectRef) 
 	if w == nil {
 		return fail(errEventsWatchStopped)
 	}
-	timeout := time.NewTimer(ObjectEventsWait)
+	timeout := time.NewTimer(time.Until(deadline))
 	defer timeout.Stop()
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()

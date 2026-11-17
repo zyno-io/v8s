@@ -600,6 +600,13 @@ func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(res re
 			cb(resolved{}, &view.BadQueryError{Msg: "involved requires gvr " + ingest.EventsGVR})
 			return
 		}
+		// Reject a malformed query (unknown sort/filter column) before starting a watch for it.
+		probe := q
+		probe.GVR, probe.Involved = ingest.ObjectEventsGVR, nil
+		if _, err := view.Normalize(probe); err != nil {
+			cb(resolved{}, err)
+			return
+		}
 		go func() {
 			rctx, cancel := context.WithCancel(ctx)
 			defer cancel()

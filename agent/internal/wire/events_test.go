@@ -159,6 +159,16 @@ func TestInvolvedEventsRejections(t *testing.T) {
 	if r := c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 3, Gen: 1, Query: bad, Window: protocol.Window{Limit: 10}}, nil); r.Error == nil || r.Error.Code != "not_found" {
 		t.Fatalf("unselected cluster: %+v", r.Error)
 	}
+	// A malformed query is refused at once, before any watch starts for it.
+	unk := involvedQuery("apps/v1/deployments", "team-0", "svc-0")
+	unk.Sort = []protocol.Sort{{Col: "no-such-column"}}
+	start := time.Now()
+	if r := c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 4, Gen: 1, Query: unk, Window: protocol.Window{Limit: 10}}, nil); r.Error == nil || r.Error.Code != "bad_request" {
+		t.Fatalf("unknown sort column: %+v", r.Error)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("malformed involved query took %v (a watch was started first)", d)
+	}
 }
 
 func TestInvolvedEventsViewUpdateReResolves(t *testing.T) {
