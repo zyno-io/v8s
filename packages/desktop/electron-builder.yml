@@ -37,6 +37,8 @@ mac:
 dmg:
   sign: false
 linux:
+  # Derived from the npm package name (@v8s/desktop) otherwise, which is not a valid file name.
+  executableName: v8s
   category: Development
   maintainer: Zyno Consulting <support@zyno.io>
   target:
