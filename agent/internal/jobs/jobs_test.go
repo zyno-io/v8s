@@ -183,3 +183,35 @@ func TestSubscriptionCoalescesAndKeepsFinalState(t *testing.T) {
 		t.Fatalf("%d frames, %+v", len(frames), frames[0].State)
 	}
 }
+
+// Regression: a job started while no client is connected still gets the 15-minute bound.
+func TestStartWithoutClientArmsIdleTimer(t *testing.T) {
+	m, clk := newMgr(t)
+	id := m.Start("", "drain", "c1", "n1", func(ctx context.Context, jc *Ctx) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	clk.advance(14*time.Minute + 59*time.Second)
+	if f, _ := m.Get(id); f.State != protocol.JobRunning {
+		t.Fatalf("stopped early: %+v", f)
+	}
+	clk.advance(2 * time.Second)
+	m.Wait(id)
+	if f, _ := m.Get(id); f.State != protocol.JobCancelled {
+		t.Fatalf("%+v", f)
+	}
+}
+
+func TestLookupFindsRequestID(t *testing.T) {
+	m, _ := newMgr(t)
+	if _, ok := m.Lookup("r"); ok {
+		t.Fatal("unknown id")
+	}
+	id := m.Start("r", "drain", "c", "n", func(context.Context, *Ctx) error { return nil })
+	if got, ok := m.Lookup("r"); !ok || got != id {
+		t.Fatalf("%s %v", got, ok)
+	}
+	if _, ok := m.Lookup(""); ok {
+		t.Fatal("empty id is never deduped")
+	}
+}

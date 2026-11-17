@@ -147,11 +147,11 @@ func (s *interactive) run(ctx context.Context, candidates [][]string, ready prot
 }
 
 func (s *interactive) runCore(ctx context.Context, candidates [][]string, ready protocol.StreamReady, runner Runner, _ bool) error {
-	pr, pw := io.Pipe()
+	in := newStdinMux()
 	size := newSizeQueue(ctx.Done())
 	// client -> agent
 	go func() {
-		defer pw.Close()
+		defer in.closeInput()
 		for {
 			bin, data, err := s.t.Read(ctx)
 			if err != nil {
@@ -160,7 +160,7 @@ func (s *interactive) runCore(ctx context.Context, candidates [][]string, ready 
 			s.touch()
 			if bin {
 				if len(data) > 1 && data[0] == protocol.StreamChanStdin {
-					if _, err := pw.Write(data[1:]); err != nil {
+					if err := in.write(data[1:]); err != nil {
 						return
 					}
 				}
@@ -180,7 +180,9 @@ func (s *interactive) runCore(ctx context.Context, candidates [][]string, ready 
 		mu.Lock()
 		produced = false
 		mu.Unlock()
+		pr := in.next() // a fresh pipe per attempt: a leftover stdin reader of a failed attempt cannot eat keystrokes
 		e := runner(ctx, cmd, pr, out, errw, size)
+		in.endAttempt()
 		mu.Lock()
 		defer mu.Unlock()
 		return produced, e
@@ -191,7 +193,94 @@ func (s *interactive) runCore(ctx context.Context, candidates [][]string, ready 
 		}
 		_ = s.sendJSON(ctx, protocol.StreamServerMsg{Ready: &r})
 	})
+	in.closeInput()
 	return err
+}
+
+// stdinMux feeds client keystrokes into the pipe of the current attempt. Every attempt has its own pipe, and
+// the pipe of a finished attempt is closed at once, which unblocks (and ends) any client-go stdin goroutine
+// still reading from it; keystrokes that arrive between attempts wait for the next pipe.
+type stdinMux struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	pw     *io.PipeWriter
+	pr     *io.PipeReader
+	ended  bool // the current attempt is over, no next one started yet
+	closed bool // the client side is gone: stdin is at EOF
+}
+
+var errAttemptEnded = errors.New("exec attempt ended")
+
+func newStdinMux() *stdinMux {
+	m := &stdinMux{}
+	m.cond = sync.NewCond(&m.mu)
+	return m
+}
+
+// next starts an attempt and returns its stdin.
+func (m *stdinMux) next() *io.PipeReader {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pr != nil {
+		_ = m.pr.CloseWithError(errAttemptEnded)
+		_ = m.pw.CloseWithError(errAttemptEnded)
+	}
+	m.pr, m.pw = io.Pipe()
+	m.ended = false
+	if m.closed {
+		_ = m.pw.Close()
+	}
+	m.cond.Broadcast()
+	return m.pr
+}
+
+// endAttempt closes the pipe of the finished attempt.
+func (m *stdinMux) endAttempt() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pr != nil {
+		_ = m.pr.CloseWithError(errAttemptEnded)
+	}
+	m.ended = true
+	m.cond.Broadcast()
+}
+
+func (m *stdinMux) write(p []byte) error {
+	for len(p) > 0 {
+		m.mu.Lock()
+		for !m.closed && (m.pw == nil || m.ended) {
+			m.cond.Wait()
+		}
+		if m.closed {
+			m.mu.Unlock()
+			return io.ErrClosedPipe
+		}
+		pw := m.pw
+		m.mu.Unlock()
+		n, err := pw.Write(p)
+		p = p[n:]
+		if err == nil {
+			continue
+		}
+		m.mu.Lock()
+		retry := m.pw != pw || m.ended // the attempt ended under the write: hand the rest to the next one
+		m.mu.Unlock()
+		if !retry {
+			return err
+		}
+	}
+	return nil
+}
+
+// closeInput ends stdin for the current (and any later) attempt.
+func (m *stdinMux) closeInput() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = true
+	if m.pw != nil {
+		_ = m.pw.Close()
+	}
+	m.cond.Broadcast()
 }
 
 // runOnce is run for a session without shell discovery.

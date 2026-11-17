@@ -197,5 +197,6 @@ func Project(o *Object) *ingest.Row {
 	r.PutS(o.LastHandled)
 	r.PutS(dependsText(o))
 	r.SetTone(Tone(o))
+	r.SetFacts(factsOf(o))
 	return r
 }

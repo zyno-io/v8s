@@ -232,6 +232,20 @@ func (s *Service) Route(ctx context.Context, cluster, verb, gvr, sub, ns, name s
 // context (viaWrite) or the read context.
 func MapError(err error, viaWrite bool) error { return mapErr(err, viaWrite) }
 
+// MapRouted is mapW for callers outside the package (streams, drain): err came from a call of verb on
+// gvr[/sub] made through the routed context, so a 403 through an expired write context becomes
+// write_unavailable instead of a plain forbidden.
+func (s *Service) MapRouted(ctx context.Context, err error, r *Routed, verb, gvr, sub, ns, name string) error {
+	if err == nil {
+		return nil
+	}
+	g, perr := parseGVR(gvr)
+	if r == nil || perr != nil {
+		return mapErr(err, r != nil && r.ViaWrite)
+	}
+	return s.mapW(ctx, err, r.ViaWrite, wsite{cid: r.ContextID, verb: verb, sub: sub, ns: ns, name: name, gvr: g})
+}
+
 // NewError builds a protocol error.
 func NewError(code, format string, a ...any) error { return newErr(code, format, a...) }
 

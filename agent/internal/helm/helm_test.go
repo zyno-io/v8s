@@ -154,7 +154,7 @@ func TestListProjectionLabelsOnly(t *testing.T) {
 
 func TestModuleRegistered(t *testing.T) {
 	m := ingest.Lookup(protocol.HelmGVR)
-	if m == nil || !m.Virtual || !m.Curated || !m.NoWatchList || m.Tier0 || m.Kind != "Release" || m.NCells != 4 {
+	if m == nil || !m.Virtual || !m.Curated || !m.NoWatchList || !m.Tier0 || m.Kind != "Release" || m.NCells != 4 {
 		t.Fatalf("module: %+v", m)
 	}
 }

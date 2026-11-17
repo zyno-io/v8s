@@ -36,7 +36,7 @@ func (m *Manager) openDebug(ctx context.Context, p protocol.StreamOpenParams) (p
 	if target == "" {
 		pod, gerr := pods.Get(ctx, ref.Name, metav1.GetOptions{})
 		if gerr != nil {
-			return res, ops.MapError(gerr, routed.ViaWrite)
+			return res, m.mapRouted(ctx, gerr, routed, "get", podsGVR, "", ref.Namespace, ref.Name)
 		}
 		target = defaultContainer(pod)
 	}
@@ -48,15 +48,17 @@ func (m *Manager) openDebug(ctx context.Context, p protocol.StreamOpenParams) (p
 		defer lim.Stop()
 		s := &interactive{t: t, touch: lim.Touch}
 		if _, perr := pods.Patch(lctx, ref.Name, types.StrategicMergePatchType, debugPatch(name, image, target), metav1.PatchOptions{FieldManager: "v8s"}, "ephemeralcontainers"); perr != nil {
-			_ = s.finish(lctx, fmt.Errorf("could not add the debug container: %s", ops.MapError(perr, via).Error()))
+			_ = s.finish(lctx, fmt.Errorf("could not add the debug container: %s", m.mapRouted(lctx, perr, routed, "patch", podsGVR, "ephemeralcontainers", ref.Namespace, ref.Name).Error()))
 			return
 		}
 		if werr := waitEphemeral(lctx, func() (*corev1.Pod, error) { return pods.Get(lctx, ref.Name, metav1.GetOptions{}) }, name); werr != nil {
 			_ = s.finish(lctx, werr)
 			return
 		}
-		runner := execRunner(rt, ref.Namespace, ref.Name, name, true, false)
-		_ = s.run(lctx, shellCandidates(nil), protocol.StreamReady{UsedContext: used, Container: name}, runner)
+		// Attach to the ephemeral container's own process (like kubectl debug): the image's shell is its
+		// entrypoint, so the container ends with the session instead of idling behind a second exec'd shell.
+		runner := execRunner(rt, ref.Namespace, ref.Name, name, true, true)
+		_ = s.runOnce(lctx, [][]string{{"attach"}}, protocol.StreamReady{UsedContext: used, Container: name}, runner)
 	}})
 	return res, nil
 }

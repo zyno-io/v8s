@@ -25,12 +25,20 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/fake"
 	"github.com/zyno-io/v8s/agent/internal/flux"
 	"github.com/zyno-io/v8s/agent/internal/helm"
+	"github.com/zyno-io/v8s/agent/internal/hubble"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/jobs"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	_ "github.com/zyno-io/v8s/agent/internal/kubescape"
+	_ "github.com/zyno-io/v8s/agent/internal/kyverno"
 	"github.com/zyno-io/v8s/agent/internal/ops"
+	_ "github.com/zyno-io/v8s/agent/internal/platform"
+	"github.com/zyno-io/v8s/agent/internal/problems"
+	"github.com/zyno-io/v8s/agent/internal/rpc"
+	"github.com/zyno-io/v8s/agent/internal/security"
 	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/streams"
+	_ "github.com/zyno-io/v8s/agent/internal/trivy"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/webui"
@@ -124,6 +132,26 @@ func runAgent(args []string, hooks agentHooks) error {
 	eng := view.NewEngine()
 	mgr := cluster.NewManager(ctx, src, eng, log)
 	mgr.SetSettings(set)
+	probHub := problems.NewHub(problems.HubConfig{
+		Settings: set.Get, Patch: set.Patch, Log: log,
+		Fetch: func(ctx context.Context, cluster, gvr, ns, name string) (*unstructured.Unstructured, error) {
+			g, v, r, err := ingest.ParseGVR(gvr)
+			if err != nil {
+				return nil, err
+			}
+			c, err := src.Backend(cluster)
+			if err != nil {
+				return nil, err
+			}
+			ri := c.Dynamic().Resource(schema.GroupVersionResource{Group: g, Version: v, Resource: r})
+			if ns != "" {
+				return ri.Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+			}
+			return ri.Get(ctx, name, metav1.GetOptions{})
+		},
+	})
+	set.OnChange(probHub.SettingsChanged)
+	mgr.SetProblems(probHub)
 	opsSvc := ops.New(ops.Config{
 		Conn:    func(id string) (kube.Conn, error) { return src.Backend(id) },
 		Links:   mgr.Links,
@@ -195,8 +223,24 @@ func runAgent(args []string, hooks agentHooks) error {
 	}
 	go eng.Run(ctx)
 
-	srv := wire.NewServer(wire.Options{
-		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Streams: streamMgr, Jobs: jobsMgr, Drain: drainSvc, Flux: fluxSvc, Helm: helmSvc, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
+	handlers := map[string]rpc.Handler{}
+	var srv *wire.Server
+	secSvc := security.New(security.Config{Route: opsSvc.Route, Conn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Scan: mgr.ScanKind,
+		Clusters: func() []string { return mgr.List().Selected }})
+	for k, v := range secSvc.Handlers() {
+		handlers[k] = v
+	}
+	hubbleSvc := hubble.New(hubble.Config{Conn: connFn, Router: opsSvc, Clusters: func() []string { return mgr.List().Selected }, Problems: probHub,
+		ClientCount: func() int { return srv.ClientCount() }, Log: log})
+	defer hubbleSvc.Close()
+	hubbleSvc.RegisterStreams(streamMgr)
+	for k, v := range hubbleSvc.Handlers() {
+		handlers[k] = v
+	}
+	go hubbleSvc.StartProblems(ctx)
+
+	srv = wire.NewServer(wire.Options{Handlers: handlers,
+		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Streams: streamMgr, Jobs: jobsMgr, Drain: drainSvc, Flux: fluxSvc, Helm: helmSvc, Problems: probHub, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
 		Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "",
 		StaticDir: *staticDir, Log: log,
 	})

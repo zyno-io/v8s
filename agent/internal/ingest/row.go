@@ -53,6 +53,7 @@ type Row struct {
 	tone          uint8
 	flags         uint8
 	cells         []Cell
+	facts         any // kind-specific facts for the problems engine (see facts.go)
 }
 
 // PodRow is the pod projection (a Row with the pod cell layout).
@@ -181,7 +182,7 @@ func (r *Row) Node() Str       { return r.Cell(4).S }
 func (r *Row) CellsEqual(o *Row) bool {
 	if r.name != o.name || r.ns != o.ns || r.tone != o.tone || r.created != o.created ||
 		r.ownerKind != o.ownerKind || r.ownerName != o.ownerName ||
-		r.flags&flagDeleting != o.flags&flagDeleting || len(r.cells) != len(o.cells) {
+		r.flags&flagDeleting != o.flags&flagDeleting || len(r.cells) != len(o.cells) || !factsEqual(r.facts, o.facts) {
 		return false
 	}
 	for i := range r.cells {

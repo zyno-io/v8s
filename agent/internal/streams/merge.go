@@ -62,17 +62,19 @@ func Merge(ctx context.Context, srcs []<-chan Line, wait time.Duration, emit fun
 			timer.Stop()
 		}
 	}()
-	expired := false
+	// late[i]: source i missed the wait window and stays out of the way until it delivers a line again, so one
+	// idle source does not throttle the rest to one line per wait.
+	late := make([]bool, n)
 	for open > 0 || anyHead(heads) {
 		missing, have := false, false
 		for i := 0; i < n; i++ {
 			if heads[i] != nil {
 				have = true
-			} else if !done[i] {
+			} else if !done[i] && !late[i] {
 				missing = true
 			}
 		}
-		if have && (!missing || expired) {
+		if have && !missing {
 			best := -1
 			for i, h := range heads {
 				if h != nil && (best < 0 || h.TS.Before(heads[best].TS)) {
@@ -81,7 +83,6 @@ func Merge(ctx context.Context, srcs []<-chan Line, wait time.Duration, emit fun
 			}
 			l := *heads[best]
 			heads[best] = nil
-			expired = false
 			if timer != nil {
 				timer.Stop()
 				timer = nil
@@ -95,7 +96,7 @@ func Merge(ctx context.Context, srcs []<-chan Line, wait time.Duration, emit fun
 			continue
 		}
 		var tc <-chan time.Time
-		if have && timer == nil {
+		if have && missing && timer == nil {
 			timer = time.NewTimer(wait)
 		}
 		if timer != nil {
@@ -109,10 +110,15 @@ func Merge(ctx context.Context, srcs []<-chan Line, wait time.Duration, emit fun
 			} else {
 				l := e.l
 				heads[e.i] = &l
+				late[e.i] = false
 			}
 		case <-tc:
 			timer = nil
-			expired = true
+			for i := 0; i < n; i++ {
+				if heads[i] == nil && !done[i] {
+					late[i] = true
+				}
+			}
 		case <-ctx.Done():
 			return context.Cause(ctx)
 		}

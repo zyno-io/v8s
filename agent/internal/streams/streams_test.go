@@ -88,6 +88,8 @@ type stubConn struct {
 	logs    func(ns, pod string, o *corev1.PodLogOptions) (io.ReadCloser, error)
 	execFn  func(req kube.ExecRequest) error
 	execCmd chan []string
+	// execCtx, when set, replaces execFn and receives the context the runtime was called with.
+	execCtx func(ctx context.Context, req kube.ExecRequest) error
 }
 
 func (c *stubConn) Clientset() kubernetes.Interface { return c.cs }
@@ -95,9 +97,12 @@ func (c *stubConn) RESTConfig() *rest.Config        { return nil }
 func (c *stubConn) PodLogs(_ context.Context, ns, pod string, o *corev1.PodLogOptions) (io.ReadCloser, error) {
 	return c.logs(ns, pod, o)
 }
-func (c *stubConn) Exec(_ context.Context, r kube.ExecRequest) error {
+func (c *stubConn) Exec(ctx context.Context, r kube.ExecRequest) error {
 	if c.execCmd != nil {
 		c.execCmd <- r.Command
+	}
+	if c.execCtx != nil {
+		return c.execCtx(ctx, r)
 	}
 	return c.execFn(r)
 }

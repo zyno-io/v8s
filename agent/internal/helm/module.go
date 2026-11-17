@@ -84,7 +84,7 @@ var Module = &ingest.Module{
 	Curated:     true,
 	Virtual:     true,
 	NoWatchList: true,
-	Tier0:       false,
+	Tier0:       true, // the release metadata watch is part of the problems baseline (helm.failed, helm.stuck-pending)
 	Cols: []ingest.Col{
 		ingest.ColCluster(), ingest.ColName(), ingest.ColNS(),
 		ingest.ColInt("revision", "Revision", 80),

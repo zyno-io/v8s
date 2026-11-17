@@ -40,6 +40,10 @@ type TableRow struct {
 	RV        string
 	Created   int64 // unix ms
 	Deleting  bool
+	// LabelsRaw is the object's metadata.labels as JSON (kept raw: only modules with label cells parse it).
+	LabelsRaw json.RawMessage
+	// OwnerKind and OwnerName are the controlling owner reference (else the first).
+	OwnerKind, OwnerName string
 }
 
 // TableResult is a decoded Table (a list response, or one watch event). It is a runtime.Object so
@@ -73,12 +77,18 @@ type tableDoc struct {
 		Cells  []any `json:"cells"`
 		Object struct {
 			Metadata struct {
-				Name              string  `json:"name"`
-				Namespace         string  `json:"namespace"`
-				UID               string  `json:"uid"`
-				ResourceVersion   string  `json:"resourceVersion"`
-				CreationTimestamp string  `json:"creationTimestamp"`
-				DeletionTimestamp *string `json:"deletionTimestamp"`
+				Name              string          `json:"name"`
+				Namespace         string          `json:"namespace"`
+				UID               string          `json:"uid"`
+				ResourceVersion   string          `json:"resourceVersion"`
+				CreationTimestamp string          `json:"creationTimestamp"`
+				DeletionTimestamp *string         `json:"deletionTimestamp"`
+				Labels            json.RawMessage `json:"labels"`
+				OwnerReferences   []struct {
+					Kind       string `json:"kind"`
+					Name       string `json:"name"`
+					Controller *bool  `json:"controller"`
+				} `json:"ownerReferences"`
 			} `json:"metadata"`
 		} `json:"object"`
 	} `json:"rows"`
@@ -96,7 +106,14 @@ func (d *tableDoc) result() *TableResult {
 	for i := range d.Rows {
 		r := &d.Rows[i]
 		m := &r.Object.Metadata
-		row := TableRow{Cells: r.Cells, UID: m.UID, Name: m.Name, Namespace: m.Namespace, RV: m.ResourceVersion, Deleting: m.DeletionTimestamp != nil}
+		row := TableRow{Cells: r.Cells, UID: m.UID, Name: m.Name, Namespace: m.Namespace, RV: m.ResourceVersion, Deleting: m.DeletionTimestamp != nil,
+			LabelsRaw: m.Labels}
+		for j := range m.OwnerReferences {
+			o := &m.OwnerReferences[j]
+			if j == 0 || (o.Controller != nil && *o.Controller) {
+				row.OwnerKind, row.OwnerName = o.Kind, o.Name
+			}
+		}
 		if m.CreationTimestamp != "" {
 			if ts, err := time.Parse(time.RFC3339, m.CreationTimestamp); err == nil {
 				row.Created = ts.UnixMilli()
@@ -243,6 +260,9 @@ func (m *Module) mapFor(cols []TableCol) []int {
 	if len(cols) == 0 {
 		return m.srcMap
 	}
+	if m.headerIdx != nil {
+		return m.mapHeaders(cols)
+	}
 	out := make([]int, len(cols))
 	for i, c := range cols {
 		out[i] = -1
@@ -275,6 +295,22 @@ func (m *Module) ProjectTableRow(tr *TableRow, mapping []int) *Row {
 	}
 	if m.toneCell >= 0 {
 		r.tone = toneFromText(r.cells[m.toneCell].S.Value())
+	}
+	if tr.OwnerKind != "" {
+		r.ownerKind, r.ownerName = intern(tr.OwnerKind), intern(tr.OwnerName)
+	}
+	if len(m.labelCells) > 0 && len(tr.LabelsRaw) > 2 {
+		var lm map[string]string
+		if json.Unmarshal(tr.LabelsRaw, &lm) == nil {
+			for _, lc := range m.labelCells {
+				if v, ok := lm[lc.label]; ok {
+					r.cells[lc.idx] = Cell{S: intern(v)}
+				}
+			}
+		}
+	}
+	if m.toneFn != nil {
+		r.tone = m.toneFn(r)
 	}
 	return r
 }

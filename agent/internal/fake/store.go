@@ -219,6 +219,12 @@ func (a *kindAPI) row(o *unstructured.Unstructured) ingest.TableRow {
 	if t := o.GetCreationTimestamp(); !t.IsZero() {
 		r.Created = t.UnixMilli()
 	}
+	if l := o.GetLabels(); len(l) > 0 { // curated Table modules read a few labels (Trivy: the workload)
+		r.LabelsRaw, _ = json.Marshal(l)
+	}
+	if refs := o.GetOwnerReferences(); len(refs) > 0 {
+		r.OwnerKind, r.OwnerName = refs[0].Kind, refs[0].Name
+	}
 	return r
 }
 
@@ -553,11 +559,23 @@ func (r *dynRes) Delete(ctx context.Context, name string, opts metav1.DeleteOpti
 		return err
 	}
 	if r.gvr == "v1/pods" {
+		if opts.Preconditions != nil && opts.Preconditions.UID != nil {
+			if o, err := r.d.c.podObject(r.ns, name); err != nil {
+				return err
+			} else if o.GetUID() != *opts.Preconditions.UID {
+				return apierrors.NewConflict(schemaGR(r.gvr), name, fmt.Errorf("Precondition failed: UID in precondition: %s, UID in object meta: %s", *opts.Preconditions.UID, o.GetUID()))
+			}
+		}
 		return r.d.c.killPod(r.ns, name, dry(opts.DryRun))
 	}
 	w := r.d.w
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if opts.Preconditions != nil && opts.Preconditions.UID != nil {
+		if cur := w.getLocked(r.gvr, r.ns, name); cur != nil && cur.GetUID() != *opts.Preconditions.UID {
+			return apierrors.NewConflict(schemaGR(r.gvr), name, fmt.Errorf("Precondition failed: UID in precondition: %s, UID in object meta: %s", *opts.Preconditions.UID, cur.GetUID()))
+		}
+	}
 	if dry(opts.DryRun) {
 		if w.getLocked(r.gvr, r.ns, name) == nil {
 			return apierrors.NewNotFound(schemaGR(r.gvr), name)

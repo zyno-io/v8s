@@ -286,6 +286,12 @@ func (s *Service) apply(ctx context.Context, p protocol.ObjectApplyParams) (prot
 			return res, err
 		}
 		t.obj.SetResourceVersion(p.ResourceVersion)
+		if p.Ref.UID != "" {
+			if verr := VerifyUID(ctx, c, t.gvr, t.ns, t.name, p.Ref.UID); verr != nil {
+				return res, verr
+			}
+			t.obj.SetUID(types.UID(p.Ref.UID)) // the server rejects a PUT whose uid differs from the live object's
+		}
 		if merr := s.unmask(ctx, p.Ref.Cluster, t, nil); merr != nil {
 			return res, merr
 		}
@@ -355,7 +361,10 @@ func (s *Service) del(ctx context.Context, p protocol.ObjectDeleteParams) (proto
 	if err != nil {
 		return res, err
 	}
-	if derr := resource(c.Dynamic(), gvr, p.Ref.Namespace).Delete(ctx, p.Ref.Name, metav1.DeleteOptions{PropagationPolicy: &pol}); derr != nil {
+	if derr := resource(c.Dynamic(), gvr, p.Ref.Namespace).Delete(ctx, p.Ref.Name, metav1.DeleteOptions{PropagationPolicy: &pol, Preconditions: delPrecondition(p.Ref.UID)}); derr != nil {
+		if re, ok := replacedErr(derr, p.Ref.UID); ok {
+			return res, re
+		}
 		return res, s.mapW(ctx, derr, viaWrite, wsite{cid: cid, verb: "delete", gvr: gvr, ns: p.Ref.Namespace, name: p.Ref.Name})
 	}
 	res.UsedContext = cid
@@ -425,6 +434,15 @@ func (s *Service) action(ctx context.Context, p protocol.ObjectActionParams) (pr
 	ref := p.Ref
 	if ref.Name == "" {
 		return res, newErr("bad_request", "name is required")
+	}
+	if ref.UID != "" { // pinned to one incarnation of the object: a recreated object must not be patched
+		rc, cerr := s.conn(ref.Cluster)
+		if cerr != nil {
+			return res, cerr
+		}
+		if verr := VerifyUID(ctx, rc, gvr, ref.Namespace, ref.Name, ref.UID); verr != nil {
+			return res, verr
+		}
 	}
 	if strings.HasPrefix(p.Action, "flux.") {
 		return s.fluxAction(ctx, p, gvr)
@@ -680,3 +698,11 @@ func (s *Service) unmask(ctx context.Context, cluster string, t *target, live *u
 }
 
 const lastApplied = "kubectl.kubernetes.io/last-applied-configuration"
+
+func delPrecondition(uid string) *metav1.Preconditions {
+	if uid == "" {
+		return nil
+	}
+	u := types.UID(uid)
+	return &metav1.Preconditions{UID: &u}
+}

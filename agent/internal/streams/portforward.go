@@ -139,7 +139,7 @@ func (m *Manager) openPortForward(ctx context.Context, p protocol.StreamOpenPara
 	}
 	pod, remote, rerr := resolve(ctx)
 	if rerr != nil {
-		return res, ops.MapError(rerr, routed.ViaWrite)
+		return res, m.mapRouted(ctx, rerr, routed, "get", podsGVR, "", ref.Namespace, ref.Name)
 	}
 	// the forward outlives the request: it runs until stopped (the 60 min cap applies through a write context)
 	var fctx context.Context
@@ -154,7 +154,7 @@ func (m *Manager) openPortForward(ctx context.Context, p protocol.StreamOpenPara
 	first, err := rt.PortForward(fctx, ref.Namespace, pod, remote, 0)
 	if err != nil {
 		cancel()
-		return res, ops.MapError(err, routed.ViaWrite)
+		return res, m.mapRouted(ctx, err, routed, "create", podsGVR, "portforward", ref.Namespace, pod)
 	}
 	id := newID()[:12]
 	f := &fwd{cancel: cancel, info: protocol.PortForwardInfo{ID: id, Ref: ref, Port: p.Port, LocalPort: first.LocalPort, Pod: pod,
@@ -167,13 +167,21 @@ func (m *Manager) openPortForward(ctx context.Context, p protocol.StreamOpenPara
 	return res, nil
 }
 
-var forwardRetry = time.Second
+// Reconnect tuning (variables so tests can shorten them): exponential backoff from forwardRetry up to
+// forwardRetryMax, and the forward is given up after forwardMaxTries consecutive failed attempts.
+var (
+	forwardRetry    = time.Second
+	forwardRetryMax = 30 * time.Second
+	forwardMaxTries = 8
+)
 
 // supervise keeps the forward alive: when it drops it re-resolves the backing pod (a service target moves to
-// another ready pod) and rebinds the same local port.
+// another ready pod) and rebinds the same local port. A target that stays gone (deleted pod) ends the forward
+// after forwardMaxTries attempts with state "stopped" and the last error.
 func (fs *forwards) supervise(ctx context.Context, f *fwd, rt kube.Runtime, cur *kube.Forward, resolve func(context.Context) (string, int, error)) {
 	defer func() {
 		cur.Stop()
+		f.cancel() // releases the forward's context and its write-context cap timer
 		f.set(func(i *protocol.PortForwardInfo) { i.State = "stopped" })
 	}()
 	for {
@@ -186,21 +194,33 @@ func (fs *forwards) supervise(ctx context.Context, f *fwd, rt kube.Runtime, cur 
 			return
 		}
 		f.set(func(i *protocol.PortForwardInfo) { i.State = "reconnecting" })
-		for ctx.Err() == nil {
-			time.Sleep(forwardRetry)
-			pod, remote, err := resolve(ctx)
-			if err != nil {
-				f.set(func(i *protocol.PortForwardInfo) { i.Error = err.Error() })
-				continue
+		delay := forwardRetry
+		reconnected := false
+		for try := 1; ctx.Err() == nil && !reconnected; try++ {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
 			}
-			nf, err := rt.PortForward(ctx, f.info.Ref.Namespace, pod, remote, f.snapshot().LocalPort)
+			delay = min(delay*2, forwardRetryMax)
+			pod, remote, err := resolve(ctx)
+			var nf *kube.Forward
+			if err == nil {
+				nf, err = rt.PortForward(ctx, f.snapshot().Ref.Namespace, pod, remote, f.snapshot().LocalPort)
+			}
 			if err != nil {
+				if try >= forwardMaxTries {
+					f.set(func(i *protocol.PortForwardInfo) {
+						i.Error = fmt.Sprintf("gave up after %d reconnect attempts: %s", try, err.Error())
+					})
+					return
+				}
 				f.set(func(i *protocol.PortForwardInfo) { i.Error = err.Error() })
 				continue
 			}
 			cur = nf
+			reconnected = true
 			f.set(func(i *protocol.PortForwardInfo) { i.State, i.Pod, i.Error = "running", pod, "" })
-			break
 		}
 	}
 }

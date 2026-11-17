@@ -9,10 +9,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 
 	releasev1 "helm.sh/helm/v4/pkg/release/v1"
 )
+
+// maxReleaseBytes caps the decompressed size of a release payload.
+const maxReleaseBytes = 64 << 20
 
 var magicGzip = []byte{0x1f, 0x8b, 0x08}
 
@@ -47,8 +51,12 @@ func DecodeRelease(secretData []byte) (*releasev1.Release, error) {
 			return nil, err
 		}
 		defer r.Close()
-		if b, err = io.ReadAll(r); err != nil {
+		// bounded read: a gzip bomb in a Secret must not exhaust memory
+		if b, err = io.ReadAll(io.LimitReader(r, maxReleaseBytes+1)); err != nil {
 			return nil, err
+		}
+		if len(b) > maxReleaseBytes {
+			return nil, fmt.Errorf("release payload exceeds %d MiB after decompression", maxReleaseBytes>>20)
 		}
 	}
 	var rls releasev1.Release

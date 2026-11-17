@@ -165,6 +165,20 @@ func (m *Manager) idleExpired() {
 	}
 }
 
+// Lookup returns the job a requestID started within the dedupe window, so callers can answer a retry without
+// doing any (possibly expensive or side-effecting) preparation again.
+func (m *Manager) Lookup(requestID string) (string, bool) {
+	if requestID == "" {
+		return "", false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e, ok := m.dd[requestID]; ok && m.clock.Now().Before(e.exp) {
+		return e.id, true
+	}
+	return "", false
+}
+
 // Start runs fn as a new job. requestID dedupes retries for 10 minutes (the same id returns the same job).
 func (m *Manager) Start(requestID, typ, cluster, subject string, fn Run) string {
 	m.mu.Lock()
@@ -186,6 +200,9 @@ func (m *Manager) Start(requestID, typ, cluster, subject string, fn Run) string 
 		m.dd[requestID] = ddEntry{id: id, exp: now.Add(dedupeTTL)}
 	}
 	m.trimLocked()
+	if m.clients == 0 && m.stopIdle == nil { // started while nobody is connected: the 15-minute bound runs from now
+		m.stopIdle = m.clock.AfterFunc(NoClientGrace, m.idleExpired)
+	}
 	m.mu.Unlock()
 	m.publish(j)
 	go m.run(ctx, j, fn)

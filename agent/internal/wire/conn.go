@@ -871,6 +871,48 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		}
 		c.async(id, func(ctx context.Context) (any, error) { return opt.Helm.Diff(ctx, p) })
 		return nil
+	case "problems.classes":
+		if opt.Problems == nil {
+			return c.respondErr(id, "unavailable", "problems are not available")
+		}
+		return c.respond(id, opt.Problems.Classes())
+	case "problems.evidence":
+		var p protocol.ProblemsEvidenceParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Problems == nil {
+			return c.respondErr(id, "unavailable", "problems are not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) {
+			res, err := opt.Problems.Evidence(ctx, p.ID)
+			if err != nil {
+				return nil, ops.NewError("not_found", "no such problem")
+			}
+			return res, nil
+		})
+		return nil
+	case "problems.ack", "problems.unack":
+		var p protocol.ProblemsAckParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Problems == nil {
+			return c.respondErr(id, "unavailable", "problems are not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) {
+			var err error
+			if req.Method == "problems.ack" {
+				err = opt.Problems.Ack(p.ID, p.Until)
+			} else {
+				err = opt.Problems.Unack(p.ID)
+			}
+			if err != nil {
+				return nil, ops.NewError("not_found", "no such problem")
+			}
+			return nil, nil
+		})
+		return nil
 	case "settings.get":
 		return c.respond(id, opt.Settings.Get())
 	case "settings.set":
@@ -891,6 +933,12 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		}
 		c.async(id, func(ctx context.Context) (any, error) {
 			return protocol.SearchResult{Results: opt.Manager.Search(p.Text, p.Limit)}, nil
+		})
+		return nil
+	}
+	if h := opt.Handlers[req.Method]; h != nil {
+		c.async(id, func(ctx context.Context) (any, error) {
+			return h(ctx, func(v any) error { return decodeParams(req, v) })
 		})
 		return nil
 	}
@@ -970,6 +1018,12 @@ func decodeMap(m map[string]any, v any) error {
 // the request itself) and starts it.
 func (c *conn) startJob(ctx context.Context, p protocol.JobsStartParams) (any, error) {
 	opt := c.s.opt
+	// a retried requestId returns the same job without preparing (routing, guards, Helm reads) again
+	if opt.Jobs != nil {
+		if id, ok := opt.Jobs.Lookup(p.RequestID); ok {
+			return protocol.JobsStartResult{JobID: id}, nil
+		}
+	}
 	ctx = ops.WithUseWrite(ctx, p.UseWriteContext)
 	bad := func(err error) error { return ops.NewError("bad_request", "params: %s", err.Error()) }
 	var run jobs.Run

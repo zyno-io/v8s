@@ -7,4 +7,3 @@ networking:
   kubeProxyMode: none
 nodes:
   - role: control-plane
-  - role: worker

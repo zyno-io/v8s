@@ -48,6 +48,9 @@ type Store struct {
 
 	// notify is called (outside the lock) after a mutation appended to the feed.
 	notify atomic.Pointer[func()]
+	// tap observes every row change (add, update, delete) under the store lock; it must be quick and must
+	// not call back into the store. Unchanged rows (equal cells and facts) are not reported.
+	tap func(old, new *ingest.Row)
 	// OnReplace is called after every Replace (initial sync or relist); OnActivity after any other mutation.
 	OnReplace  func(n int)
 	OnActivity func()
@@ -78,13 +81,18 @@ func (s *Store) upsertLocked(row *ingest.Row) uint32 {
 	if h, ok := s.byUID[uid]; ok {
 		old := s.rows[h]
 		if old.CellsEqual(row) {
-			row.SetVer(old.Ver())
-			s.rows[h] = row
+			if row != old { // the same row re-upserted (Provisional, then Replace) is already published: do not write it
+				row.SetVer(old.Ver())
+				s.rows[h] = row
+			}
 			return h
 		}
 		row.SetVer(old.Ver() + 1)
 		s.rows[h] = row
 		s.feed = append(s.feed, Event{H: h, Gen: s.gens[h], Old: old, New: row})
+		if s.tap != nil {
+			s.tap(old, row)
+		}
 		return h
 	}
 	var h uint32
@@ -110,6 +118,9 @@ func (s *Store) upsertLocked(row *ingest.Row) uint32 {
 	s.pos[h] = uint32(len(l.hs))
 	l.hs = append(l.hs, h)
 	s.feed = append(s.feed, Event{H: h, Gen: s.gens[h], New: row})
+	if s.tap != nil {
+		s.tap(nil, row)
+	}
 	return h
 }
 
@@ -131,6 +142,9 @@ func (s *Store) deleteLocked(h uint32) {
 	s.rows[h] = nil
 	s.free = append(s.free, h)
 	s.feed = append(s.feed, Event{H: h, Gen: s.gens[h], Old: old})
+	if s.tap != nil {
+		s.tap(old, nil)
+	}
 }
 
 func (s *Store) after(replace bool, n int) {
@@ -165,6 +179,14 @@ func (s *Store) Provisional(rows []*ingest.Row) {
 }
 
 // ---- cache.Store ----------------------------------------------------------------------
+
+// SetTap installs (or with nil removes) the row-change observer (see the tap field). Rows already in the
+// store are not replayed: call Scan afterwards to seed.
+func (s *Store) SetTap(f func(old, new *ingest.Row)) {
+	s.mu.Lock()
+	s.tap = f
+	s.mu.Unlock()
+}
 
 // SetNotify installs (or with nil removes) the callback invoked after every mutation.
 func (s *Store) SetNotify(f func()) {

@@ -2,6 +2,331 @@
 // Generated from agent/pkg/protocol by tygo (`yarn protocol:gen`). Do not edit.
 
 //////////
+// source: hubble.go
+
+/**
+ * FlowScope narrows a flows stream server-side. A namespace, or a workload (with its namespace), or a pod
+ * (with its namespace) is required: an unscoped follow is refused with bad_request.
+ */
+export interface FlowScope {
+  namespace?: string;
+  workload?: string;
+  pod?: string;
+}
+/**
+ * FlowFilter maps to Hubble FlowFilter fields, applied by the relay (AND-ed with the scope). Verdict is
+ * FORWARDED, DROPPED, ERROR, AUDIT, REDIRECTED, TRACED or TRANSLATED; DropReason a Cilium drop reason name
+ * (POLICY_DENIED) or number; Protocol tcp, udp, icmp, http or dns; HTTPStatus a code or prefix ("5+");
+ * Direction INGRESS or EGRESS.
+ */
+export interface FlowFilter {
+  verdict?: string;
+  dropReason?: string;
+  protocol?: string;
+  httpStatus?: string;
+  dnsQuery?: string;
+  direction?: string;
+}
+/**
+ * FlowsStreamParams are the stream.open params of type "flows" (docs/protocol.md "Streams").
+ */
+export interface FlowsStreamParams {
+  cluster: string;
+  scope: FlowScope;
+  filter: FlowFilter;
+}
+/**
+ * FlowEndpoint is one end of a flow, identity-aggregated: Workload is the owning workload (or a reserved
+ * identity such as world or host for non-pod endpoints).
+ */
+export interface FlowEndpoint {
+  namespace?: string;
+  pod?: string;
+  workload?: string;
+  ip?: string;
+  port?: number /* int */;
+}
+/**
+ * Flow is one row of the live flow table.
+ */
+export interface Flow {
+  time: number /* int64 */; // unix ms
+  verdict: string;
+  direction?: string;
+  reply?: boolean;
+  src: FlowEndpoint;
+  dst: FlowEndpoint;
+  protocol?: string; // TCP | UDP | ICMP | HTTP | DNS
+  l7?: string; // "GET /api 503", "DNS A example.com"
+  dropReason?: string;
+  node?: string;
+}
+/**
+ * FlowRate reports the sampling of a flows stream: Total is the observed rate (flows/s), Shown what reached the
+ * client. The toolbar says "showing {shown}/s of ~{total}/s, narrow the filter" when Sampled.
+ */
+export interface FlowRate {
+  shown: number /* int */;
+  total: number /* int */;
+  sampled: boolean;
+}
+/**
+ * FlowsFrame is an agent → client text frame (JSON) of a flows stream: Ready first, then batches every 100 ms
+ * (only when there is something new: flows or a changed rate), End last.
+ */
+export interface FlowsFrame {
+  ready?: StreamReady;
+  flows?: Flow[];
+  rate?: FlowRate;
+  end?: boolean;
+  error?: string;
+}
+/**
+ * FlowsClientMsg is a client → agent text frame of a flows stream: Pause when no view shows the flows (the
+ * stream is cancelled after 10 s paused), Resume to continue.
+ */
+export interface FlowsClientMsg {
+  pause?: boolean;
+  resume?: boolean;
+}
+/**
+ * HubbleRelayInfo says where the cluster's hubble-relay was found.
+ */
+export interface HubbleRelayInfo {
+  namespace: string;
+  service: string;
+  pod?: string;
+  port?: number /* int */;
+}
+export interface HubbleStatusParams {
+  cluster: string;
+}
+export interface HubbleNode {
+  name: string;
+  version?: string;
+  state: string; // "connected" | "unavailable" | "unknown"
+}
+/**
+ * HubbleStatus answers hubble.status. Available is false when there is no relay or it cannot be reached
+ * (Error says why); the rest is then empty.
+ */
+export interface HubbleStatus {
+  cluster: string;
+  available: boolean;
+  error?: string;
+  relay?: HubbleRelayInfo;
+  version?: string;
+  numFlows: number /* int */; // flows currently buffered, over all nodes
+  maxFlows: number /* int */; // flow buffer capacity, over all nodes
+  seenFlows: number /* int */;
+  flowsPerSec: number /* float64 */;
+  uptimeSec: number /* int */;
+  connectedNodes: number /* int */;
+  unavailableNodes: number /* int */;
+  nodes: HubbleNode[];
+}
+export interface HubbleServiceMapParams {
+  cluster: string;
+  namespace: string;
+  windowSec?: number /* int */; // default 300, max 3600
+}
+/**
+ * ServiceMapNode is a workload (identity-aggregated, not pods) or a reserved identity (world, host).
+ */
+export interface ServiceMapNode {
+  id: string; // "<namespace>/<workload>", or the reserved identity
+  namespace?: string;
+  workload: string;
+  external: boolean; // outside the requested namespace
+}
+/**
+ * ServiceMapEdge aggregates the flows between two workloads over the window: Requests are non-reply flows
+ * that were not dropped (L7 requests when the pair has L7 visibility), Errors are HTTP 5xx or DNS
+ * SERVFAIL/NXDOMAIN responses and ERROR verdicts, Drops are DROPPED flows.
+ */
+export interface ServiceMapEdge {
+  from: string;
+  to: string;
+  requests: number /* int */;
+  errors: number /* int */;
+  drops: number /* int */;
+}
+export interface HubbleServiceMap {
+  cluster: string;
+  namespace: string;
+  windowSec: number /* int */;
+  nodes: ServiceMapNode[];
+  edges: ServiceMapEdge[];
+  /**
+   * Truncated is true when more flows matched than the agent read (the counters are lower bounds).
+   */
+  truncated?: boolean;
+}
+export interface HubbleDropsParams {
+  clusters: string[]; // empty: every selected cluster
+  windowSec?: number /* int */;
+}
+/**
+ * DropWorkload is one side of a drop group.
+ */
+export interface DropWorkload {
+  namespace?: string;
+  workload: string;
+}
+/**
+ * DropPolicy is a policy likely responsible for a drop.
+ */
+export interface DropPolicy {
+  kind: string; // NetworkPolicy | CiliumNetworkPolicy | CiliumClusterwideNetworkPolicy
+  namespace?: string;
+  name: string;
+}
+/**
+ * DropGroup is dropped traffic grouped by (source workload, destination workload, drop reason).
+ */
+export interface DropGroup {
+  cluster: string;
+  src: DropWorkload;
+  dst: DropWorkload;
+  reason: string;
+  count: number /* int */;
+  lastSeen: number /* int64 */; // unix ms
+  policies: DropPolicy[];
+}
+export interface DropsError {
+  cluster: string;
+  error: string;
+}
+export interface HubbleDrops {
+  windowSec: number /* int */;
+  groups: DropGroup[];
+  errors: DropsError[]; // clusters without a reachable relay
+}
+
+//////////
+// source: problems.go
+
+/**
+ * ProblemsGVR is the synthetic resource the problems engine serves through the ordinary view engine
+ * (view.subscribe with gvr "v8s/v1/problems"). Columns after cluster, name (the subject's name) and namespace:
+ * severity (critical|error|warning|info), severityRank (0 critical ... 3 info), class, family, kind, title,
+ * message, since, lastChanged, count, source, acked ("true"|"false"), statusTone. Filters: family, class,
+ * severity, cluster, namespace, text (subject name), acked. Default sort: severityRank, lastChanged desc, name.
+ */
+export const ProblemsGVR = "v8s/v1/problems";
+/**
+ * ProblemCount is the live number of problems of a class: Total includes the acknowledged ones.
+ */
+export interface ProblemCount {
+  total: number /* int */;
+  acked: number /* int */;
+}
+/**
+ * ProblemClassInfo describes one problem class of the registry.
+ */
+export interface ProblemClassInfo {
+  class: string;
+  family: string;
+  title: string;
+  severity: string; // default severity
+  default: boolean; // enabled by default
+  /**
+   * Enabled is the effective global setting (settings.problemPrefs over the default).
+   */
+  enabled: boolean;
+  /**
+   * Counts are the live problems per cluster id (only clusters with at least one).
+   */
+  counts: { [key: string]: ProblemCount};
+  /**
+   * EnabledIn lists, per cluster id, the effective setting when a per-cluster override differs from Enabled.
+   */
+  enabledIn?: { [key: string]: boolean};
+}
+/**
+ * ProblemUnavailable says a check cannot run in a cluster (a baseline kind that cannot be listed).
+ */
+export interface ProblemUnavailable {
+  cluster: string;
+  kind: string;
+  reason: string;
+}
+export interface ProblemsClassesResult {
+  classes: ProblemClassInfo[];
+  unavailable: ProblemUnavailable[];
+}
+export interface ProblemsEvidenceParams {
+  id: string;
+}
+export interface ProblemCondition {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  since?: number /* int64 */; // unix ms
+}
+export interface ProblemContainer {
+  name: string;
+  state: string; // "waiting" | "running" | "terminated"
+  reason?: string;
+  message?: string;
+  exitCode?: number /* int */;
+  restarts: number /* int */;
+  since?: number /* int64 */;
+  lastReason?: string; // lastState.terminated.reason
+  pod?: string;
+}
+export interface ProblemEvent {
+  reason: string;
+  message: string;
+  count: number /* int */;
+  lastSeen: number /* int64 */;
+  object?: string; // "Kind/name" when the event is about a related object
+}
+/**
+ * ProblemRef is a related object (a rolled-up pod, an owner, a Service).
+ */
+export interface ProblemRef {
+  gvr?: string;
+  kind: string;
+  namespace?: string;
+  name: string;
+  note?: string;
+}
+/**
+ * ProblemsEvidenceResult: the triggering conditions and container states (from the live object), the last 5
+ * related Warning events (from the agent's event cache) and related objects.
+ */
+export interface ProblemsEvidenceResult {
+  id: string;
+  cluster: string;
+  class: string;
+  subject: ProblemRef;
+  title: string;
+  message?: string;
+  since: number /* int64 */;
+  conditions: ProblemCondition[];
+  containers: ProblemContainer[];
+  events: ProblemEvent[];
+  related: ProblemRef[];
+  /**
+   * Error is set when the live object could not be read (the cached parts are still returned).
+   */
+  error?: string;
+}
+/**
+ * ProblemsAckParams acknowledges a problem: it is hidden (acked=true) until its severity rises, its count grows
+ * past a threshold (+50%) or it resolves and recurs. Until (unix ms, optional) makes it a snooze.
+ */
+export interface ProblemsAckParams {
+  id: string;
+  until?: number /* int64 */;
+}
+export interface ProblemsUnackParams {
+  id: string;
+}
+
+//////////
 // source: protocol.go
 /*
 Package protocol is the wire contract between the v8s agent and its UI clients.
@@ -107,6 +432,13 @@ export interface Hello {
  * 	"flux.graph"         FluxGraphParams → FluxGraphResult
  * 	"helm.release"       HelmReleaseParams → HelmRelease
  * 	"helm.diff"          HelmDiffParams → HelmDiffResult
+ * 	"problems.classes"   → ProblemsClassesResult (no params)
+ * 	"problems.evidence"  ProblemsEvidenceParams → ProblemsEvidenceResult
+ * 	"problems.ack"       ProblemsAckParams → (empty)
+ * 	"problems.unack"     ProblemsUnackParams → (empty)
+ * 	"hubble.status"      HubbleStatusParams → HubbleStatus
+ * 	"hubble.serviceMap"  HubbleServiceMapParams → HubbleServiceMap
+ * 	"hubble.drops"       HubbleDropsParams → HubbleDrops
  */
 export interface Request {
   method: string;
@@ -299,6 +631,12 @@ export interface ObjectRef {
   gvr: string;
   namespace?: string;
   name?: string; // empty only for object.dryRun/apply in create mode
+  /**
+   * UID, when set, pins the request to one incarnation of the object: object.delete sends it as a precondition,
+   * object.action and update-mode object.apply verify the live uid first and fail with code "conflict" and the
+   * message "object was replaced" when the object was deleted and recreated; streams and jobs check it too.
+   */
+  uid?: string;
 }
 export interface ObjectGetParams {
   cluster: string;
@@ -654,6 +992,10 @@ export interface StreamOpenParams {
   node?: string;
   port?: number /* int */;
   /**
+   * Flows: type "flows" (Hubble), see hubble.go.
+   */
+  flows?: FlowsStreamParams;
+  /**
    * UseWriteContext as on ObjectApplyParams.
    */
   useWriteContext?: boolean;
@@ -946,4 +1288,190 @@ export interface HelmRetryParams {
   wait?: boolean;
   timeout?: number /* int */;
   force?: boolean;
+}
+
+//////////
+// source: security.go
+
+/**
+ * Scanner sources of normalized security data (also the problem Source).
+ */
+export const SourceTrivy = "trivy";
+/**
+ * Scanner sources of normalized security data (also the problem Source).
+ */
+export const SourceKubescape = "kubescape";
+/**
+ * Scanner sources of normalized security data (also the problem Source).
+ */
+export const SourceKyverno = "kyverno";
+export interface SecurityImagesParams {
+  clusters?: string[]; // empty = every selected cluster
+}
+/**
+ * ImageVulnSummary is one image (repository:tag) of the Vulnerabilities overview, deduplicated across workloads
+ * and clusters: the same image in 40 pods is one row with Workloads 40. When both scanners run the image has one
+ * row per Source (their verdicts are not merged).
+ */
+export interface ImageVulnSummary {
+  image: string;
+  repository: string;
+  tag: string;
+  source: string;
+  critical: number /* int */;
+  high: number /* int */;
+  medium: number /* int */;
+  low: number /* int */;
+  unknown: number /* int */;
+  workloads: number /* int */;
+  reports: number /* int */;
+  clusters: string[];
+}
+export interface SecurityImagesResult {
+  /**
+   * Images are ranked by critical then high counts.
+   */
+  images: ImageVulnSummary[];
+}
+/**
+ * ReportDetailParams selects one report (ref.gvr names its kind) and a chunk of its rows. A report with more rows than
+ * Limit (default 300) is read in chunks: repeat the request with Offset = offset + rows returned until
+ * offset + rows >= total. The decoded report is cached by resourceVersion, so chunks cost no second fetch.
+ */
+export interface ReportDetailParams {
+  ref: ObjectRef;
+  offset?: number /* int */;
+  limit?: number /* int */;
+}
+/**
+ * VulnFinding is one CVE of a Trivy VulnerabilityReport or a Kubescape VulnerabilityManifest.
+ */
+export interface VulnFinding {
+  id: string;
+  severity: string;
+  package: string;
+  installed: string;
+  fixed?: string;
+  title?: string;
+  link?: string;
+}
+/**
+ * ConfigCheckResult is one failing configuration check (Trivy ConfigAuditReport and RBAC/infra assessments,
+ * Kubescape configuration scans) in the scanner-agnostic shape.
+ */
+export interface ConfigCheckResult {
+  source: string;
+  id: string;
+  title: string;
+  severity: string;
+  category?: string;
+  description?: string;
+  messages?: string[];
+  frameworks?: string[]; // NSA, MITRE, CIS ...
+}
+/**
+ * SecretFinding is one entry of a Trivy ExposedSecretReport.
+ */
+export interface SecretFinding {
+  ruleId: string;
+  severity: string;
+  title: string;
+  category?: string;
+  target?: string;
+  match?: string;
+}
+/**
+ * PolicyResult is one result of a Kyverno policy report (wgpolicyk8s.io PolicyReport and openreports.io Report
+ * are normalized into this shape).
+ */
+export interface PolicyResult {
+  policy: string;
+  rule?: string;
+  result: string; // pass | fail | warn | error | skip
+  severity?: string;
+  message?: string;
+  category?: string;
+  timestamp?: number /* int64 */; // unix ms
+}
+/**
+ * ReportDetail is the lazily fetched body of one report. Kind says which row array is filled:
+ * "vulnerabilities" (Vulns), "checks" (Checks), "secrets" (Secrets), "policyResults" (Results) or "document"
+ * (Doc: a YAML rendering of a Kubescape ApplicationProfile or NetworkNeighborhood).
+ */
+export interface ReportDetail {
+  kind: string;
+  source: string;
+  title?: string;
+  resourceVersion?: string;
+  summary?: { [key: string]: number };
+  total: number /* int */;
+  offset: number /* int */;
+  vulns?: VulnFinding[];
+  checks?: ConfigCheckResult[];
+  secrets?: SecretFinding[];
+  results?: PolicyResult[];
+  doc?: string;
+}
+/**
+ * KyvernoSetModeParams switches a policy between Audit and Enforce. Mode is "Audit" or "Enforce". For CEL policies
+ * (policies.kyverno.io) the whole policy's validationActions change (Rule must be empty); legacy kyverno.io/v1
+ * policies are read-only and refused.
+ */
+export interface KyvernoSetModeParams {
+  ref: ObjectRef;
+  mode: string;
+  rule?: string;
+  useWriteContext?: boolean;
+}
+export interface KyvernoSetModeResult {
+  usedContext: string;
+  resourceVersion?: string;
+  mode: string;
+}
+/**
+ * KyvernoResourceRef names the resource a PolicyException is for.
+ */
+export interface KyvernoResourceRef {
+  kind: string;
+  namespace?: string;
+  name: string;
+}
+/**
+ * KyvernoExceptionTemplateParams: Policy is the violated policy (ref.gvr tells CEL from legacy), Rule the violated
+ * rule (legacy policies).
+ */
+export interface KyvernoExceptionTemplateParams {
+  policy: ObjectRef;
+  rule?: string;
+  resource: KyvernoResourceRef;
+}
+/**
+ * KyvernoExceptionTemplateResult is YAML for the UI's create flow (opened in the editor for review: exceptions
+ * are security decisions).
+ */
+export interface KyvernoExceptionTemplateResult {
+  yaml: string;
+  apiVersion: string;
+  namespace?: string;
+}
+/**
+ * TrivyRescanParams deletes a Trivy report so the operator recreates it on its next reconcile.
+ */
+export interface TrivyRescanParams {
+  ref: ObjectRef;
+  useWriteContext?: boolean;
+}
+export interface SecurityActionResult {
+  usedContext: string;
+}
+export interface KubescapeScanNowParams {
+  cluster: string;
+  useWriteContext?: boolean;
+}
+/**
+ * KubescapeScanNowResult lists the Jobs created from the operator's scan CronJobs (namespace/name).
+ */
+export interface KubescapeScanNowResult {
+  usedContext: string;
+  jobs: string[];
 }

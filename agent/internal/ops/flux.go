@@ -15,7 +15,7 @@ import (
 // Source wait tuning for flux.reconcileWithSource (variables so tests can shorten them).
 var (
 	fluxPollInterval = 500 * time.Millisecond
-	fluxPollTimeout  = 60 * time.Second
+	fluxPollTimeout  = 45 * time.Second // below mutationTimeout, so the poll can report its own timeout
 )
 
 // fluxAction runs the flux.* object actions (docs/integrations.md).
@@ -80,7 +80,7 @@ func (s *Service) fluxAction(ctx context.Context, p protocol.ObjectActionParams,
 	}
 	out, patchErr := resource(c.Dynamic(), gvr, ref.Namespace).Patch(ctx, ref.Name, types.MergePatchType, plan.Patch, metav1.PatchOptions{FieldManager: fieldManager})
 	if patchErr != nil {
-		return res, mapErr(patchErr, viaWrite)
+		return res, s.mapW(ctx, patchErr, viaWrite, wsite{cid: cid, verb: "patch", gvr: gvr, ns: ref.Namespace, name: ref.Name})
 	}
 	res.UsedContext = cid
 	res.ResourceVersion = out.GetResourceVersion()
@@ -91,13 +91,14 @@ func (s *Service) fluxAction(ctx context.Context, p protocol.ObjectActionParams,
 // reconcileSource requests a reconcile of the source and waits until its lastHandledReconcileAt equals the token.
 func (s *Service) reconcileSource(ctx context.Context, cluster string, gvr schema.GroupVersionResource, ns, name string) error {
 	token := flux.Token(s.cfg.Now())
-	_, c, viaWrite, err := s.route(ctx, cluster, "patch", gvr, ns, name)
+	cid, c, viaWrite, err := s.route(ctx, cluster, "patch", gvr, ns, name)
 	if err != nil {
 		return err
 	}
+	site := wsite{cid: cid, verb: "patch", gvr: gvr, ns: ns, name: name}
 	api := resource(c.Dynamic(), gvr, ns)
 	if _, perr := api.Patch(ctx, name, types.MergePatchType, flux.ReconcilePatch(token), metav1.PatchOptions{FieldManager: fieldManager}); perr != nil {
-		return mapErr(perr, viaWrite)
+		return s.mapW(ctx, perr, viaWrite, site)
 	}
 	wctx, cancel := context.WithTimeout(ctx, fluxPollTimeout)
 	defer cancel()
@@ -113,7 +114,7 @@ func (s *Service) reconcileSource(ctx context.Context, cluster string, gvr schem
 				return nil
 			}
 		} else if wctx.Err() == nil {
-			return mapErr(gerr, viaWrite)
+			return s.mapW(wctx, gerr, viaWrite, wsite{cid: cid, verb: "get", gvr: gvr, ns: ns, name: name})
 		}
 		select {
 		case <-wctx.Done():

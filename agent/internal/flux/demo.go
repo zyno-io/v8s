@@ -164,8 +164,15 @@ func DemoObjects(cluster string, now time.Time) []*unstructured.Unstructured {
 		conds: []any{d.cond("Ready", "False", "HealthCheckFailed", "health check failed after 5m0s: timeout waiting for Deployment/team-5/svc-5", 2*time.Hour), d.cond("Stalled", "True", "HealthCheckFailed", "health check failed", 2*time.Hour)},
 		spec:  map[string]any{"sourceRef": ref("GitRepository", "flux-system", "flux-system"), "path": "./team-5", "prune": true, "wait": true}})
 	d.add(apiKustomize, "Kustomization", "team-6", "team-6-waiting", opt{
-		conds: []any{d.cond("Ready", "False", "DependencyNotReady", "dependency 'flux-system/team-apps' is not ready", 10*time.Minute)},
-		spec:  map[string]any{"sourceRef": ref("GitRepository", "flux-system", "flux-system"), "path": "./team-6", "dependsOn": []any{ref("Kustomization", "team-apps", "flux-system")}}})
+		conds: []any{d.cond("Ready", "False", "DependencyNotReady", "dependency 'team-2/team-2-apps' is not ready", 40*time.Minute)},
+		spec:  map[string]any{"sourceRef": ref("GitRepository", "flux-system", "flux-system"), "path": "./team-6", "dependsOn": []any{ref("Kustomization", "team-2-apps", "team-2")}}})
+	d.add(apiKustomize, "Kustomization", "team-6", "team-6-chained", opt{
+		conds: []any{d.cond("Ready", "False", "DependencyNotReady", "dependency 'team-6/team-6-waiting' is not ready", 40*time.Minute)},
+		spec:  map[string]any{"sourceRef": ref("GitRepository", "flux-system", "flux-system"), "path": "./team-6-chained", "dependsOn": []any{ref("Kustomization", "team-6-waiting", "")}}})
+	// a reconcile that never finished: Ready=Unknown for hours (stale)
+	d.add(apiKustomize, "Kustomization", "team-16", "team-16-hung", opt{revision: rev(36),
+		conds: []any{d.cond("Ready", "Unknown", "Progressing", "Reconciliation in progress", 5*time.Hour)},
+		spec:  map[string]any{"sourceRef": ref("GitRepository", "flux-system", "flux-system"), "path": "./team-16", "prune": true}})
 
 	// helm releases
 	hrSpec := func(chart, version string, extra map[string]any) map[string]any {

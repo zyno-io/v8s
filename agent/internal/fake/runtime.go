@@ -413,6 +413,9 @@ func echoShell(ctx context.Context, req kube.ExecRequest) error {
 
 // PortForward binds a loopback listener that answers every connection with a small HTTP page.
 func (b *Backend) PortForward(ctx context.Context, ns, pod string, remotePort, localPort int) (*kube.Forward, error) {
+	if f, ok, err := b.fakeRelayForward(ctx, ns, pod, localPort); ok {
+		return f, err
+	}
 	if !b.podExists(ctx, ns, pod) {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, pod)
 	}

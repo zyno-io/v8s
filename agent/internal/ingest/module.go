@@ -56,6 +56,11 @@ type Module struct {
 	Optional bool
 	// Virtual marks a kind with no API resource of its own (the Helm release view): served by every cluster.
 	Virtual bool
+	// Synthetic marks a kind whose rows the agent computes itself (v8s/problems): it needs no watch, every cluster serves it.
+	Synthetic bool
+	// GateClass names a problem class: the kind is watched as part of the baseline only while that class is enabled
+	// (hpa.unable, pv.failed); otherwise it is watched on demand like any other kind.
+	GateClass string
 	// NoWatchList forces a paginated LIST + watch (no streaming list) for kinds whose list is not a plain API list.
 	NoWatchList bool
 	// NewAPI builds the list/watch source on a real REST client (mode B and virtual kinds). Nil: typed or Table.
@@ -72,6 +77,9 @@ type Module struct {
 	toneCell   int            // generic: cell index the tone heuristic reads (-1 none)
 	srcMap     []int
 	tableCols  []TableCol
+	headerIdx  map[string]int // curated Table module: printer column ("Name", "Name#2") → cell index
+	labelCells []labelCell    // curated Table module: cells read from metadata.labels
+	toneFn     func(r *Row) uint8
 }
 
 // Columns returns the wire schema.
