@@ -48,16 +48,17 @@ linux:
       arch: [x64]
     - target: rpm
       arch: [x64]
+  # A directory mapping: the single-file form was silently skipped on some runners.
   extraResources:
-    - from: ../../agent/bin/${os}-${arch}/v8s
-      to: agent/v8s
+    - from: ../../agent/bin/${os}-${arch}
+      to: agent
 win:
   target:
     - target: nsis
       arch: [x64]
   extraResources:
-    - from: ../../agent/bin/${os}-${arch}/v8s.exe
-      to: agent/v8s.exe
+    - from: ../../agent/bin/${os}-${arch}
+      to: agent
   # Azure Artifact Signing; credentials come from AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET.
   azureSignOptions:
     publisherName: Signal24 LLC
