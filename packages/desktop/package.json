@@ -1,0 +1,24 @@
+{
+    "name": "@v8s/desktop",
+    "version": "0.0.0",
+    "private": true,
+    "description": "v8s desktop shell",
+    "license": "MIT",
+    "author": "Signal24",
+    "type": "module",
+    "main": "out/main.cjs",
+    "scripts": {
+        "build": "node build.mjs",
+        "dev": "node build.mjs && V8S_DEV_URL=${V8S_DEV_URL:-http://localhost:5173} electron .",
+        "start": "node build.mjs && electron .",
+        "typecheck": "tsc --noEmit -p tsconfig.json",
+        "dist": "yarn workspace @v8s/ui build-only && node build.mjs && electron-builder"
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.6",
+        "electron": "^39.0.0",
+        "electron-builder": "^26.0.12",
+        "esbuild": "^0.27.0",
+        "typescript": "npm:typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2"
+    }
+}

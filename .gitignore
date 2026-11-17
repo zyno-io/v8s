@@ -3,3 +3,10 @@ dist/
 .DS_Store
 *.local
 /spikes/**/out/
+.yarn/*
+!.yarn/releases
+test-results/
+playwright-report/
+/agent/bin/
+/packages/desktop/release/
+/test/e2e/out/

@@ -1,0 +1,88 @@
+// Tokens copied from the approved Main mockup (light + dark). v8s owns this file; see docs/design-system.md#token-delivery.
+@mixin dark-tokens {
+    --bg: #0c0d10;
+    --surface: #131418;
+    --s2: #191b20;
+    --s3: #20232a;
+    --hover: #171920;
+    --border: #24272e;
+    --bstrong: #333741;
+    --text: #ececf0;
+    --text2: #aeb2bd;
+    --text3: #8b909c;
+    --accent: #5b52f0;
+    --accent-soft: rgba(124, 116, 255, 0.14);
+    --focus: #8b85ff;
+    --link: #a7a2ff;
+    --danger: #ff8a73;
+    --danger-strong: #ff9c88;
+    --danger-soft: rgba(240, 68, 56, 0.12);
+    --danger-b: rgba(240, 68, 56, 0.32);
+    --warning: #f8c55c;
+    --warning-soft: rgba(247, 144, 9, 0.12);
+    --warning-b: rgba(247, 144, 9, 0.3);
+    --success: #5ad49a;
+    --success-soft: rgba(23, 178, 106, 0.12);
+    --success-b: rgba(23, 178, 106, 0.3);
+    --info: #8db4ff;
+    --info-soft: rgba(46, 144, 250, 0.12);
+    --info-b: rgba(46, 144, 250, 0.3);
+    --release: #c2a8ff;
+    --release-soft: rgba(122, 90, 248, 0.15);
+    --release-b: rgba(122, 90, 248, 0.36);
+    --neutral: #b3b8c3;
+    --neutral-soft: rgba(148, 155, 170, 0.1);
+    --neutral-b: rgba(148, 155, 170, 0.24);
+    --rest: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --float: 0 24px 56px -12px rgba(0, 0, 0, 0.7);
+    color-scheme: dark;
+}
+
+:root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --s2: #f3f4f6;
+    --s3: #eceef2;
+    --hover: #f7f8fa;
+    --border: #e3e5ea;
+    --bstrong: #cfd3db;
+    --text: #15171c;
+    --text2: #4f5562;
+    --text3: #646a78;
+    --accent: #4f46e5;
+    --accent-soft: rgba(79, 70, 229, 0.1);
+    --focus: #6366f1;
+    --link: #3d37c9;
+    --danger: #c4320a;
+    --danger-strong: #b42318;
+    --danger-soft: #fef1ee;
+    --danger-b: #fbd0c5;
+    --warning: #a15c07;
+    --warning-soft: #fef6e7;
+    --warning-b: #f8dfaa;
+    --success: #067647;
+    --success-soft: #ecfaf3;
+    --success-b: #b7e9d0;
+    --info: #1e5bd6;
+    --info-soft: #eef4ff;
+    --info-b: #c7d7fe;
+    --release: #6927da;
+    --release-soft: #f5f1ff;
+    --release-b: #ddd1fb;
+    --neutral: #545b69;
+    --neutral-soft: #f1f2f5;
+    --neutral-b: #dcdfe5;
+    --rest: 0 1px 2px rgba(16, 24, 40, 0.05);
+    --float: 0 24px 48px -12px rgba(16, 24, 40, 0.18);
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+        @include dark-tokens;
+    }
+}
+
+:root.dark {
+    @include dark-tokens;
+}

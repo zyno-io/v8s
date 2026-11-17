@@ -1,0 +1,209 @@
+import type { Kind } from '@v8s/client';
+
+import { rank } from './fuzzy.ts';
+
+export interface ClusterRef {
+    id: string;
+    name: string;
+    groups: string[];
+}
+
+export interface CommandContext {
+    kinds: readonly Kind[];
+    /** Namespaces seen in the current rows. */
+    namespaces: readonly string[];
+    clusters: readonly ClusterRef[];
+    /** Cluster ids currently connected. */
+    selected: readonly string[];
+}
+
+export type Command =
+    | { type: 'empty' }
+    | { type: 'ctx-open' }
+    | { type: 'ctx-set'; ids: string[] }
+    | { type: 'ctx-delta'; add: string[]; remove: string[] }
+    | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string }
+    | { type: 'ns'; namespace: string | null }
+    | { type: 'problems' }
+    | { type: 'quit' }
+    | { type: 'error'; message: string };
+
+export interface Completion {
+    /** Text shown in the list. */
+    label: string;
+    detail?: string;
+    /** The full input text after accepting this completion. */
+    insert: string;
+}
+
+const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: string }[] = [
+    { name: 'ctx', aliases: ['context'], takesArgs: true, detail: 'choose clusters' },
+    { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'set namespace filter' },
+    { name: 'pb', aliases: ['problems'], takesArgs: false, detail: 'open problems' },
+    { name: 'q', aliases: ['quit'], takesArgs: false, detail: 'close the bar' }
+];
+
+function tokenize(input: string): string[] {
+    return input.trim().split(/\s+/).filter(Boolean);
+}
+
+function commandFor(head: string): (typeof COMMANDS)[number] | undefined {
+    const h = head.toLowerCase();
+    return COMMANDS.find(c => c.name === h || c.aliases.includes(h));
+}
+
+/** Names a kind can be typed as: plural, kind, short names (lowercase). */
+function kindNames(k: Kind): string[] {
+    return [k.plural, k.kind, ...(k.shortNames ?? [])].map(s => s.toLowerCase());
+}
+
+export type KindLookup = { kind: Kind } | { ambiguous: string[] } | null;
+
+export function findKind(head: string, kinds: readonly Kind[]): KindLookup {
+    const h = head.toLowerCase();
+    const exact = kinds.find(k => kindNames(k).includes(h));
+    if (exact) return { kind: exact };
+    const pref = kinds.filter(k => kindNames(k).some(n => n.startsWith(h)));
+    if (pref.length === 1) return { kind: pref[0] };
+    if (pref.length > 1) return { ambiguous: pref.map(k => k.plural) };
+    return null;
+}
+
+function resolveCluster(token: string, clusters: readonly ClusterRef[]): string[] | null {
+    const t = token.toLowerCase();
+    const one = clusters.find(c => c.id.toLowerCase() === t || c.name.toLowerCase() === t);
+    if (one) return [one.id];
+    const group = clusters.filter(c => c.groups.some(g => g.toLowerCase() === t));
+    return group.length ? group.map(c => c.id) : null;
+}
+
+export function parseCommand(input: string, ctx: CommandContext): Command {
+    const tokens = tokenize(input);
+    if (!tokens.length) return { type: 'empty' };
+    const head = tokens[0];
+    const args = tokens.slice(1);
+    const cmd = commandFor(head);
+
+    if (cmd?.name === 'ctx') {
+        if (!args.length) return { type: 'ctx-open' };
+        const deltas = args.filter(a => a[0] === '+' || a[0] === '-');
+        if (deltas.length && deltas.length !== args.length) return { type: 'error', message: 'cannot mix names with +name / -name' };
+        const resolve = (tokensIn: string[], sign: string) => {
+            const out: string[] = [];
+            for (const t of tokensIn) {
+                const name = sign ? t.slice(1) : t;
+                const ids = resolveCluster(name, ctx.clusters);
+                if (!ids) return `unknown cluster "${name}"`;
+                out.push(...ids);
+            }
+            return out;
+        };
+        if (deltas.length) {
+            const add = resolve(
+                deltas.filter(a => a[0] === '+'),
+                '+'
+            );
+            const remove = resolve(
+                deltas.filter(a => a[0] === '-'),
+                '-'
+            );
+            if (typeof add === 'string') return { type: 'error', message: add };
+            if (typeof remove === 'string') return { type: 'error', message: remove };
+            return { type: 'ctx-delta', add, remove };
+        }
+        const ids = resolve(args, '');
+        if (typeof ids === 'string') return { type: 'error', message: ids };
+        return { type: 'ctx-set', ids: [...new Set(ids)] };
+    }
+    if (cmd?.name === 'ns') {
+        if (args.length !== 1) return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
+        return { type: 'ns', namespace: args[0].toLowerCase() === 'all' ? null : args[0] };
+    }
+    if (cmd?.name === 'pb') return { type: 'problems' };
+    if (cmd?.name === 'q') return { type: 'quit' };
+
+    const found = findKind(head, ctx.kinds);
+    if (!found) return { type: 'error', message: `unknown command "${head}"` };
+    if ('ambiguous' in found) return { type: 'error', message: `"${head}" is ambiguous: ${found.ambiguous.slice(0, 5).join(', ')}` };
+    const kind = found.kind;
+    if (!kind.available) return { type: 'error', message: `${kind.kind} (${kind.plural}) is not available yet` };
+    const arg = args[0];
+    if (!arg || arg === 'all') return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural };
+    if (!kind.namespaced) return { type: 'error', message: `${kind.plural} are cluster-scoped; no namespace expected` };
+    const slash = arg.indexOf('/');
+    if (slash >= 0) {
+        const namespace = arg.slice(0, slash);
+        const name = arg.slice(slash + 1);
+        if (!namespace || !name) return { type: 'error', message: 'usage: :<type> <namespace>/<name>' };
+        return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, namespace, name };
+    }
+    return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, namespace: arg };
+}
+
+/**
+ * Completion for the text after the `:`. Prefix matches first, then fuzzy, over commands, kinds, namespaces and clusters.
+ * Each item's `insert` is the whole new input, so Tab can just replace it.
+ */
+export function complete(input: string, ctx: CommandContext, limit = 8): Completion[] {
+    const trailingSpace = /\s$/.test(input);
+    const tokens = tokenize(input);
+    const completingHead = tokens.length === 0 || (tokens.length === 1 && !trailingSpace);
+
+    if (completingHead) {
+        const q = tokens[0] ?? '';
+        const entries: Completion[] = [];
+        const seen = new Set<string>();
+        for (const c of COMMANDS) {
+            entries.push({ label: c.name, detail: c.detail, insert: c.name + (c.takesArgs ? ' ' : '') });
+            seen.add(c.name);
+        }
+        for (const k of ctx.kinds) {
+            for (const name of kindNames(k)) {
+                if (seen.has(name)) continue;
+                seen.add(name);
+                entries.push({
+                    label: name,
+                    detail: k.available ? k.kind : `${k.kind} (not available yet)`,
+                    insert: name + (k.namespaced ? ' ' : '')
+                });
+            }
+        }
+        return rank(q, entries, e => e.label).slice(0, limit);
+    }
+
+    const head = tokens[0];
+    const lastIdx = trailingSpace ? tokens.length : tokens.length - 1;
+    const typed = trailingSpace ? '' : tokens[tokens.length - 1];
+    const before = tokens.slice(0, lastIdx).join(' ') + ' ';
+    const cmd = commandFor(head);
+
+    if (cmd?.name === 'ctx') {
+        const sign = typed[0] === '+' || typed[0] === '-' ? typed[0] : '';
+        const q = sign ? typed.slice(1) : typed;
+        const used = new Set(tokens.slice(1, lastIdx).map(t => t.replace(/^[+-]/, '').toLowerCase()));
+        const pool: Completion[] = [];
+        for (const c of ctx.clusters) {
+            if (used.has(c.id.toLowerCase())) continue;
+            const on = ctx.selected.includes(c.id);
+            pool.push({ label: sign + c.name, detail: on ? 'connected' : c.groups.join(', ') || undefined, insert: before + sign + c.name });
+        }
+        const groups = new Set(ctx.clusters.flatMap(c => c.groups));
+        for (const g of groups) {
+            if (used.has(g.toLowerCase())) continue;
+            pool.push({ label: sign + g, detail: 'group', insert: before + sign + g });
+        }
+        return rank(q, pool, e => e.label.replace(/^[+-]/, '')).slice(0, limit);
+    }
+
+    const isNsCmd = cmd?.name === 'ns';
+    const kindHit = !cmd ? findKind(head, ctx.kinds) : null;
+    if ((isNsCmd || (kindHit && 'kind' in kindHit)) && lastIdx === 1) {
+        const pool: Completion[] = [];
+        if (isNsCmd) pool.push({ label: 'all', detail: 'clear the namespace filter', insert: before + 'all' });
+        for (const ns of ctx.namespaces) pool.push({ label: ns, detail: 'namespace', insert: before + ns });
+        const nsPart = typed.includes('/') ? '' : typed;
+        if (typed.includes('/')) return [];
+        return rank(nsPart, pool, e => e.label).slice(0, limit);
+    }
+    return [];
+}

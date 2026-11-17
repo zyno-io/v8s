@@ -1,0 +1,37 @@
+{
+    "name": "@v8s/ui",
+    "version": "0.0.0",
+    "private": true,
+    "license": "MIT",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "run-p typecheck build-only",
+        "build-only": "vite build",
+        "preview": "vite preview",
+        "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+        "test": "vitest run",
+        "test:perf": "yarn build-only && node perf/run.ts"
+    },
+    "dependencies": {
+        "@tanstack/vue-virtual": "^3.13.12",
+        "@v8s/client": "workspace:*",
+        "pinia": "^4.1.0",
+        "vue": "^3.5.45",
+        "vue-router": "^5.5.1"
+    },
+    "devDependencies": {
+        "@tsconfig/node22": "^22.0.7",
+        "@types/node": "^26.6.6",
+        "@vitejs/plugin-vue": "^6.0.11",
+        "@vue/devtools-api": "^8.2.1",
+        "@vue/tsconfig": "^0.9.1",
+        "npm-run-all": "^4.1.5",
+        "playwright": "^1.65.1",
+        "sass": "^1.108.2",
+        "typescript": "npm:typescript-native-bridge@6.0.3-bridge.19.tsgo.7.0.2",
+        "vite": "^8.3.8",
+        "vitest": "^5.1.0",
+        "vue-tsc": "^3.3.14"
+    }
+}
