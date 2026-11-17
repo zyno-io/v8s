@@ -439,3 +439,6 @@ func (c *Ctx) ProgressSince(k Key, ready, updated, avail int32) time.Time {
 	e.prog[k] = st
 	return st.at
 }
+
+// ClearProgress forgets a workload's rollout progress memory (it is healthy again).
+func (c *Ctx) ClearProgress(k Key) { delete(c.e.prog, k) }

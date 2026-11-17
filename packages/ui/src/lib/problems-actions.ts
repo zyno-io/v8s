@@ -114,9 +114,22 @@ export async function runProblemAction(action: ProblemAction, ctx: ActionCtx): P
             };
             return;
         }
-        case 'reconcile':
-            if (subject) await runFluxAction([subject], 'flux.reconcile');
+        case 'reconcile': {
+            if (!subject) return;
+            // like the ActionBar: a production group (note) or a typed phrase needs a confirmation, otherwise it runs at once
+            const guard = confirmGuard([subject]);
+            if (guard.note || guard.phrase) {
+                const ok = await ask({
+                    title: `Reconcile ${row.name}?`,
+                    body: `Flux reconciles ${row.kind} ${row.name} in ${row.cluster} now.`,
+                    confirmLabel: 'Reconcile',
+                    ...guard
+                });
+                if (!ok) return;
+            }
+            await runFluxAction([subject], 'flux.reconcile');
             return;
+        }
         case 'suspend': {
             if (!subject) return;
             const ok = await ask({

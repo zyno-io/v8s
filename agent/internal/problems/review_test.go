@@ -347,3 +347,81 @@ func TestCronJobPodsRollUpToCronJob(t *testing.T) {
 		t.Fatalf("runs do not share the problem: %+v", p2)
 	}
 }
+
+// A rollout that is healthy again forgets its progress: the next rollout, a day later, is not judged by the old one.
+func TestWorkloadUnavailableSecondRolloutNotRaisedImmediately(t *testing.T) {
+	h := ptest.New(t, depGVR, "v1/pods")
+	created := h.Clk.Now().Add(-90 * 24 * time.Hour)
+	dep := func(ready, updated int32) *ingest.Row {
+		d := &appsv1.Deployment{ObjectMeta: meta("shop", "web"), Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(4)), ProgressDeadlineSeconds: ptr.To(int32(600))},
+			Status: appsv1.DeploymentStatus{ReadyReplicas: ready, AvailableReplicas: ready, UpdatedReplicas: updated, Conditions: []appsv1.DeploymentCondition{
+				{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionTrue, Reason: "MinimumReplicasAvailable", LastTransitionTime: mt(created)},
+				{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue, Reason: "ReplicaSetUpdated", LastTransitionTime: mt(created)}}}}
+		return proj(t, depGVR, d)
+	}
+	h.Put(depGVR, dep(3, 2)) // first rollout
+	h.Pass()
+	h.Advance(time.Minute)
+	h.Put(depGVR, dep(4, 4)) // done
+	h.Pass()
+	h.Advance(24 * time.Hour)
+	h.Put(depGVR, dep(3, 2)) // second rollout, a day later
+	h.Pass()
+	if ps := h.ByClass("workload.unavailable"); len(ps) != 0 {
+		t.Fatalf("second rollout raised immediately: %+v", ps)
+	}
+	h.Advance(11 * time.Minute)
+	if ps := h.ByClass("workload.unavailable"); len(ps) != 1 {
+		t.Fatalf("stalled second rollout not raised after the deadline: %+v", ps)
+	}
+}
+
+// Replacing a workload's pods (a rollout) is not the subject going away: once the problem has stayed resolved
+// through the hold, a later recurrence is a new problem without the old acknowledgement.
+func TestAckDroppedWhenMemberPodsReplaced(t *testing.T) {
+	h := ptest.New(t, podsGVR, rsGVR)
+	h.Put(rsGVR, rsRow("api-x", "api"))
+	rows := crashers(h, "api-x", 2)
+	p := only(t, h, "pod.crashloop")
+	if err := h.Hub.Ack(p.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows { // the rollout replaces the crashing pods
+		h.Del(podsGVR, r)
+	}
+	h.Pass()
+	h.Put(podsGVR, healthyPod("api-y-0", "api-x"))
+	h.Pass()
+	h.Advance(DefaultHold + time.Second)
+	if len(h.ByClass("pod.crashloop")) != 0 {
+		t.Fatal("not resolved")
+	}
+	h.Hub.Flush()
+	if _, ok := h.Set.Acks[p.ID]; ok {
+		t.Fatal("ack stayed after the member pods were replaced and the problem resolved")
+	}
+	h.Put(podsGVR, crashPod("api-y-0", "api-x", h.Clk.Now().Add(-5*time.Minute)))
+	h.Pass()
+	if only(t, h, "pod.crashloop").Acked {
+		t.Fatal("a later crashloop inherited the old acknowledgement")
+	}
+}
+
+// A stable live problem keeps its acknowledgement's last-seen current, so GC after a long quiet period keeps it.
+func TestGCAcksKeepsStableLiveAck(t *testing.T) {
+	h := ptest.New(t, podsGVR, rsGVR)
+	crashers(h, "api-x", 1)
+	p := only(t, h, "pod.crashloop")
+	if err := h.Hub.Ack(p.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	h.Clk.Advance(AckMaxAge + 24*time.Hour) // nothing about the problem changes for 8 days
+	if _, ok := h.E.Problem(p.ID); !ok {
+		t.Skip("problem no longer live")
+	}
+	h.Hub.GCAcks("c1")
+	h.Hub.Flush()
+	if _, ok := h.Set.Acks[p.ID]; !ok {
+		t.Fatal("ack of a live problem collected")
+	}
+}

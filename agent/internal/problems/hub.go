@@ -425,25 +425,40 @@ func (h *Hub) GCAcks(cluster string) {
 	}
 	now := h.Now().UnixMilli()
 	h.mu.Lock()
-	var mine []string
+	var ids []string
 	for id, a := range h.acks {
-		if a.Cluster == cluster && now-max(a.Seen, a.At) >= AckMaxAge.Milliseconds() {
-			mine = append(mine, id)
+		if a.Cluster == cluster {
+			ids = append(ids, id)
 		}
 	}
 	h.mu.Unlock()
-	var stale []string
-	for _, id := range mine {
-		if _, ok := e.Problem(id); !ok {
-			stale = append(stale, id)
+	live := map[string]bool{}
+	for _, id := range ids {
+		if _, ok := e.Problem(id); ok {
+			live[id] = true
 		}
 	}
+	changed := false
 	h.mu.Lock()
-	for _, id := range stale {
-		delete(h.acks, id)
+	for _, id := range ids {
+		a, ok := h.acks[id]
+		if !ok {
+			continue
+		}
+		switch {
+		case live[id]: // a stable live problem never passes through ackHolds' refresh: keep its last-seen current
+			if now-a.Seen >= ackSeenEvery.Milliseconds() {
+				a.Seen = now
+				h.acks[id] = a
+				changed = true
+			}
+		case now-max(a.Seen, a.At) >= AckMaxAge.Milliseconds():
+			delete(h.acks, id)
+			changed = true
+		}
 	}
 	h.mu.Unlock()
-	if len(stale) > 0 {
+	if changed {
 		h.persistAsync()
 	}
 }

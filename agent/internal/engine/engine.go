@@ -89,6 +89,8 @@ type Engine struct {
 	cancel   context.CancelFunc
 	ownsJobs bool
 	closed   atomic.Bool
+
+	unsubSettings func() // detaches the hub from a settings store that outlives the engine
 }
 
 func getter(connFn func(string) (kube.Conn, error)) func(ctx context.Context, cl, gvr, ns, name string) (*unstructured.Unstructured, error) {
@@ -128,7 +130,7 @@ func New(cfg Config) *Engine {
 	mgr.SetSettings(set)
 	e.Problems = problems.NewHub(problems.HubConfig{Settings: set.Get, Patch: set.Patch, Log: log, Fetch: getter(connFn)})
 	// A settings store can outlive the engine (hosted); a closed engine's hub must stop reacting.
-	set.OnChange(func(s protocol.Settings) {
+	e.unsubSettings = set.OnChange(func(s protocol.Settings) {
 		if !e.closed.Load() {
 			e.Problems.SettingsChanged(s)
 		}
@@ -206,6 +208,9 @@ func (e *Engine) clientCount() int { return e.srv.Load().ClientCount() }
 func (e *Engine) Close() {
 	if !e.closed.CompareAndSwap(false, true) {
 		return
+	}
+	if e.unsubSettings != nil {
+		e.unsubSettings()
 	}
 	e.cancel() // stops the Hubble problem monitor, view engine and (own) jobs
 	e.Problems.Flush()
