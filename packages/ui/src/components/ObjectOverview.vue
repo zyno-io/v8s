@@ -22,8 +22,18 @@ const created = computed(() => {
     const t = Date.parse(String(meta.value.creationTimestamp ?? ''));
     return Number.isFinite(t) ? t : 0;
 });
-const showLabels = ref(false);
-const showAnnotations = ref(false);
+const showLabels = ref(true);
+const showAnnotations = ref(true);
+// Long annotation values (last-applied-configuration, JSON blobs) are clamped until expanded one by one.
+const CLAMP_CHARS = 240;
+const CLAMP_LINES = 4;
+const expanded = ref(new Set<string>());
+const isLong = (v: string) => v.length > CLAMP_CHARS || v.split('\n').length > CLAMP_LINES;
+function toggleValue(k: string) {
+    const next = new Set(expanded.value);
+    if (!next.delete(k)) next.add(k);
+    expanded.value = next;
+}
 const isSecret = computed(() => props.target.gvr === 'v1/secrets');
 </script>
 
@@ -108,24 +118,42 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
         <section>
             <h3 class="lbl">
                 <button class="disc" type="button" :aria-expanded="showLabels" @click="showLabels = !showLabels">
-                    Labels <span class="muted">{{ labels.length }}</span>
+                    <svg class="chev" :class="{ open: showLabels }" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                        <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
+                    Labels <span class="count">{{ labels.length }}</span>
                 </button>
             </h3>
-            <div v-if="showLabels" class="kv">
-                <template v-for="[k, v] in labels" :key="k"><span class="mono k">{{ k }}</span><span class="mono">{{ v }}</span></template>
-                <span v-if="!labels.length" class="muted">none</span>
-            </div>
+            <template v-if="showLabels">
+                <ul v-if="labels.length" class="chips" data-testid="labels">
+                    <li v-for="[k, v] in labels" :key="k" class="chip mono" :title="`${k}=${v}`">
+                        <span class="ck">{{ k }}</span><template v-if="v"><span class="eq">=</span><span class="cv">{{ v }}</span></template>
+                    </li>
+                </ul>
+                <p v-else class="muted none">none</p>
+            </template>
         </section>
         <section v-if="!isSecret">
             <h3 class="lbl">
                 <button class="disc" type="button" :aria-expanded="showAnnotations" @click="showAnnotations = !showAnnotations">
-                    Annotations <span class="muted">{{ annotations.length }}</span>
+                    <svg class="chev" :class="{ open: showAnnotations }" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                        <path d="M3.5 2l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" />
+                    </svg>
+                    Annotations <span class="count">{{ annotations.length }}</span>
                 </button>
             </h3>
-            <div v-if="showAnnotations" class="kv">
-                <template v-for="[k, v] in annotations" :key="k"><span class="mono k">{{ k }}</span><span class="mono v">{{ v }}</span></template>
-                <span v-if="!annotations.length" class="muted">none</span>
-            </div>
+            <template v-if="showAnnotations">
+                <ul v-if="annotations.length" class="annos" data-testid="annotations">
+                    <li v-for="[k, v] in annotations" :key="k">
+                        <div class="ak mono">{{ k }}</div>
+                        <div class="av mono" :class="{ clamp: isLong(v) && !expanded.has(k), empty: !v }">{{ v || 'empty' }}</div>
+                        <button v-if="isLong(v)" class="more" type="button" :aria-expanded="expanded.has(k)" @click="toggleValue(k)">
+                            {{ expanded.has(k) ? 'Show less' : `Show all (${v.length.toLocaleString('en-US')} chars)` }}
+                        </button>
+                    </li>
+                </ul>
+                <p v-else class="muted none">none</p>
+            </template>
         </section>
         <p v-if="isSecret" class="muted note">Secret values are not shown here. Open the YAML tab and reveal them deliberately.</p>
     </div>
@@ -163,20 +191,116 @@ h3 {
     all: unset;
     cursor: pointer;
     border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.chev {
+    color: var(--text3);
+    transition: transform 0.12s ease;
+}
+.chev.open {
+    transform: rotate(90deg);
+}
+.count {
+    font-weight: 500;
+    color: var(--text3);
+    background: var(--s2);
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 10.5px;
+    line-height: 16px;
+}
+.none {
+    margin: 0;
+    font-size: 12px;
+}
+/* Labels: one chip per label, so a wrapped key or value never reads as the next label. */
+.chips {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.chip {
+    display: inline-flex;
+    max-width: 100%;
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--s2);
+    font-size: 11.5px;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+}
+.ck {
+    color: var(--text2);
+}
+.eq {
+    color: var(--text3);
+    padding: 0 1px;
+}
+.cv {
+    color: var(--text);
+}
+/* Annotations: key over value, one bordered block per entry, long values clamped. */
+.annos {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.annos li {
+    padding: 7px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.annos li + li {
+    border-top: 1px solid var(--border);
+}
+.ak {
+    font-size: 11px;
+    color: var(--text2);
+    overflow-wrap: anywhere;
+}
+.av {
+    font-size: 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.av.clamp {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+}
+.av.empty {
+    color: var(--text3);
+    font-style: italic;
+}
+.more {
+    all: unset;
+    cursor: pointer;
+    align-self: flex-start;
+    font-size: 11px;
+    color: var(--link);
+    border-radius: 3px;
+}
+.more:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
 }
 .disc:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
-}
-.kv {
-    display: grid;
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-    gap: 4px 12px;
-    font-size: 12px;
-    word-break: break-all;
-}
-.k {
-    color: var(--text2);
 }
 .ctable {
     width: 100%;
