@@ -314,6 +314,14 @@ func (w *World) generate(c *Cluster) {
 			fieldsOwner = "helm"
 		} else {
 			fieldsOwner = "kubectl-client-side-apply"
+			// What `kubectl apply` leaves behind: a long JSON annotation (exercises the UI's value clamp).
+			dmeta["annotations"] = map[string]any{
+				"deployment.kubernetes.io/revision": "1",
+				"kubectl.kubernetes.io/last-applied-configuration": `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"` +
+					name + `"},"name":"` + name + `","namespace":"` + ns + `"},"spec":{"replicas":2,"selector":{"matchLabels":{"app":"` + name +
+					`"}},"template":{"metadata":{"labels":{"app":"` + name + `"}},"spec":{"containers":[{"image":"registry.example/` + name +
+					`:1.4.2","name":"app","ports":[{"containerPort":8080}],"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}}]}}}}` + "\n",
+			}
 		}
 		dmeta["managedFields"] = []any{
 			managed(fieldsOwner, "Apply", "apps/v1", map[string]any{"f:spec": map[string]any{"f:replicas": map[string]any{},
