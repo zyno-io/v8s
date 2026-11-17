@@ -2,14 +2,12 @@ package ops
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/structured-merge-diff/v6/fieldpath"
 	"sigs.k8s.io/yaml"
 )
 
@@ -30,12 +28,37 @@ func (s *Service) Get(ctx context.Context, p protocol.ObjectGetParams) (*protoco
 	if gerr != nil {
 		return nil, mapErr(gerr, false)
 	}
-	return buildPayload(obj, p.KeepManagedFields)
+	return buildPayload(obj, p.KeepManagedFields, p.Reveal)
 }
 
-func buildPayload(obj *unstructured.Unstructured, keep bool) (*protocol.ObjectPayload, error) {
+// maskSecret replaces the values of a Secret's data (keys kept) and strips the last-applied annotation, which
+// embeds them.
+func maskSecret(o *unstructured.Unstructured) {
+	if o.GetKind() != "Secret" || o.GetAPIVersion() != "v1" {
+		return
+	}
+	for _, f := range []string{"data", "stringData"} {
+		if m, ok, _ := unstructured.NestedMap(o.Object, f); ok {
+			for k := range m {
+				m[k] = protocol.MaskedValue
+			}
+			_ = unstructured.SetNestedMap(o.Object, m, f)
+		}
+	}
+	if a := o.GetAnnotations(); a != nil {
+		if _, ok := a[lastApplied]; ok {
+			delete(a, lastApplied)
+			o.SetAnnotations(a)
+		}
+	}
+}
+
+func buildPayload(obj *unstructured.Unstructured, keep, reveal bool) (*protocol.ObjectPayload, error) {
 	managedBy := managedByOf(obj)
 	cp := obj.DeepCopy()
+	if !reveal {
+		maskSecret(cp)
+	}
 	if !keep {
 		unstructured.RemoveNestedField(cp.Object, "metadata", "managedFields")
 	}
@@ -84,80 +107,15 @@ func gitopsOf(obj *unstructured.Unstructured) *protocol.GitOps {
 	return nil
 }
 
-// fieldPaths converts a fieldsV1 JSON document into sorted dotted leaf paths.
+// fieldPaths converts a fieldsV1 JSON document into sorted leaf paths (display form).
 func fieldPaths(raw []byte) []string {
-	var root map[string]any
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return []string{}
-	}
+	set := parseSet(raw)
 	out := []string{}
-	walkFields(root, "", &out)
+	set.Leaves().Iterate(func(p fieldpath.Path) {
+		if s := pathString(p); s != "" {
+			out = append(out, s)
+		}
+	})
 	sort.Strings(out)
 	return out
-}
-
-func walkFields(node map[string]any, prefix string, out *[]string) {
-	n := 0
-	for k := range node {
-		if k != "." {
-			n++
-		}
-	}
-	if n == 0 {
-		if prefix != "" {
-			*out = append(*out, prefix)
-		}
-		return
-	}
-	for k, v := range node {
-		if k == "." {
-			continue
-		}
-		child, _ := v.(map[string]any)
-		walkFields(child, joinSeg(prefix, k), out)
-	}
-}
-
-func joinSeg(prefix, k string) string {
-	switch {
-	case strings.HasPrefix(k, "f:"):
-		if prefix == "" {
-			return k[2:]
-		}
-		return prefix + "." + k[2:]
-	case strings.HasPrefix(k, "k:"):
-		var m map[string]any
-		if err := json.Unmarshal([]byte(k[2:]), &m); err != nil {
-			return prefix + "[" + k[2:] + "]"
-		}
-		keys := make([]string, 0, len(m))
-		for kk := range m {
-			keys = append(keys, kk)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, kk := range keys {
-			parts = append(parts, kk+"="+scalarString(m[kk]))
-		}
-		return prefix + "[" + strings.Join(parts, ",") + "]"
-	case strings.HasPrefix(k, "v:"):
-		return prefix + "[=" + k[2:] + "]"
-	case strings.HasPrefix(k, "i:"):
-		return prefix + "[" + k[2:] + "]"
-	}
-	if prefix == "" {
-		return k
-	}
-	return prefix + "." + k
-}
-
-func scalarString(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	if f, ok := v.(float64); ok && f == float64(int64(f)) {
-		return fmt.Sprintf("%d", int64(f))
-	}
-	b, _ := json.Marshal(v)
-	return string(b)
 }

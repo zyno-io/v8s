@@ -306,7 +306,7 @@ func TestRouting(t *testing.T) {
 		e := newEnv(newConn(false, deployment("ns", "web")), newConn(true, deployment("ns", "web")))
 		e.auto = false
 		_, err := e.s.Action(ctx, scaleParams("1"))
-		if code(t, err) != "forbidden" {
+		if code(t, err) != "write_confirm" {
 			t.Fatal(err)
 		}
 	})
@@ -315,6 +315,9 @@ func TestRouting(t *testing.T) {
 		w.dyn.PrependReactor("patch", "deployments", func(ktesting.Action) (bool, runtime.Object, error) {
 			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "deployments"}, "web", errors.New("no elevated session"))
 		})
+		w.az.fn = func(*authorizationv1.ResourceAttributes) (bool, string, error) {
+			return false, "no elevated session", nil
+		}
 		e := newEnv(newConn(false, deployment("ns", "web")), w)
 		_, err := e.s.Action(ctx, scaleParams("1"))
 		if code(t, err) != "write_unavailable" || !strings.Contains(err.Error(), "no elevated session") {
@@ -441,7 +444,11 @@ func TestDiffPaths(t *testing.T) {
 		"list": []any{"a", "b"}, "cs": []any{map[string]any{"name": "x", "image": "1"}, map[string]any{"name": "y"}}}}
 	b := map[string]any{"metadata": map[string]any{"resourceVersion": "2", "labels": map[string]any{"a": "1", "b": "2"}}, "spec": map[string]any{
 		"list": []any{"a", "c"}, "cs": []any{map[string]any{"name": "x", "image": "2"}}}}
-	got := strings.Join(diffPaths(a, b), "|")
+	var ps []string
+	for _, p := range diffPaths(a, b, nil) {
+		ps = append(ps, pathString(p))
+	}
+	got := strings.Join(ps, "|")
 	want := "metadata.labels.b|spec.cs[name=x].image|spec.cs[name=y]|spec.list"
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)
@@ -902,7 +909,7 @@ func TestWatch(t *testing.T) {
 	frames := make(chan protocol.ObjectFrame, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- e.s.Watch(ctx, depRef(), false, func(f protocol.ObjectFrame) { frames <- f }) }()
+	go func() { done <- e.s.Watch(ctx, depRef(), false, false, func(f protocol.ObjectFrame) { frames <- f }) }()
 
 	next := func() protocol.ObjectFrame {
 		select {
@@ -946,7 +953,7 @@ func TestWatch(t *testing.T) {
 
 func TestWatchNotFound(t *testing.T) {
 	e := newEnv(newConn(true), nil)
-	err := e.s.Watch(context.Background(), depRef(), false, func(protocol.ObjectFrame) {})
+	err := e.s.Watch(context.Background(), depRef(), false, false, func(protocol.ObjectFrame) {})
 	if code(t, err) != "not_found" {
 		t.Fatal(err)
 	}

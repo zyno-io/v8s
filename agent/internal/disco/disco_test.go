@@ -194,8 +194,10 @@ func TestFetchLegacyFallback(t *testing.T) {
 					w.Write([]byte(legLists["apps/v1"]))
 				case "/apis/example.io/v1":
 					w.Write([]byte(legLists["example.io/v1"]))
+				case "/apis/example.io/v2":
+					hits.Add(1) // regression: non-preferred versions are fetched too
+					w.Write([]byte(`{"resources":[{"name":"widgets","namespaced":true,"kind":"Widget","verbs":["list","watch"]},{"name":"onlyv2s","namespaced":true,"kind":"OnlyV2","verbs":["list","watch"]}]}`))
 				default:
-					hits.Add(1) // non-preferred versions must not be fetched
 					http.NotFound(w, r)
 				}
 			}))
@@ -203,8 +205,11 @@ func TestFetchLegacyFallback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if hits.Load() != 0 || len(rs) != 6 {
+			if hits.Load() != 1 || len(rs) != 7 {
 				t.Fatalf("hits=%d rs=%v", hits.Load(), rs)
+			}
+			if _, ok := byGVR(rs)["example.io/v2/onlyv2s"]; !ok {
+				t.Fatal("resource served only by a non-preferred version is missing")
 			}
 			if _, ok := byGVR(rs)["example.io/v1/widgets"]; !ok {
 				t.Fatal("missing preferred widgets")

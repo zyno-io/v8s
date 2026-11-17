@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 
@@ -219,16 +218,25 @@ func TestMemoryOnly(t *testing.T) {
 func TestCorruptFile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "s.json")
 	os.WriteFile(p, []byte(`{not json`), 0o600)
-	_, err := Open(p)
-	if err == nil || !errors.Is(err, ErrInvalid) {
-		t.Fatalf("err %v", err)
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("a corrupt file must not stop startup: %v", err)
 	}
-	if strings.Contains(err.Error(), "not json") {
-		t.Fatal("error leaks content")
+	if !s.Get().AutoSwitchWrite {
+		t.Fatal("defaults expected")
 	}
-	b, _ := os.ReadFile(p)
+	if s.CorruptMovedTo == "" {
+		t.Fatal("corrupt file not moved aside")
+	}
+	b, _ := os.ReadFile(s.CorruptMovedTo)
 	if string(b) != `{not json` {
-		t.Fatal("file overwritten")
+		t.Fatal("original content must be kept aside")
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("bad file still in place")
+	}
+	if _, err := s.Patch(map[string]any{"stars": []any{"x"}}); err != nil {
+		t.Fatal(err)
 	}
 }
 

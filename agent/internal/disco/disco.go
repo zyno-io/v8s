@@ -291,15 +291,11 @@ func fetchLegacy(ctx context.Context, c rest.Interface) ([]Resource, error) {
 		}
 	}
 	for _, g := range gl.Groups {
-		pref := g.PreferredVersion.Version
-		if pref == "" && len(g.Versions) > 0 {
-			pref = g.Versions[0].Version
-		}
-		if pref == "" {
-			continue
-		}
-		if err := fetch(g.Name, pref); err != nil {
-			return nil, err
+		// every served version: a resource may exist only in a non-preferred one
+		for _, v := range g.Versions {
+			if err := fetch(g.Name, v.Version); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return ParseLegacy(core, groups, lists)

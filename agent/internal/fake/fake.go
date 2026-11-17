@@ -30,6 +30,8 @@ type Config struct {
 	Clusters int
 	Pods     int // total across clusters
 	Churn    int // pod events per second across all clusters
+	// LogRate is the synthetic log lines per second per pod (default 20).
+	LogRate int
 	// RBAC makes the second cluster read-only for mutations and adds the context "<name>-admin" that can
 	// be linked to it as its write context (settings.links).
 	RBAC bool
@@ -56,6 +58,8 @@ func ParseConfig(s string) (Config, error) {
 			c.Churn = n
 		case "rbac":
 			c.RBAC = n != 0
+		case "lograte":
+			c.LogRate = n
 		default:
 			return c, fmt.Errorf("unknown --fake option %q", k)
 		}
@@ -131,7 +135,7 @@ func (s *Source) Backend(id string) (kube.Backend, error) {
 			w = NewWorld(c)
 			s.worlds[base] = w
 		}
-		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}}, nil
+		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}, rate: s.cfg.LogRate}, nil
 	}
 	return nil, fmt.Errorf("unknown fake cluster %q", id)
 }
@@ -278,7 +282,7 @@ func (c *Cluster) pod(p *fakePod) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: p.name(), Namespace: ns, UID: types.UID(p.uid(c.name)), ResourceVersion: strconv.FormatUint(p.rv, 10),
-			CreationTimestamp: metav1.Unix(p.created/1000, 0),
+			CreationTimestamp: metav1.Unix(p.created/1000, 0), Labels: map[string]string{"app": app},
 			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet",
 				Name: fmt.Sprintf("%s-%010x", app, p.h1), Controller: ptrTrue()}},
 		},
@@ -672,4 +676,21 @@ func (c *Cluster) killPod(ns, name string, dry bool) error {
 	c.pods[i] = c.newPod(int(dead.app), 0)
 	c.emitLocked(watch.Added, c.pods[i])
 	return nil
+}
+
+// podsOfApp returns the live pods of one app in a namespace (logs of a Deployment, service backends).
+func (c *Cluster) podsOfApp(ns, app string) []corev1.Pod {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []corev1.Pod
+	for i := range c.pods {
+		p := &c.pods[i]
+		if p.state != stDead && "svc-"+strconv.Itoa(int(p.app)) == app && "team-"+strconv.Itoa(int(p.ns)) == ns {
+			out = append(out, *c.pod(p))
+			if len(out) >= 60 {
+				break
+			}
+		}
+	}
+	return out
 }

@@ -56,6 +56,8 @@ func withEmbeddedUI(agent http.Handler) http.Handler {
 	ui := webui.Handler()
 	mux := http.NewServeMux()
 	mux.Handle("/ws", agent)
+	mux.Handle("/stream", agent)
+	mux.Handle("/stream/", agent)
 	mux.Handle("/healthz", agent)
 	mux.Handle("/", ui)
 	return mux

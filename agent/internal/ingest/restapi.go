@@ -139,6 +139,9 @@ func (w *tableWatch) run() {
 
 // APIFor builds the list/watch API for a module on a real clientset.
 func APIFor(cs *kubernetes.Clientset, m *Module, group, version, resource string) (API, error) {
+	if m != nil && m.NewAPI != nil {
+		return m.NewAPI(cs.CoreV1().RESTClient(), group, version, resource), nil
+	}
 	if m != nil && m.Curated && !m.Table {
 		c, err := restFor(cs, group, version)
 		if err != nil {

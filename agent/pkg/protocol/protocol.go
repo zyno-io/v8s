@@ -39,6 +39,10 @@ const (
 	// KindObject (agent → client). channel = oid (chosen by the client in object.subscribe). Payload: ObjectFrame.
 	// Sent once after object.subscribe and again on every change of the object. Not acknowledged.
 	KindObject FrameKind = 8
+	// KindJob (agent → client). channel = 0. Payload: JobFrame (the job's full current state). Sent on every
+	// job change to every connected data socket; jobs.list returns the same states for a (re)connecting client.
+	// Not acknowledged.
+	KindJob FrameKind = 9
 )
 
 // Hello is sent by the agent right after the WebSocket upgrade.
@@ -67,6 +71,17 @@ type Hello struct {
 //	"settings.get"       → Settings (no params)
 //	"settings.set"       SettingsSetParams → Settings (the merged document)
 //	"search"             SearchParams → SearchResult
+//	"stream.open"        StreamOpenParams → StreamOpenResult (see StreamSubprotocolPrefix)
+//	"portforward.list"   → PortForwardListResult (no params)
+//	"portforward.stop"   PortForwardStopParams → (empty)
+//	"jobs.start"         JobsStartParams → JobsStartResult
+//	"jobs.list"          → JobsListResult (no params)
+//	"jobs.cancel"        JobsCancelParams → (empty)
+//	"drain.preflight"    DrainPreflightParams → DrainPreflightResult
+//	"flux.inventory"     FluxInventoryParams → FluxInventoryResult
+//	"flux.graph"         FluxGraphParams → FluxGraphResult
+//	"helm.release"       HelmReleaseParams → HelmRelease
+//	"helm.diff"          HelmDiffParams → HelmDiffResult
 type Request struct {
 	Method string `msgpack:"method" json:"method"`
 	Params any    `msgpack:"params,omitempty" json:"params,omitempty" tstype:"unknown"`
@@ -82,10 +97,16 @@ type ErrorBody struct {
 	// Code is one of "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal" |
 	// "conflict" (object.apply update lost a resourceVersion race; Live carries the current object) |
 	// "write_unavailable" (the linked write context was rejected with 401/403; Message is the server's) |
-	// "invalid" (the API server rejected the object, e.g. validation or admission).
+	// "invalid" (the API server rejected the object, e.g. validation or admission) |
+	// "write_confirm" (the read context is denied, a write context is linked but autoSwitchWrite is off: ask the user, then retry with useWriteContext) |
+	// "link_mismatch" (the linked write context reaches a different cluster than the read context: kube-system uids differ) |
+	// "gitops_managed" (a Helm action on a Flux-managed release; Hint names the right Flux action, "force": true overrides).
 	Code    string         `msgpack:"code" json:"code"`
 	Message string         `msgpack:"message" json:"message"`
+	Hint    string         `msgpack:"hint,omitempty" json:"hint,omitempty"`
 	Live    *ObjectPayload `msgpack:"live,omitempty" json:"live,omitempty"`
+	// Applied lists the documents of a multi-document object.apply that succeeded before the one that failed.
+	Applied []ObjectRef `msgpack:"applied,omitempty" json:"applied,omitempty"`
 }
 
 // ---- clusters -------------------------------------------------------------------------
@@ -288,7 +309,14 @@ type ObjectGetParams struct {
 	Namespace         string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
 	Name              string `msgpack:"name" json:"name"`
 	KeepManagedFields bool   `msgpack:"keepManagedFields,omitempty" json:"keepManagedFields,omitempty"`
+	// Reveal returns Secret values and the last-applied annotation; false (default) masks values with
+	// MaskedValue (keys are kept) and strips kubectl.kubernetes.io/last-applied-configuration.
+	Reveal bool `msgpack:"reveal,omitempty" json:"reveal,omitempty"`
 }
+
+// MaskedValue replaces Secret data values in a payload fetched without Reveal. An update that still contains it
+// keeps the live value of that key.
+const MaskedValue = "__v8s_masked__"
 
 // ManagedBy summarizes one managedFields entry: which manager owns which field paths.
 type ManagedBy struct {
@@ -324,6 +352,7 @@ type ObjectSubscribeParams struct {
 	OID               uint32    `msgpack:"oid" json:"oid"` // chosen by the client, unique per socket; the KindObject channel
 	Ref               ObjectRef `msgpack:"ref" json:"ref"`
 	KeepManagedFields bool      `msgpack:"keepManagedFields,omitempty" json:"keepManagedFields,omitempty"`
+	Reveal            bool      `msgpack:"reveal,omitempty" json:"reveal,omitempty"` // as ObjectGetParams.Reveal
 }
 
 type ObjectUnsubscribeParams struct {
@@ -342,6 +371,8 @@ type ObjectDryRunParams struct {
 	Ref  ObjectRef `msgpack:"ref" json:"ref"`
 	YAML string    `msgpack:"yaml" json:"yaml"`
 	Mode string    `msgpack:"mode" json:"mode"` // "update" | "create"
+	// UseWriteContext runs the dry run through the linked write context (honoured only when a link exists).
+	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
 
 // FieldConflict: a changed field path that another field manager owns.
@@ -363,6 +394,10 @@ type ObjectApplyParams struct {
 	YAML            string    `msgpack:"yaml" json:"yaml"`
 	Mode            string    `msgpack:"mode" json:"mode"`                                           // "update" | "create"
 	ResourceVersion string    `msgpack:"resourceVersion,omitempty" json:"resourceVersion,omitempty"` // update: the version the user opened
+	// UseWriteContext (here and on object.delete / object.action / jobs.start / stream.open) runs the mutation
+	// through the linked write context; honoured only when a link exists. It is how the UI retries after a
+	// "write_confirm" error (autoSwitchWrite off).
+	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
 
 type ObjectApplyResult struct {
@@ -372,18 +407,21 @@ type ObjectApplyResult struct {
 }
 
 type ObjectDeleteParams struct {
-	RequestID   string    `msgpack:"requestId" json:"requestId"`
-	Ref         ObjectRef `msgpack:"ref" json:"ref"`
-	Propagation string    `msgpack:"propagation,omitempty" json:"propagation,omitempty"` // "Background" (default) | "Foreground" | "Orphan"
+	RequestID       string    `msgpack:"requestId" json:"requestId"`
+	Ref             ObjectRef `msgpack:"ref" json:"ref"`
+	Propagation     string    `msgpack:"propagation,omitempty" json:"propagation,omitempty"` // "Background" (default) | "Foreground" | "Orphan"
+	UseWriteContext bool      `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
 
 // ObjectActionParams: Action is "scale" {replicas}, "restart", "cordon", "uncordon", "suspend",
-// "resume", "trigger", "rollback" {revision}.
+// "resume", "trigger", "rollback" {revision}, and the Flux actions "flux.suspend", "flux.resume",
+// "flux.reconcile", "flux.reconcileWithSource", "flux.force" and "flux.reset" (docs/integrations.md).
 type ObjectActionParams struct {
-	RequestID string         `msgpack:"requestId" json:"requestId"`
-	Ref       ObjectRef      `msgpack:"ref" json:"ref"`
-	Action    string         `msgpack:"action" json:"action"`
-	Params    map[string]any `msgpack:"params,omitempty" json:"params,omitempty" tstype:"{ [key: string]: unknown }"`
+	RequestID       string         `msgpack:"requestId" json:"requestId"`
+	Ref             ObjectRef      `msgpack:"ref" json:"ref"`
+	Action          string         `msgpack:"action" json:"action"`
+	Params          map[string]any `msgpack:"params,omitempty" json:"params,omitempty" tstype:"{ [key: string]: unknown }"`
+	UseWriteContext bool           `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
 
 // MutationResult answers object.delete and object.action.
@@ -391,6 +429,9 @@ type MutationResult struct {
 	UsedContext     string `msgpack:"usedContext" json:"usedContext"`
 	ResourceVersion string `msgpack:"resourceVersion,omitempty" json:"resourceVersion,omitempty"`
 	Name            string `msgpack:"name,omitempty" json:"name,omitempty"` // action "trigger": the created Job
+	// Token is the reconcile token a Flux action wrote to reconcile.fluxcd.io/requestedAt (and forceAt/resetAt).
+	// The object is handled once status.lastHandledReconcileAt equals it.
+	Token string `msgpack:"token,omitempty" json:"token,omitempty"`
 }
 
 // ---- access ---------------------------------------------------------------------------
@@ -408,9 +449,12 @@ type AccessCheckParams struct {
 }
 
 type AccessResult struct {
-	Allowed  bool   `msgpack:"allowed" json:"allowed"`
-	ViaWrite bool   `msgpack:"viaWrite" json:"viaWrite"` // allowed only through the linked write context
-	Reason   string `msgpack:"reason" json:"reason"`
+	Allowed  bool `msgpack:"allowed" json:"allowed"`
+	ViaWrite bool `msgpack:"viaWrite" json:"viaWrite"` // allowed only through the linked write context, which is used automatically (autoSwitchWrite on)
+	// NeedsConfirm: allowed only through the linked write context but autoSwitchWrite is off; the UI asks, then
+	// sends the mutation with useWriteContext.
+	NeedsConfirm bool   `msgpack:"needsConfirm,omitempty" json:"needsConfirm,omitempty"`
+	Reason       string `msgpack:"reason" json:"reason"`
 }
 
 type AccessCheckResult struct {
@@ -435,6 +479,24 @@ type Settings struct {
 	ColumnLayouts   map[string]any      `msgpack:"columnLayouts" json:"columnLayouts" tstype:"{ [key: string]: unknown }"`
 	ProblemPrefs    map[string]any      `msgpack:"problemPrefs" json:"problemPrefs" tstype:"{ [key: string]: unknown }"`
 	Acks            map[string]any      `msgpack:"acks" json:"acks" tstype:"{ [key: string]: unknown }"`
+	// NodeShell configures node shell pods per cluster id; "*" is the default for every cluster.
+	NodeShell map[string]NodeShellSettings `msgpack:"nodeShell" json:"nodeShell"`
+	// PortForwards are the saved forwards (restorable with one click: stream.open type "portforward").
+	PortForwards []SavedForward `msgpack:"portForwards" json:"portForwards"`
+}
+
+// NodeShellSettings: Image must be pinned (a digest); empty fields use the defaults.
+type NodeShellSettings struct {
+	Image         string `msgpack:"image,omitempty" json:"image,omitempty"`
+	Namespace     string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`         // default "v8s-system"
+	PriorityClass string `msgpack:"priorityClass,omitempty" json:"priorityClass,omitempty"` // default none
+}
+
+// SavedForward is a remembered port-forward.
+type SavedForward struct {
+	Name string    `msgpack:"name,omitempty" json:"name,omitempty"`
+	Ref  ObjectRef `msgpack:"ref" json:"ref"` // v1/pods or v1/services
+	Port int       `msgpack:"port" json:"port"`
 }
 
 // SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
@@ -465,3 +527,398 @@ const (
 	MaxInFlightBytes = 512 * 1024
 	MaxFrameBytes    = 128 * 1024
 )
+
+// ---- streams ---------------------------------------------------------------------------
+
+// A stream (logs, exec, debug, node shell) has its own WebSocket, `GET /stream`, so a chatty log never
+// delays view patches or keystrokes. It is authenticated like /ws (Sec-WebSocket-Protocol `v8s.v1` and
+// `token.<hex>`, Origin allowlist) and is opened with a single-use id obtained from stream.open: the
+// client additionally offers `stream.<id>` as a subprotocol, so ids never appear in URLs. An id is valid
+// for StreamIDTTLSeconds and for one connection.
+const (
+	StreamSubprotocolPrefix = "stream."
+	StreamIDTTLSeconds      = 30
+	// DefaultLogTailLines is used when StreamOpenParams.TailLines is unset.
+	DefaultLogTailLines = 1000
+	// InitialLogCredit is the credit (bytes) a log stream starts with; the client adds more with {"credit": n}.
+	InitialLogCredit = 256 * 1024
+	// LogBatchBytes and LogBatchMillis bound one logs frame: at most 64 KiB, flushed after at most 100 ms.
+	LogBatchBytes  = 64 * 1024
+	LogBatchMillis = 100
+)
+
+// Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
+// Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
+const (
+	StreamChanStdin  byte = 0x00
+	StreamChanStdout byte = 0x01
+	StreamChanStderr byte = 0x02
+)
+
+// StreamClientMsg is a client → agent text frame: {"credit": n} (logs: grants n more bytes) or
+// {"resize": {"cols": c, "rows": r}} (exec, node shell, debug).
+type StreamClientMsg struct {
+	Credit int64         `msgpack:"credit,omitempty" json:"credit,omitempty"`
+	Resize *StreamResize `msgpack:"resize,omitempty" json:"resize,omitempty"`
+}
+
+type StreamResize struct {
+	Cols int `msgpack:"cols" json:"cols"`
+	Rows int `msgpack:"rows" json:"rows"`
+}
+
+// StreamServerMsg is an agent → client text frame. Ready is the first frame of an interactive stream;
+// Exit ends exec / node shell / debug ({"exit": code, "error"?}); End ends a logs stream ({"end": true, "error"?}).
+type StreamServerMsg struct {
+	Ready *StreamReady `msgpack:"ready,omitempty" json:"ready,omitempty"`
+	Exit  *int         `msgpack:"exit,omitempty" json:"exit,omitempty"`
+	End   bool         `msgpack:"end,omitempty" json:"end,omitempty"`
+	Error string       `msgpack:"error,omitempty" json:"error,omitempty"`
+}
+
+type StreamReady struct {
+	UsedContext string `msgpack:"usedContext" json:"usedContext"`
+	Shell       string `msgpack:"shell,omitempty" json:"shell,omitempty"`         // exec: the shell that started
+	Container   string `msgpack:"container,omitempty" json:"container,omitempty"` // exec/debug: the container entered
+	Pod         string `msgpack:"pod,omitempty" json:"pod,omitempty"`             // nodeshell: the pod
+	Attached    bool   `msgpack:"attached,omitempty" json:"attached,omitempty"`   // nodeshell: first session (attach) vs nsenter exec
+}
+
+// LogSelector selects the pods of a multi-pod log stream.
+type LogSelector struct {
+	Cluster       string `msgpack:"cluster" json:"cluster"`
+	Namespace     string `msgpack:"namespace" json:"namespace"`
+	LabelSelector string `msgpack:"labelSelector" json:"labelSelector"`
+}
+
+// StreamOpenParams is the stream.open request. Type selects which fields apply:
+//
+//   - "logs": Ref (a pod; with Container) or Selector, or Ref of a workload (its pods are selected from its
+//     spec.selector); Follow, TailLines (default 1000), SinceSeconds, Previous, Timestamps; Download opens a
+//     one-shot HTTP download (result.DownloadURL) instead of a socket. Multi-pod lines are prefixed
+//     "<pod>/<container>\t"; the agent merges them by timestamp.
+//   - "exec": Ref (pod), Container, Command (default: shell discovery /bin/bash → /bin/sh → /busybox/sh), TTY (default true).
+//   - "debug": Ref (pod), Target (container), Image.
+//   - "nodeshell": Node (and Cluster).
+//   - "portforward": Ref (a pod, or a service resolved to a ready backing pod), Port. The result carries
+//     LocalPort and ForwardID instead of a stream id.
+type StreamOpenParams struct {
+	Type         string       `msgpack:"type" json:"type"`
+	Cluster      string       `msgpack:"cluster,omitempty" json:"cluster,omitempty"` // nodeshell
+	Ref          *ObjectRef   `msgpack:"ref,omitempty" json:"ref,omitempty"`
+	Selector     *LogSelector `msgpack:"selector,omitempty" json:"selector,omitempty"`
+	Container    string       `msgpack:"container,omitempty" json:"container,omitempty"`
+	Follow       bool         `msgpack:"follow,omitempty" json:"follow,omitempty"`
+	TailLines    *int64       `msgpack:"tailLines,omitempty" json:"tailLines,omitempty"`
+	SinceSeconds *int64       `msgpack:"sinceSeconds,omitempty" json:"sinceSeconds,omitempty"`
+	Previous     bool         `msgpack:"previous,omitempty" json:"previous,omitempty"`
+	Timestamps   bool         `msgpack:"timestamps,omitempty" json:"timestamps,omitempty"`
+	Download     bool         `msgpack:"download,omitempty" json:"download,omitempty"`
+	Command      []string     `msgpack:"command,omitempty" json:"command,omitempty"`
+	TTY          *bool        `msgpack:"tty,omitempty" json:"tty,omitempty"`
+	Target       string       `msgpack:"target,omitempty" json:"target,omitempty"`
+	Image        string       `msgpack:"image,omitempty" json:"image,omitempty"`
+	Node         string       `msgpack:"node,omitempty" json:"node,omitempty"`
+	Port         int          `msgpack:"port,omitempty" json:"port,omitempty"`
+	// UseWriteContext as on ObjectApplyParams.
+	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
+}
+
+type StreamOpenResult struct {
+	// StreamID is the single-use id to offer as subprotocol "stream.<id>" on GET /stream.
+	StreamID string `msgpack:"streamId,omitempty" json:"streamId,omitempty"`
+	// DownloadURL (logs with Download): GET it once with the agent token as `Authorization: Bearer <token>`
+	// or `?token=`; the response is the whole log as one text/plain stream.
+	DownloadURL string `msgpack:"downloadUrl,omitempty" json:"downloadUrl,omitempty"`
+	// UsedContext is the context the stream runs through (the linked write context when the read context was denied).
+	UsedContext string `msgpack:"usedContext,omitempty" json:"usedContext,omitempty"`
+	// LocalPort and ForwardID answer type "portforward".
+	LocalPort int    `msgpack:"localPort,omitempty" json:"localPort,omitempty"`
+	ForwardID string `msgpack:"forwardId,omitempty" json:"forwardId,omitempty"`
+}
+
+type PortForwardInfo struct {
+	ID          string    `msgpack:"id" json:"id"`
+	Ref         ObjectRef `msgpack:"ref" json:"ref"`
+	Port        int       `msgpack:"port" json:"port"`
+	LocalPort   int       `msgpack:"localPort" json:"localPort"`
+	Pod         string    `msgpack:"pod" json:"pod"`
+	State       string    `msgpack:"state" json:"state"` // "running" | "reconnecting" | "stopped"
+	UsedContext string    `msgpack:"usedContext" json:"usedContext"`
+	Error       string    `msgpack:"error,omitempty" json:"error,omitempty"`
+}
+
+type PortForwardListResult struct {
+	Forwards []PortForwardInfo `msgpack:"forwards" json:"forwards"`
+}
+
+type PortForwardStopParams struct {
+	ID string `msgpack:"id" json:"id"`
+}
+
+// ---- jobs ------------------------------------------------------------------------------
+
+type JobState string
+
+const (
+	JobRunning   JobState = "running"
+	JobDone      JobState = "done"
+	JobFailed    JobState = "failed"
+	JobCancelled JobState = "cancelled"
+)
+
+// Job types for jobs.start.
+const (
+	JobDrain         = "drain"          // params: DrainParams
+	JobHelmRollback  = "helm.rollback"  // params: HelmRollbackParams
+	JobHelmUninstall = "helm.uninstall" // params: HelmUninstallParams
+	JobHelmRetry     = "helm.retry"     // params: HelmRetryParams
+)
+
+type JobProgress struct {
+	At      int64  `msgpack:"at" json:"at"`                           // unix ms
+	Message string `msgpack:"message" json:"message"`                 // human text
+	Item    string `msgpack:"item,omitempty" json:"item,omitempty"`   // what it is about, e.g. "team-1/svc-3-abc"
+	State   string `msgpack:"state,omitempty" json:"state,omitempty"` // item state: "evicting" | "waiting-pdb" | "evicted" | "error" | ...
+}
+
+// JobFrame is the KindJob payload and the jobs.list entry: the job's whole state. Progress holds the last
+// 200 entries (ProgressDropped counts older ones).
+type JobFrame struct {
+	JobID           string        `msgpack:"jobId" json:"jobId"`
+	Type            string        `msgpack:"type" json:"type"`
+	State           JobState      `msgpack:"state" json:"state"`
+	Cluster         string        `msgpack:"cluster,omitempty" json:"cluster,omitempty"`
+	Subject         string        `msgpack:"subject,omitempty" json:"subject,omitempty"` // node or release the job acts on
+	StartedAt       int64         `msgpack:"startedAt" json:"startedAt"`
+	EndedAt         int64         `msgpack:"endedAt,omitempty" json:"endedAt,omitempty"`
+	Progress        []JobProgress `msgpack:"progress" json:"progress"`
+	ProgressDropped int           `msgpack:"progressDropped,omitempty" json:"progressDropped,omitempty"`
+	Error           *ErrorBody    `msgpack:"error,omitempty" json:"error,omitempty"`
+	UsedContext     string        `msgpack:"usedContext,omitempty" json:"usedContext,omitempty"`
+}
+
+type JobsStartParams struct {
+	RequestID       string         `msgpack:"requestId" json:"requestId"`
+	Type            string         `msgpack:"type" json:"type"`
+	Params          map[string]any `msgpack:"params" json:"params" tstype:"{ [key: string]: unknown }"`
+	UseWriteContext bool           `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
+}
+
+type JobsStartResult struct {
+	JobID string `msgpack:"jobId" json:"jobId"`
+}
+
+type JobsListResult struct {
+	Jobs []JobFrame `msgpack:"jobs" json:"jobs"`
+}
+
+type JobsCancelParams struct {
+	JobID string `msgpack:"jobId" json:"jobId"`
+}
+
+// ---- drain -----------------------------------------------------------------------------
+
+// DrainOptions mirror kubectl drain. IgnoreDaemonSets defaults to true. TimeoutSeconds 0 means 300.
+// GracePeriodSeconds nil uses each pod's own. DisableEviction deletes pods instead of evicting them
+// (PDBs are then not honoured): it is the explicit second confirmation.
+type DrainOptions struct {
+	IgnoreDaemonSets   *bool  `msgpack:"ignoreDaemonSets,omitempty" json:"ignoreDaemonSets,omitempty"`
+	DeleteEmptyDirData bool   `msgpack:"deleteEmptyDirData,omitempty" json:"deleteEmptyDirData,omitempty"`
+	Force              bool   `msgpack:"force,omitempty" json:"force,omitempty"` // also drain pods no controller manages
+	GracePeriodSeconds *int   `msgpack:"gracePeriodSeconds,omitempty" json:"gracePeriodSeconds,omitempty"`
+	TimeoutSeconds     int    `msgpack:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
+	PodSelector        string `msgpack:"podSelector,omitempty" json:"podSelector,omitempty"`
+	DisableEviction    bool   `msgpack:"disableEviction,omitempty" json:"disableEviction,omitempty"`
+}
+
+// DrainParams are the params of jobs.start type "drain".
+type DrainParams struct {
+	Cluster string       `msgpack:"cluster" json:"cluster"`
+	Node    string       `msgpack:"node" json:"node"`
+	Options DrainOptions `msgpack:"options" json:"options"`
+}
+
+type DrainPreflightParams = DrainParams
+
+type DrainPDB struct {
+	Name               string `msgpack:"name" json:"name"`
+	DisruptionsAllowed int    `msgpack:"disruptionsAllowed" json:"disruptionsAllowed"`
+}
+
+type DrainPod struct {
+	Namespace string    `msgpack:"namespace" json:"namespace"`
+	Name      string    `msgpack:"name" json:"name"`
+	Owner     string    `msgpack:"owner,omitempty" json:"owner,omitempty"` // "Kind/name" of the controller
+	PDB       *DrainPDB `msgpack:"pdb,omitempty" json:"pdb,omitempty"`
+	EmptyDir  bool      `msgpack:"emptyDir,omitempty" json:"emptyDir,omitempty"`
+}
+
+// DrainPreflightResult classifies the pods on the node. Evict pods will be evicted; Blocked pods are covered
+// by a PDB with disruptionsAllowed 0 (the drain waits on them); Unmanaged pods have no controller and are
+// lost for good (need force); DaemonSets are skipped; Mirror pods are skipped; Finished pods are deleted.
+// EmptyDir lists, in addition, the pods whose emptyDir data is lost (needs deleteEmptyDirData).
+type DrainPreflightResult struct {
+	Node        string     `msgpack:"node" json:"node"`
+	Cordoned    bool       `msgpack:"cordoned" json:"cordoned"`
+	UsedContext string     `msgpack:"usedContext" json:"usedContext"`
+	Evict       []DrainPod `msgpack:"evict" json:"evict"`
+	Blocked     []DrainPod `msgpack:"blocked" json:"blocked"`
+	Unmanaged   []DrainPod `msgpack:"unmanaged" json:"unmanaged"`
+	EmptyDir    []DrainPod `msgpack:"emptyDir" json:"emptyDir"`
+	DaemonSets  []DrainPod `msgpack:"daemonSets" json:"daemonSets"`
+	Mirror      []DrainPod `msgpack:"mirror" json:"mirror"`
+	Finished    []DrainPod `msgpack:"finished" json:"finished"`
+}
+
+// ---- flux ------------------------------------------------------------------------------
+
+// FluxPayloadKey is where object payloads expose status.lastHandledReconcileAt: ObjectPayload.YAML contains
+// it under status, so the UI shows "Reconciling…" until it equals the token a flux action returned.
+
+type FluxInventoryParams struct {
+	Ref ObjectRef `msgpack:"ref" json:"ref"` // a Kustomization
+}
+
+// FluxInventoryEntry is one status.inventory.entries item joined to the live object when its kind is watched.
+type FluxInventoryEntry struct {
+	ID        string `msgpack:"id" json:"id"`
+	Group     string `msgpack:"group" json:"group"`
+	Version   string `msgpack:"version" json:"version"`
+	Kind      string `msgpack:"kind" json:"kind"`
+	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string `msgpack:"name" json:"name"`
+	GVR       string `msgpack:"gvr,omitempty" json:"gvr,omitempty"`
+	// Live is true when the object exists in a watched kind; Tone (ColTone values) and Status are then its health.
+	Live   bool   `msgpack:"live" json:"live"`
+	Tone   int    `msgpack:"tone" json:"tone"`
+	Status string `msgpack:"status,omitempty" json:"status,omitempty"`
+}
+
+type FluxInventoryResult struct {
+	Entries  []FluxInventoryEntry `msgpack:"entries" json:"entries"`
+	Revision string               `msgpack:"revision,omitempty" json:"revision,omitempty"`
+}
+
+type FluxGraphParams struct {
+	Cluster string `msgpack:"cluster" json:"cluster"`
+}
+
+type FluxGraphNode struct {
+	ID        string `msgpack:"id" json:"id"` // "<Kind>/<namespace>/<name>"
+	Kind      string `msgpack:"kind" json:"kind"`
+	GVR       string `msgpack:"gvr" json:"gvr"`
+	Namespace string `msgpack:"namespace" json:"namespace"`
+	Name      string `msgpack:"name" json:"name"`
+	Tone      int    `msgpack:"tone" json:"tone"`
+	Suspended bool   `msgpack:"suspended" json:"suspended"`
+}
+
+type FluxGraphEdge struct {
+	From string `msgpack:"from" json:"from"` // node id
+	To   string `msgpack:"to" json:"to"`     // node id
+	Type string `msgpack:"type" json:"type"` // "dependsOn" (From waits for To) | "sourceRef" (From reads To)
+}
+
+type FluxGraphResult struct {
+	Nodes []FluxGraphNode `msgpack:"nodes" json:"nodes"`
+	Edges []FluxGraphEdge `msgpack:"edges" json:"edges"`
+}
+
+// ---- helm ------------------------------------------------------------------------------
+
+// HelmGVR is the virtual resource of the Helm release view (one row per release: its latest revision).
+const HelmGVR = "helm.sh/v1/releases"
+
+type HelmReleaseParams struct {
+	Cluster   string `msgpack:"cluster" json:"cluster"`
+	Namespace string `msgpack:"namespace" json:"namespace"`
+	Name      string `msgpack:"name" json:"name"`
+	Revision  int    `msgpack:"revision,omitempty" json:"revision,omitempty"` // 0 = latest
+}
+
+type HelmRevision struct {
+	Revision    int    `msgpack:"revision" json:"revision"`
+	Status      string `msgpack:"status" json:"status"`
+	Updated     int64  `msgpack:"updated" json:"updated"` // unix ms
+	Chart       string `msgpack:"chart,omitempty" json:"chart,omitempty"`
+	AppVersion  string `msgpack:"appVersion,omitempty" json:"appVersion,omitempty"`
+	Description string `msgpack:"description,omitempty" json:"description,omitempty"`
+}
+
+type HelmHook struct {
+	Name   string   `msgpack:"name" json:"name"`
+	Kind   string   `msgpack:"kind" json:"kind"`
+	Path   string   `msgpack:"path,omitempty" json:"path,omitempty"`
+	Events []string `msgpack:"events" json:"events"`
+	Weight int      `msgpack:"weight" json:"weight"`
+}
+
+// HelmRelease is one decoded release revision.
+type HelmRelease struct {
+	Name           string         `msgpack:"name" json:"name"`
+	Namespace      string         `msgpack:"namespace" json:"namespace"`
+	Revision       int            `msgpack:"revision" json:"revision"`
+	Status         string         `msgpack:"status" json:"status"`
+	Chart          string         `msgpack:"chart" json:"chart"`
+	ChartVersion   string         `msgpack:"chartVersion" json:"chartVersion"`
+	AppVersion     string         `msgpack:"appVersion,omitempty" json:"appVersion,omitempty"`
+	Description    string         `msgpack:"description,omitempty" json:"description,omitempty"`
+	Updated        int64          `msgpack:"updated" json:"updated"`
+	Values         string         `msgpack:"values" json:"values"`                 // user-supplied values, YAML
+	ComputedValues string         `msgpack:"computedValues" json:"computedValues"` // chart defaults merged with Values, YAML
+	Manifest       string         `msgpack:"manifest" json:"manifest"`
+	Notes          string         `msgpack:"notes,omitempty" json:"notes,omitempty"`
+	Hooks          []HelmHook     `msgpack:"hooks" json:"hooks"`
+	History        []HelmRevision `msgpack:"history" json:"history"`
+	ManagedBy      *GitOps        `msgpack:"managedBy,omitempty" json:"managedBy,omitempty"` // Flux HelmRelease from the release labels
+}
+
+type HelmDiffParams struct {
+	Ref          ObjectRef `msgpack:"ref" json:"ref"` // cluster, namespace, name (gvr is HelmGVR)
+	FromRevision int       `msgpack:"fromRevision" json:"fromRevision"`
+	ToRevision   int       `msgpack:"toRevision" json:"toRevision"`
+}
+
+// HelmDiffResult holds unified diffs ("" when identical).
+type HelmDiffResult struct {
+	Values   string `msgpack:"values" json:"values"`
+	Manifest string `msgpack:"manifest" json:"manifest"`
+}
+
+// Helm action params (jobs.start). Force overrides the Flux guard ("gitops_managed"); ForceReplace is Helm's
+// own --force. TimeoutSeconds 0 means 300.
+type HelmRollbackParams struct {
+	Cluster        string `msgpack:"cluster" json:"cluster"`
+	Namespace      string `msgpack:"namespace" json:"namespace"`
+	Name           string `msgpack:"name" json:"name"`
+	Revision       int    `msgpack:"revision" json:"revision"`
+	Wait           bool   `msgpack:"wait,omitempty" json:"wait,omitempty"`
+	TimeoutSeconds int    `msgpack:"timeout,omitempty" json:"timeout,omitempty"`
+	CleanupOnFail  bool   `msgpack:"cleanupOnFail,omitempty" json:"cleanupOnFail,omitempty"`
+	ForceReplace   bool   `msgpack:"forceReplace,omitempty" json:"forceReplace,omitempty"`
+	Force          bool   `msgpack:"force,omitempty" json:"force,omitempty"`
+}
+
+type HelmUninstallParams struct {
+	Cluster        string `msgpack:"cluster" json:"cluster"`
+	Namespace      string `msgpack:"namespace" json:"namespace"`
+	Name           string `msgpack:"name" json:"name"`
+	KeepHistory    bool   `msgpack:"keepHistory,omitempty" json:"keepHistory,omitempty"`
+	Wait           bool   `msgpack:"wait,omitempty" json:"wait,omitempty"`
+	TimeoutSeconds int    `msgpack:"timeout,omitempty" json:"timeout,omitempty"`
+	Cascade        string `msgpack:"cascade,omitempty" json:"cascade,omitempty"` // "background" (default) | "foreground" | "orphan"
+	Force          bool   `msgpack:"force,omitempty" json:"force,omitempty"`
+}
+
+// HelmRetryParams re-runs the last upgrade with the stored chart and values. A release stuck in pending-*
+// needs MarkFailed first (it sets that revision to failed so Helm accepts a new operation).
+type HelmRetryParams struct {
+	Cluster        string `msgpack:"cluster" json:"cluster"`
+	Namespace      string `msgpack:"namespace" json:"namespace"`
+	Name           string `msgpack:"name" json:"name"`
+	MarkFailed     bool   `msgpack:"markFailed,omitempty" json:"markFailed,omitempty"`
+	Wait           bool   `msgpack:"wait,omitempty" json:"wait,omitempty"`
+	TimeoutSeconds int    `msgpack:"timeout,omitempty" json:"timeout,omitempty"`
+	Force          bool   `msgpack:"force,omitempty" json:"force,omitempty"`
+}

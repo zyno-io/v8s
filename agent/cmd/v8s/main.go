@@ -15,19 +15,30 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	osuser "os/user"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/cluster"
+	"github.com/zyno-io/v8s/agent/internal/drainer"
 	"github.com/zyno-io/v8s/agent/internal/fake"
+	"github.com/zyno-io/v8s/agent/internal/flux"
+	"github.com/zyno-io/v8s/agent/internal/helm"
+	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/jobs"
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/internal/ops"
 	"github.com/zyno-io/v8s/agent/internal/settings"
+	"github.com/zyno-io/v8s/agent/internal/streams"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/webui"
 	"github.com/zyno-io/v8s/agent/internal/wire"
+	"helm.sh/helm/v4/pkg/action"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type stringList []string
@@ -118,6 +129,66 @@ func runAgent(args []string, hooks agentHooks) error {
 		Links:   mgr.Links,
 		Resolve: mgr.Resolve,
 	})
+	connFn := func(id string) (kube.Conn, error) { return src.Backend(id) }
+	jobsMgr := jobs.New(ctx, nil)
+	user := "v8s"
+	if u, uerr := osuser.Current(); uerr == nil && u.Username != "" {
+		user = u.Username
+	}
+	streamMgr := streams.New(streams.Config{Router: opsSvc, Conn: connFn, Settings: set.Get, AllowPortForward: true, User: user, Log: log})
+	defer streamMgr.Close()
+	drainSvc := drainer.New(drainer.Config{Router: opsSvc, Conn: connFn})
+	fluxSvc := flux.New(flux.Config{
+		Get: func(ctx context.Context, cluster, gvr, ns, name string) (*unstructured.Unstructured, error) {
+			g, v, r, err := ingest.ParseGVR(gvr)
+			if err != nil {
+				return nil, err
+			}
+			c, err := connFn(cluster)
+			if err != nil {
+				return nil, err
+			}
+			ri := c.Dynamic().Resource(schema.GroupVersionResource{Group: g, Version: v, Resource: r})
+			if ns != "" {
+				return ri.Namespace(ns).Get(ctx, name, metav1.GetOptions{})
+			}
+			return ri.Get(ctx, name, metav1.GetOptions{})
+		},
+		Scan:     mgr.ScanKind,
+		Clusters: func() []string { return mgr.List().Selected },
+		Resolve:  mgr.Resolve,
+	})
+	helmCfg := helm.Config{
+		Runtime: func(id string) (kube.Runtime, error) {
+			c, err := connFn(id)
+			if err != nil {
+				return nil, err
+			}
+			rt, ok := kube.RuntimeOf(c)
+			if !ok {
+				return nil, errors.New("context has no runtime")
+			}
+			return rt, nil
+		},
+		Route: func(ctx context.Context, cluster, verb, gvr, sub, ns, name string) (string, bool, error) {
+			r, err := opsSvc.Route(ctx, cluster, verb, gvr, sub, ns, name)
+			if err != nil {
+				return "", false, err
+			}
+			return r.ContextID, r.ViaWrite, nil
+		},
+		Log: log,
+	}
+	if fakeSet { // release records live in the fake clientset; no chart resources are touched
+		helmCfg.NewActionConfig = func(ctx context.Context, id, ns string) (*action.Configuration, error) {
+			rt, err := helmCfg.Runtime(id)
+			if err != nil {
+				return nil, err
+			}
+			return helm.NewFakeActionConfig(rt.Clientset(), ns)
+		}
+	}
+	helmSvc := helm.New(helmCfg)
 	if fakeSet {
 		// Remembered selection in fake mode = all fake clusters; the UI still calls clusters.select.
 		log.Info("fake mode", "clusters", len(src.Clusters()))
@@ -125,7 +196,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	go eng.Run(ctx)
 
 	srv := wire.NewServer(wire.Options{
-		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
+		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Streams: streamMgr, Jobs: jobsMgr, Drain: drainSvc, Flux: fluxSvc, Helm: helmSvc, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
 		Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "",
 		StaticDir: *staticDir, Log: log,
 	})

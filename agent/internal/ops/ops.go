@@ -42,9 +42,10 @@ type Config struct {
 type Service struct {
 	cfg Config
 
-	mu   sync.Mutex
-	ssar map[string]ssarEntry
-	dd   map[string]*ddEntry
+	mu    sync.Mutex
+	ssar  map[string]ssarEntry
+	dd    map[string]*ddEntry
+	links map[string]string // "read\x00write" -> "" (same cluster) or the mismatch message
 
 	lastSweep time.Time
 }
@@ -63,7 +64,7 @@ func New(cfg Config) *Service {
 	if cfg.Links == nil {
 		cfg.Links = func(string) (string, bool) { return "", false }
 	}
-	return &Service{cfg: cfg, ssar: map[string]ssarEntry{}, dd: map[string]*ddEntry{}}
+	return &Service{cfg: cfg, ssar: map[string]ssarEntry{}, dd: map[string]*ddEntry{}, links: map[string]string{}}
 }
 
 // Error is the protocol-level failure returned by the Service; the wire layer turns it into Response.Error.
@@ -104,10 +105,14 @@ func mapErr(err error, viaWrite bool) *Error {
 		return newErr("conflict", "%s", msg)
 	case apierrors.IsInvalid(err), apierrors.IsBadRequest(err):
 		return newErr("invalid", "%s", msg)
-	case apierrors.IsUnauthorized(err), apierrors.IsForbidden(err):
+	case apierrors.IsUnauthorized(err):
 		if viaWrite {
 			return newErr("write_unavailable", "%s", msg)
 		}
+		return newErr("forbidden", "%s", msg)
+	case apierrors.IsForbidden(err):
+		// Admission, quota and PodSecurity rejections are 403s too: only mapW (which asks the write context
+		// itself) may call a 403 write_unavailable.
 		return newErr("forbidden", "%s", msg)
 	}
 	return newErr("internal", "%s", msg)
@@ -160,7 +165,11 @@ func (s *Service) conn(contextID string) (kube.Conn, error) {
 // ---- access review with cache ----------------------------------------------------------
 
 func (s *Service) review(ctx context.Context, contextID string, c kube.Conn, verb string, gvr schema.GroupVersionResource, ns, name string) (bool, string, error) {
-	key := strings.Join([]string{contextID, verb, gvrString(gvr), ns, name}, "\x00")
+	return s.reviewSub(ctx, contextID, c, verb, gvr, "", ns, name)
+}
+
+func (s *Service) reviewSub(ctx context.Context, contextID string, c kube.Conn, verb string, gvr schema.GroupVersionResource, sub, ns, name string) (bool, string, error) {
+	key := strings.Join([]string{contextID, verb, gvrString(gvr), sub, ns, name}, "\x00")
 	now := s.cfg.Now()
 	s.mu.Lock()
 	if e, ok := s.ssar[key]; ok && now.Before(e.exp) {
@@ -171,7 +180,7 @@ func (s *Service) review(ctx context.Context, contextID string, c kube.Conn, ver
 
 	rev := &authorizationv1.SelfSubjectAccessReview{Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 		ResourceAttributes: &authorizationv1.ResourceAttributes{
-			Verb: verb, Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Namespace: ns, Name: name,
+			Verb: verb, Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Subresource: sub, Namespace: ns, Name: name,
 		},
 	}}
 	out, err := c.Authz().Create(ctx, rev, metav1.CreateOptions{})
@@ -194,26 +203,152 @@ func (s *Service) review(ctx context.Context, contextID string, c kube.Conn, ver
 
 // route picks the context a mutation runs on.
 func (s *Service) route(ctx context.Context, cluster, verb string, gvr schema.GroupVersionResource, ns, name string) (string, kube.Conn, bool, error) {
+	return s.routeSub(ctx, cluster, verb, gvr, "", ns, name)
+}
+
+// Routed is the context a streamed or long-running operation runs through.
+type Routed struct {
+	ContextID string
+	Conn      kube.Conn
+	ViaWrite  bool
+}
+
+// Route picks the context for verb on resource[/sub] (gvr as "v1/pods", sub as "exec"): the read context
+// when allowed, else the linked write context (same rules as object.action), else forbidden. Streams (exec,
+// node shell, port-forward), drain and Helm actions all route through it.
+func (s *Service) Route(ctx context.Context, cluster, verb, gvr, sub, ns, name string) (*Routed, error) {
+	g, err := parseGVR(gvr)
+	if err != nil {
+		return nil, err
+	}
+	cid, c, viaWrite, err := s.routeSub(ctx, cluster, verb, g, sub, ns, name)
+	if err != nil {
+		return nil, err
+	}
+	return &Routed{ContextID: cid, Conn: c, ViaWrite: viaWrite}, nil
+}
+
+// MapError converts a client-go error into the protocol error of an operation that ran on the write
+// context (viaWrite) or the read context.
+func MapError(err error, viaWrite bool) error { return mapErr(err, viaWrite) }
+
+// NewError builds a protocol error.
+func NewError(code, format string, a ...any) error { return newErr(code, format, a...) }
+
+type useWriteKey struct{}
+
+// WithUseWrite marks ctx so routing goes straight to the linked write context (when a link exists).
+func WithUseWrite(ctx context.Context, use bool) context.Context {
+	if !use {
+		return ctx
+	}
+	return context.WithValue(ctx, useWriteKey{}, true)
+}
+
+func useWrite(ctx context.Context) bool { v, _ := ctx.Value(useWriteKey{}).(bool); return v }
+
+var nsGVR = schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
+
+// checkLink verifies once per (read, write) pair that both contexts reach the same cluster by comparing the
+// kube-system namespace uid. A context that cannot read it is not blocked (nothing to compare).
+func (s *Service) checkLink(ctx context.Context, cluster, wctx string, rc, wc kube.Conn) error {
+	key := cluster + "\x00" + wctx
+	s.mu.Lock()
+	if bad, ok := s.links[key]; ok {
+		s.mu.Unlock()
+		if bad != "" {
+			return newErr("link_mismatch", "%s", bad)
+		}
+		return nil
+	}
+	s.mu.Unlock()
+	ru, rerr := kubeSystemUID(ctx, rc)
+	wu, werr := kubeSystemUID(ctx, wc)
+	if rerr != nil || werr != nil {
+		return nil
+	}
+	msg := ""
+	if ru != wu {
+		msg = fmt.Sprintf("the write context %q does not reach the same cluster as %q (kube-system namespace uids differ); relink it in the cluster selector", wctx, cluster)
+	}
+	s.mu.Lock()
+	s.links[key] = msg
+	s.mu.Unlock()
+	if msg != "" {
+		return newErr("link_mismatch", "%s", msg)
+	}
+	return nil
+}
+
+func kubeSystemUID(ctx context.Context, c kube.Conn) (string, error) {
+	o, err := c.Dynamic().Resource(nsGVR).Get(ctx, "kube-system", metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	return string(o.GetUID()), nil
+}
+
+func (s *Service) routeSub(ctx context.Context, cluster, verb string, gvr schema.GroupVersionResource, sub, ns, name string) (string, kube.Conn, bool, error) {
 	rc, err := s.conn(cluster)
 	if err != nil {
 		return "", nil, false, err
 	}
-	allowed, reason, rerr := s.review(ctx, cluster, rc, verb, gvr, ns, name)
-	if rerr != nil || allowed {
-		return cluster, rc, false, nil
-	}
 	wctx, auto := s.cfg.Links(cluster)
-	if wctx != "" && auto {
+	toWrite := func() (string, kube.Conn, bool, error) {
 		wc, err := s.conn(wctx)
 		if err != nil {
 			return "", nil, false, err
 		}
+		if err := s.checkLink(ctx, cluster, wctx, rc, wc); err != nil {
+			return "", nil, false, err
+		}
 		return wctx, wc, true, nil
+	}
+	if wctx != "" && useWrite(ctx) {
+		return toWrite()
+	}
+	allowed, reason, rerr := s.reviewSub(ctx, cluster, rc, verb, gvr, sub, ns, name)
+	if rerr != nil || allowed {
+		return cluster, rc, false, nil
+	}
+	if wctx != "" && auto {
+		return toWrite()
 	}
 	if reason == "" {
 		reason = "denied"
 	}
-	return "", nil, false, newErr("forbidden", "not allowed to %s %s: %s", verb, gvrString(gvr), reason)
+	res := gvrString(gvr)
+	if sub != "" {
+		res += "/" + sub
+	}
+	if wctx != "" {
+		return "", nil, false, newErr("write_confirm", "not allowed to %s %s on the read context (%s); the linked write context %q can be used after confirmation", verb, res, reason, wctx)
+	}
+	return "", nil, false, newErr("forbidden", "not allowed to %s %s: %s", verb, res, reason)
+}
+
+// wsite describes the call a mutation made, so a 403 through the write context can be told apart.
+type wsite struct {
+	cid, verb, sub, ns, name string
+	gvr                      schema.GroupVersionResource
+}
+
+// mapW maps the error of a call made on a routed context. A 401 on the write context, or a 403 that the write
+// context's own access review also denies (or cannot answer), is write_unavailable; any other API rejection
+// (admission, quota, PodSecurity, validation) keeps its own code and the server's message.
+func (s *Service) mapW(ctx context.Context, err error, viaWrite bool, w wsite) *Error {
+	e := mapErr(err, viaWrite)
+	if viaWrite && e.Body.Code == "forbidden" && apierrors.IsForbidden(err) {
+		wc, cerr := s.conn(w.cid)
+		if cerr == nil {
+			ok, _, rerr := s.reviewSub(ctx, w.cid, wc, w.verb, w.gvr, w.sub, w.ns, w.name)
+			if rerr == nil && ok {
+				return e
+			}
+		}
+		return newErr("write_unavailable", "%s", e.Body.Message)
+	}
+	return e
 }
 
 // Access answers access.check, in input order.
@@ -244,9 +379,12 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 	if allowed {
 		return protocol.AccessResult{Allowed: true}
 	}
-	if wctx, _ := s.cfg.Links(ck.Cluster); wctx != "" {
+	if wctx, auto := s.cfg.Links(ck.Cluster); wctx != "" {
 		if wc, err := s.conn(wctx); err == nil {
 			if ok, _, err := s.review(ctx, wctx, wc, ck.Verb, gvr, ck.Namespace, ck.Name); err == nil && ok {
+				if !auto { // autoSwitchWrite off: the mutation needs the user's confirmation first
+					return protocol.AccessResult{NeedsConfirm: true, Reason: "allowed through the linked write context after confirmation"}
+				}
 				return protocol.AccessResult{Allowed: true, ViaWrite: true}
 			}
 		}
@@ -255,6 +393,15 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 		reason = "denied"
 	}
 	return protocol.AccessResult{Reason: reason}
+}
+
+// mutationTimeout bounds a mutation that no longer follows its caller's cancellation.
+const mutationTimeout = 60 * time.Second
+
+// detach returns a context that keeps ctx's values but not its cancellation: a connection that drops
+// mid-request must neither abort the mutation half way nor make a retry repeat it.
+func detach(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), mutationTimeout)
 }
 
 // ---- dedupe ----------------------------------------------------------------------------
@@ -328,13 +475,10 @@ func dedupe[T any](ctx context.Context, s *Service, method, requestID string, fn
 	s.dd[key] = e
 	s.mu.Unlock()
 
-	r, err := fn()
+	r, err := fn() // fn runs detached from the caller's cancellation (see detach): its outcome is always recorded
 	s.mu.Lock()
 	e.res, e.err = r, err
 	e.exp = s.cfg.Now().Add(dedupeTTL)
-	if ctx.Err() != nil && s.dd[key] == e {
-		delete(s.dd, key) // canceled calls are not replayed
-	}
 	s.mu.Unlock()
 	close(e.done)
 	return r, err

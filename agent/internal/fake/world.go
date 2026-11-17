@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
+	"github.com/zyno-io/v8s/agent/internal/flux"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/watch"
@@ -96,12 +97,14 @@ var kindDefs = []*kindDef{
 	{gvr: "apiextensions.k8s.io/v1/customresourcedefinitions", apiVersion: "apiextensions.k8s.io/v1", kind: "CustomResourceDefinition", resource: "customresourcedefinitions", short: []string{"crd"},
 		cols:  []ingest.TableCol{tc("Name", "string"), tc("Created At", "date")},
 		cells: func(o map[string]any) []any { return []any{nameOf(o), "30d"} }},
-	{gvr: "kustomize.toolkit.fluxcd.io/v1/kustomizations", apiVersion: "kustomize.toolkit.fluxcd.io/v1", kind: "Kustomization", resource: "kustomizations", namespaced: true, short: []string{"ks"},
-		cols:  []ingest.TableCol{tc("Name", "string"), tc("Age", "date"), tc("Ready", "string"), tc("Status", "string")},
-		cells: fluxCells},
-	{gvr: "helm.toolkit.fluxcd.io/v2/helmreleases", apiVersion: "helm.toolkit.fluxcd.io/v2", kind: "HelmRelease", resource: "helmreleases", namespaced: true, short: []string{"hr"},
-		cols:  []ingest.TableCol{tc("Name", "string"), tc("Age", "date"), tc("Ready", "string"), tc("Status", "string")},
-		cells: fluxCells},
+	// Flux kinds are read in mode B (typed partial JSON) through their curated modules
+	{gvr: "source.toolkit.fluxcd.io/v1/gitrepositories", apiVersion: "source.toolkit.fluxcd.io/v1", kind: "GitRepository", resource: "gitrepositories", namespaced: true, short: []string{"gitrepo"}},
+	{gvr: "source.toolkit.fluxcd.io/v1/ocirepositories", apiVersion: "source.toolkit.fluxcd.io/v1", kind: "OCIRepository", resource: "ocirepositories", namespaced: true, short: []string{"ocirepo"}},
+	{gvr: "source.toolkit.fluxcd.io/v1/helmrepositories", apiVersion: "source.toolkit.fluxcd.io/v1", kind: "HelmRepository", resource: "helmrepositories", namespaced: true, short: []string{"helmrepo"}},
+	{gvr: "source.toolkit.fluxcd.io/v1/helmcharts", apiVersion: "source.toolkit.fluxcd.io/v1", kind: "HelmChart", resource: "helmcharts", namespaced: true, short: []string{"hc"}},
+	{gvr: "source.toolkit.fluxcd.io/v1/buckets", apiVersion: "source.toolkit.fluxcd.io/v1", kind: "Bucket", resource: "buckets", namespaced: true},
+	{gvr: "kustomize.toolkit.fluxcd.io/v1/kustomizations", apiVersion: "kustomize.toolkit.fluxcd.io/v1", kind: "Kustomization", resource: "kustomizations", namespaced: true, short: []string{"ks"}},
+	{gvr: "helm.toolkit.fluxcd.io/v2/helmreleases", apiVersion: "helm.toolkit.fluxcd.io/v2", kind: "HelmRelease", resource: "helmreleases", namespaced: true, short: []string{"hr"}},
 }
 
 var kindByGVR = func() map[string]*kindDef {
@@ -111,20 +114,6 @@ var kindByGVR = func() map[string]*kindDef {
 	}
 	return m
 }()
-
-func fluxCells(o map[string]any) []any {
-	ready, msg := "Unknown", ""
-	st := mapOf(o, "status")
-	if cs, ok := st["conditions"].([]any); ok {
-		for _, c := range cs {
-			if cm, ok := c.(map[string]any); ok && cm["type"] == "Ready" {
-				ready, _ = cm["status"].(string)
-				msg, _ = cm["message"].(string)
-			}
-		}
-	}
-	return []any{nameOf(o), "7d", ready, msg}
-}
 
 func mapOf(o map[string]any, k string) map[string]any {
 	m, _ := o[k].(map[string]any)
@@ -158,6 +147,7 @@ type World struct {
 	logStart uint64
 	watchers map[*kwatch]struct{}
 	nextUID  uint64
+	csh      clientsetHolder
 }
 
 func key(ns, name string) string { return ns + "/" + name }
@@ -269,6 +259,9 @@ func (w *World) generate(c *Cluster) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	for _, ns := range []string{"kube-system", "default", "flux-system", "podinfo", "monitoring"} {
+		w.putLocked("v1/namespaces", map[string]any{"metadata": objMeta("", ns, map[string]string{"kubernetes.io/metadata.name": ns}), "status": map[string]any{"phase": "Active"}})
+	}
 	for i := 0; i < namespaces; i++ {
 		w.putLocked("v1/namespaces", map[string]any{"metadata": objMeta("", "team-"+strconv.Itoa(i), map[string]string{"kubernetes.io/metadata.name": "team-" + strconv.Itoa(i)}),
 			"status": map[string]any{"phase": "Active"}})
@@ -436,26 +429,16 @@ func (w *World) generate(c *Cluster) {
 		w.putLocked("v1/secrets", map[string]any{"metadata": objMeta(teamNS(i), "secret-"+strconv.Itoa(i), nil), "type": t,
 			"data": map[string]any{"tls.crt": "REDACTED", "tls.key": "REDACTED"}})
 	}
-	for _, crd := range []string{"kustomizations.kustomize.toolkit.fluxcd.io", "helmreleases.helm.toolkit.fluxcd.io"} {
+	for _, crd := range []string{"gitrepositories.source.toolkit.fluxcd.io", "ocirepositories.source.toolkit.fluxcd.io", "helmrepositories.source.toolkit.fluxcd.io",
+		"helmcharts.source.toolkit.fluxcd.io", "buckets.source.toolkit.fluxcd.io", "kustomizations.kustomize.toolkit.fluxcd.io", "helmreleases.helm.toolkit.fluxcd.io"} {
 		w.putLocked("apiextensions.k8s.io/v1/customresourcedefinitions", map[string]any{"metadata": objMeta("", crd, nil), "spec": map[string]any{"group": strings.SplitN(crd, ".", 2)[1]}})
 	}
-	for i := 0; i < 25; i++ {
-		ready, msg := "True", "Applied revision: main@sha1:"+fmt.Sprintf("%07x", 0xabc000+i)
-		if i%9 == 4 {
-			ready, msg = "False", "kustomize build failed: accumulating resources"
+	for _, o := range flux.DemoObjects(w.cluster, time.Now()) {
+		for _, d := range kindDefs {
+			if d.apiVersion == o.GetAPIVersion() && d.kind == o.GetKind() {
+				w.putLocked(d.gvr, o.Object)
+			}
 		}
-		w.putLocked("kustomize.toolkit.fluxcd.io/v1/kustomizations", map[string]any{"metadata": objMeta(teamNS(i), "apps-"+strconv.Itoa(i), nil),
-			"spec":   map[string]any{"interval": "10m", "path": "./clusters/" + w.cluster, "sourceRef": map[string]any{"kind": "GitRepository", "name": "flux-system"}},
-			"status": map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": ready, "message": msg}}}})
-	}
-	for i := 0; i < 40; i++ {
-		ready, msg := "True", "Helm install succeeded for release team/app.v1 with chart app@1.4.2"
-		if i%13 == 6 {
-			ready, msg = "False", "Helm upgrade failed: timed out waiting for the condition"
-		}
-		w.putLocked("helm.toolkit.fluxcd.io/v2/helmreleases", map[string]any{"metadata": objMeta(teamNS(i), "app-"+strconv.Itoa(i), nil),
-			"spec":   map[string]any{"interval": "10m", "chart": map[string]any{"spec": map[string]any{"chart": "app", "version": "1.4.x"}}},
-			"status": map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": ready, "message": msg}}}})
 	}
 }
 

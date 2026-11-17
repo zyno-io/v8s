@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
@@ -19,6 +20,8 @@ var ErrInvalid = errors.New("invalid settings")
 // Store holds the settings document and persists it on every change.
 type Store struct {
 	path string
+	// CorruptMovedTo is where an unreadable settings file was renamed to at Open ("" = none).
+	CorruptMovedTo string
 
 	mu  sync.Mutex // serializes Patch and guards cur
 	cur protocol.Settings
@@ -65,6 +68,12 @@ func normalize(s protocol.Settings) protocol.Settings {
 	if s.Acks == nil {
 		s.Acks = map[string]any{}
 	}
+	if s.NodeShell == nil {
+		s.NodeShell = map[string]protocol.NodeShellSettings{}
+	}
+	if s.PortForwards == nil {
+		s.PortForwards = []protocol.SavedForward{}
+	}
 	return s
 }
 
@@ -109,7 +118,12 @@ func Open(path string) (*Store, error) {
 	}
 	s, err := decode(b, false)
 	if err != nil {
-		return nil, fmt.Errorf("%w: settings file is corrupt: %v", ErrInvalid, err)
+		// A corrupt file must not stop startup: keep it aside and start from defaults.
+		aside := fmt.Sprintf("%s.corrupt-%d", path, time.Now().Unix())
+		if rerr := os.Rename(path, aside); rerr == nil {
+			st.CorruptMovedTo = aside
+		}
+		return st, nil
 	}
 	st.cur = s
 	return st, nil

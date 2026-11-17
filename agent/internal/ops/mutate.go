@@ -12,6 +12,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -170,7 +171,7 @@ func (s *Service) livePayload(ctx context.Context, cluster string, t *target) *p
 	if err != nil {
 		return nil
 	}
-	p, err := buildPayload(live, false)
+	p, err := buildPayload(live, false, false)
 	if err != nil {
 		return nil
 	}
@@ -178,8 +179,8 @@ func (s *Service) livePayload(ctx context.Context, cluster string, t *target) *p
 }
 
 // conflictErr maps a failed write; 409s carry the live object when available.
-func (s *Service) conflictErr(ctx context.Context, cluster string, t *target, err error, viaWrite bool) error {
-	e := mapErr(err, viaWrite)
+func (s *Service) conflictErr(ctx context.Context, cluster string, t *target, err error, viaWrite bool, w wsite) error {
+	e := s.mapW(ctx, err, viaWrite, w)
 	if e.Body.Code == "conflict" && t != nil {
 		e.Body.Live = s.livePayload(ctx, cluster, t)
 	}
@@ -192,15 +193,18 @@ func (s *Service) DryRun(ctx context.Context, p protocol.ObjectDryRunParams) (pr
 	if err := checkMode(p.Mode); err != nil {
 		return res, err
 	}
+	ctx = WithUseWrite(ctx, p.UseWriteContext)
 	wctx, sink := kube.WithWarningSink(ctx)
+	var site wsite
 	finish := func(err error, viaWrite bool) (protocol.ObjectDryRunResult, error) {
 		res.Warnings = sink.Warnings()
 		if err == nil {
 			res.OK = true
 			return res, nil
 		}
-		e := mapErr(err, viaWrite)
-		if e.Body.Code == "invalid" {
+		e := s.mapW(ctx, err, viaWrite, site)
+		if _, isStatus := err.(apierrors.APIStatus); isStatus && !apierrors.IsUnauthorized(err) {
+			// a server rejection (validation, admission, quota, forbidden) is a result, not a failed request
 			res.Error = &e.Body
 			return res, nil
 		}
@@ -223,12 +227,16 @@ func (s *Service) DryRun(ctx context.Context, p protocol.ObjectDryRunParams) (pr
 		if k := t.obj.GetKind(); k != "" && live.GetKind() != "" && k != live.GetKind() {
 			return res, newErr("bad_request", "kind %s does not match the object being edited (%s)", k, live.GetKind())
 		}
+		if merr := s.unmask(wctx, p.Ref.Cluster, t, live); merr != nil {
+			return res, merr
+		}
 		res.Conflicts = conflictsFor(live, t.obj.Object)
 		t.obj.SetResourceVersion(live.GetResourceVersion())
-		_, c, viaWrite, err := s.route(ctx, p.Ref.Cluster, "update", t.gvr, t.ns, t.name)
+		wcid, c, viaWrite, err := s.route(ctx, p.Ref.Cluster, "update", t.gvr, t.ns, t.name)
 		if err != nil {
 			return res, err
 		}
+		site = wsite{cid: wcid, verb: "update", gvr: t.gvr, ns: t.ns, name: t.name}
 		_, uerr := resource(c.Dynamic(), t.gvr, t.ns).Update(wctx, t.obj, metav1.UpdateOptions{FieldManager: fieldManager, DryRun: []string{metav1.DryRunAll}})
 		return finish(uerr, viaWrite)
 	}
@@ -237,11 +245,12 @@ func (s *Service) DryRun(ctx context.Context, p protocol.ObjectDryRunParams) (pr
 	if err != nil {
 		return res, err
 	}
-	_, c, viaWrite, err := s.routeCreate(ctx, p.Ref.Cluster, items)
+	wcid, c, viaWrite, err := s.routeCreate(ctx, p.Ref.Cluster, items)
 	if err != nil {
 		return res, err
 	}
 	for _, it := range items {
+		site = wsite{cid: wcid, verb: "create", gvr: it.gvr, ns: it.ns}
 		if _, aerr := s.ssa(wctx, c, it, true); aerr != nil {
 			return finish(aerr, viaWrite)
 		}
@@ -251,7 +260,12 @@ func (s *Service) DryRun(ctx context.Context, p protocol.ObjectDryRunParams) (pr
 
 // Apply persists an update (PUT) or creates objects with server-side apply.
 func (s *Service) Apply(ctx context.Context, p protocol.ObjectApplyParams) (protocol.ObjectApplyResult, error) {
-	return dedupe(ctx, s, "apply", p.RequestID, func() (protocol.ObjectApplyResult, error) { return s.apply(ctx, p) })
+	ctx = WithUseWrite(ctx, p.UseWriteContext)
+	return dedupe(ctx, s, "apply", p.RequestID, func() (protocol.ObjectApplyResult, error) {
+		dctx, cancel := detach(ctx)
+		defer cancel()
+		return s.apply(dctx, p)
+	})
 }
 
 func (s *Service) apply(ctx context.Context, p protocol.ObjectApplyParams) (protocol.ObjectApplyResult, error) {
@@ -272,9 +286,12 @@ func (s *Service) apply(ctx context.Context, p protocol.ObjectApplyParams) (prot
 			return res, err
 		}
 		t.obj.SetResourceVersion(p.ResourceVersion)
+		if merr := s.unmask(ctx, p.Ref.Cluster, t, nil); merr != nil {
+			return res, merr
+		}
 		out, uerr := resource(c.Dynamic(), t.gvr, t.ns).Update(ctx, t.obj, metav1.UpdateOptions{FieldManager: fieldManager})
 		if uerr != nil {
-			return res, s.conflictErr(ctx, p.Ref.Cluster, t, uerr, viaWrite)
+			return res, s.conflictErr(ctx, p.Ref.Cluster, t, uerr, viaWrite, wsite{cid: cid, verb: "update", gvr: t.gvr, ns: t.ns, name: t.name})
 		}
 		res.ResourceVersion = out.GetResourceVersion()
 		res.UsedContext = cid
@@ -292,7 +309,11 @@ func (s *Service) apply(ctx context.Context, p protocol.ObjectApplyParams) (prot
 	for _, it := range items {
 		out, aerr := s.ssa(ctx, c, it, false)
 		if aerr != nil {
-			return res, s.conflictErr(ctx, p.Ref.Cluster, nil, aerr, viaWrite)
+			err := s.conflictErr(ctx, p.Ref.Cluster, nil, aerr, viaWrite, wsite{cid: cid, verb: "create", gvr: it.gvr, ns: it.ns})
+			if e, ok := err.(*Error); ok {
+				e.Body.Applied = append([]protocol.ObjectRef(nil), res.Applied...) // what succeeded before this document
+			}
+			return res, err
 		}
 		res.ResourceVersion = out.GetResourceVersion()
 		res.Applied = append(res.Applied, protocol.ObjectRef{Cluster: p.Ref.Cluster, GVR: it.gvrStr, Namespace: it.ns, Name: it.name})
@@ -303,7 +324,12 @@ func (s *Service) apply(ctx context.Context, p protocol.ObjectApplyParams) (prot
 
 // Delete removes one object.
 func (s *Service) Delete(ctx context.Context, p protocol.ObjectDeleteParams) (protocol.MutationResult, error) {
-	return dedupe(ctx, s, "delete", p.RequestID, func() (protocol.MutationResult, error) { return s.del(ctx, p) })
+	ctx = WithUseWrite(ctx, p.UseWriteContext)
+	return dedupe(ctx, s, "delete", p.RequestID, func() (protocol.MutationResult, error) {
+		dctx, cancel := detach(ctx)
+		defer cancel()
+		return s.del(dctx, p)
+	})
 }
 
 func (s *Service) del(ctx context.Context, p protocol.ObjectDeleteParams) (protocol.MutationResult, error) {
@@ -330,7 +356,7 @@ func (s *Service) del(ctx context.Context, p protocol.ObjectDeleteParams) (proto
 		return res, err
 	}
 	if derr := resource(c.Dynamic(), gvr, p.Ref.Namespace).Delete(ctx, p.Ref.Name, metav1.DeleteOptions{PropagationPolicy: &pol}); derr != nil {
-		return res, mapErr(derr, viaWrite)
+		return res, s.mapW(ctx, derr, viaWrite, wsite{cid: cid, verb: "delete", gvr: gvr, ns: p.Ref.Namespace, name: p.Ref.Name})
 	}
 	res.UsedContext = cid
 	return res, nil
@@ -382,7 +408,12 @@ func resIn(r string, set ...string) bool {
 
 // Action runs a targeted one-click action.
 func (s *Service) Action(ctx context.Context, p protocol.ObjectActionParams) (protocol.MutationResult, error) {
-	return dedupe(ctx, s, "action", p.RequestID, func() (protocol.MutationResult, error) { return s.action(ctx, p) })
+	ctx = WithUseWrite(ctx, p.UseWriteContext)
+	return dedupe(ctx, s, "action", p.RequestID, func() (protocol.MutationResult, error) {
+		dctx, cancel := detach(ctx)
+		defer cancel()
+		return s.action(dctx, p)
+	})
 }
 
 func (s *Service) action(ctx context.Context, p protocol.ObjectActionParams) (protocol.MutationResult, error) {
@@ -394,6 +425,9 @@ func (s *Service) action(ctx context.Context, p protocol.ObjectActionParams) (pr
 	ref := p.Ref
 	if ref.Name == "" {
 		return res, newErr("bad_request", "name is required")
+	}
+	if strings.HasPrefix(p.Action, "flux.") {
+		return s.fluxAction(ctx, p, gvr)
 	}
 	r := gvr.Resource
 	wrong := func() error {
@@ -466,7 +500,7 @@ func (s *Service) action(ctx context.Context, p protocol.ObjectActionParams) (pr
 	}
 	out, perr := resource(c.Dynamic(), gvr, ref.Namespace).Patch(ctx, ref.Name, patchType, patch, metav1.PatchOptions{FieldManager: fieldManager})
 	if perr != nil {
-		return res, mapErr(perr, viaWrite)
+		return res, s.mapW(ctx, perr, viaWrite, wsite{cid: cid, verb: "patch", gvr: gvr, ns: ref.Namespace, name: ref.Name})
 	}
 	res.UsedContext = cid
 	res.ResourceVersion = out.GetResourceVersion()
@@ -533,7 +567,7 @@ func (s *Service) trigger(ctx context.Context, ref protocol.ObjectRef, gvr schem
 	}
 	out, cerr := resource(c.Dynamic(), jobs, ref.Namespace).Create(ctx, job, metav1.CreateOptions{FieldManager: fieldManager})
 	if cerr != nil {
-		return res, mapErr(cerr, viaWrite)
+		return res, s.mapW(ctx, cerr, viaWrite, wsite{cid: cid, verb: "create", gvr: jobs, ns: ref.Namespace})
 	}
 	res.UsedContext = cid
 	res.ResourceVersion = out.GetResourceVersion()
@@ -576,3 +610,73 @@ func (s *Service) rollbackTemplate(ctx context.Context, ref protocol.ObjectRef, 
 	}
 	return nil, newErr("not_found", "revision %d of deployment %s not found", rev, ref.Name)
 }
+
+// unmask puts the live values back into an update of a Secret whose payload was fetched without reveal:
+// keys still holding protocol.MaskedValue keep their live value, and a stripped last-applied annotation is kept.
+// live may be passed when the caller already fetched it (read context).
+func (s *Service) unmask(ctx context.Context, cluster string, t *target, live *unstructured.Unstructured) error {
+	if t.obj.GetKind() != "Secret" || t.obj.GetAPIVersion() != "v1" {
+		return nil
+	}
+	data, _, _ := unstructured.NestedMap(t.obj.Object, "data")
+	sdata, _, _ := unstructured.NestedMap(t.obj.Object, "stringData")
+	masked := false
+	for _, m := range []map[string]any{data, sdata} {
+		for _, v := range m {
+			if v == protocol.MaskedValue {
+				masked = true
+			}
+		}
+	}
+	ann := t.obj.GetAnnotations()
+	_, hasLast := ann[lastApplied]
+	if !masked && hasLast {
+		return nil
+	}
+	if live == nil {
+		rc, err := s.conn(cluster)
+		if err != nil {
+			return err
+		}
+		var gerr error
+		if live, gerr = resource(rc.Dynamic(), t.gvr, t.ns).Get(ctx, t.name, metav1.GetOptions{}); gerr != nil {
+			return mapErr(gerr, false)
+		}
+	}
+	liveData, _, _ := unstructured.NestedMap(live.Object, "data")
+	for k, v := range data {
+		if v != protocol.MaskedValue {
+			continue
+		}
+		lv, ok := liveData[k]
+		if !ok {
+			return newErr("bad_request", "data key %q is masked but does not exist on the live Secret", k)
+		}
+		data[k] = lv
+	}
+	for k, v := range sdata { // a masked stringData key means "unchanged": the live data entry stays
+		if v == protocol.MaskedValue {
+			delete(sdata, k)
+		}
+	}
+	if len(data) > 0 {
+		_ = unstructured.SetNestedMap(t.obj.Object, data, "data")
+	}
+	if len(sdata) > 0 {
+		_ = unstructured.SetNestedMap(t.obj.Object, sdata, "stringData")
+	} else {
+		unstructured.RemoveNestedField(t.obj.Object, "stringData")
+	}
+	if !hasLast {
+		if lv, ok := live.GetAnnotations()[lastApplied]; ok {
+			if ann == nil {
+				ann = map[string]string{}
+			}
+			ann[lastApplied] = lv
+			t.obj.SetAnnotations(ann)
+		}
+	}
+	return nil
+}
+
+const lastApplied = "kubectl.kubernetes.io/last-applied-configuration"

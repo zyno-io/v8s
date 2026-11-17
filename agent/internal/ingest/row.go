@@ -282,3 +282,33 @@ var _ runtime.Object = (*Row)(nil)
 
 // Intern interns a string the way rows do.
 func Intern(s string) Str { return intern(s) }
+
+// ---- construction helpers for modules outside this package (mode B kinds, the Helm release view) ----
+
+// NewRow creates a row with room for n cells; fill them with PutS / PutN in the module's cell column order.
+func NewRow(uid, name, rv, ns string, createdMs int64, deleting bool, n int) *Row {
+	return newRowRaw(uid, name, rv, ns, createdMs, deleting, n)
+}
+
+// PutS appends a string (dict or str column) cell.
+func (r *Row) PutS(s string) { r.putS(s) }
+
+// PutN appends an integer or time (unix ms) cell.
+func (r *Row) PutN(n int64) { r.putN(n) }
+
+// SetTone sets the row's tone (Tone* constants).
+func (r *Row) SetTone(t uint8) { r.tone = t }
+
+// SetOwner records the controlling owner shown by owner columns.
+func (r *Row) SetOwner(kind, name string) { r.ownerKind, r.ownerName = intern(kind), intern(name) }
+
+// ColDict, ColStr, ColInt, ColTime and ColTone construct columns for modules outside this package.
+func ColCluster() Col                          { return cCluster() }
+func ColName() Col                             { return cName() }
+func ColNS() Col                               { return cNS() }
+func ColTone() Col                             { return cTone() }
+func ColAge() Col                              { return cAge() }
+func ColDict(key, label string, w int) Col     { return cDict(key, label, w) }
+func ColStr(key, label string, w int) Col      { return cStr(key, label, w) }
+func ColInt(key, label string, w int) Col      { return cInt(key, label, w) }
+func ColTimeCell(key, label string, w int) Col { return cTime(key, label, w) }

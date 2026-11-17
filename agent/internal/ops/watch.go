@@ -17,7 +17,7 @@ var (
 )
 
 // Watch follows a single object on the read context, emitting its state and every change until ctx is done.
-func (s *Service) Watch(ctx context.Context, ref protocol.ObjectRef, keepManagedFields bool, emit func(protocol.ObjectFrame)) error {
+func (s *Service) Watch(ctx context.Context, ref protocol.ObjectRef, keepManagedFields, reveal bool, emit func(protocol.ObjectFrame)) error {
 	gvr, err := parseGVR(ref.GVR)
 	if err != nil {
 		return err
@@ -32,7 +32,7 @@ func (s *Service) Watch(ctx context.Context, ref protocol.ObjectRef, keepManaged
 	ri := resource(c.Dynamic(), gvr, ref.Namespace)
 
 	send := func(o *unstructured.Unstructured, deleted bool) {
-		pl, err := buildPayload(o, keepManagedFields)
+		pl, err := buildPayload(o, keepManagedFields, reveal)
 		if err != nil {
 			emit(protocol.ObjectFrame{Error: &newErr("internal", "%s", err.Error()).Body})
 			return
