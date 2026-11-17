@@ -245,7 +245,14 @@ jobs:
           EXPECT: ${{ matrix.expect }}
         run: |
           set -euo pipefail
-          found=$(find packages/desktop/release -type f \( -path '*/Resources/agent/v8s' -o -path '*/resources/agent/v8s' -o -path '*/resources/agent/v8s.exe' \) | tee /dev/stderr | wc -l)
+          # Plain globs over the known output layouts: `find` can resolve to find.exe on Windows, and macOS runners
+          # default to bash 3.2 (no globstar). Each pattern has a glob character so nullglob drops it when absent.
+          shopt -s nullglob
+          bins=(packages/desktop/release/mac*/v8s.app/Contents/Resources/agent/v8s
+                packages/desktop/release/linux-unpacke[d]/resources/agent/v8s
+                packages/desktop/release/win-unpacke[d]/resources/agent/v8s.exe)
+          printf '%s\n' "${bins[@]}"
+          found=${#bins[@]}
           if [[ "$found" -ne "$EXPECT" ]]; then
             echo "::error::Expected $EXPECT bundled agent binaries, found $found"
             exit 1
