@@ -1,9 +1,15 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+const title = computed(() => String(route.meta.placeholder ?? 'Problems'));
+</script>
 
 <template>
     <main class="placeholder">
-        <h1>Problems</h1>
-        <p class="muted">The problems view lands in a later phase. Use <span class="kbd">:po</span> to return to pods.</p>
+        <h1>{{ title }}</h1>
+        <p class="muted">The {{ title.toLowerCase() }} view lands in a later phase. Use <span class="kbd">:po</span> to return to pods.</p>
     </main>
 </template>
 

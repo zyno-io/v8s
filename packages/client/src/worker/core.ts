@@ -1,5 +1,5 @@
 import type { ClusterStates, DictAdd, Hello, Response, ViewPatch, ViewSubscribeResult } from '../protocol.gen.ts';
-import type { Column, MainToWorker, Row, WorkerToMain } from '../types.ts';
+import type { Column, MainToWorker, ObjectFrameWire, Row, WorkerToMain } from '../types.ts';
 
 import {
     decodeFrame,
@@ -9,6 +9,7 @@ import {
     KindClusterState,
     KindDict,
     KindHello,
+    KindObject,
     KindPatch,
     KindRequest,
     KindResponse
@@ -170,6 +171,10 @@ export class DataCore {
             }
             case KindClusterState:
                 this.io.post({ t: 'clusterStates', states: (f.payload as ClusterStates).states ?? [] });
+                break;
+            case KindObject:
+                // Not acknowledged; object payloads are single objects, so they go to the main thread as they come.
+                this.io.post({ t: 'object', oid: f.channel, frame: f.payload as ObjectFrameWire });
                 break;
             case KindResponse:
                 this.handleResponse(f.channel, f.payload as Response);

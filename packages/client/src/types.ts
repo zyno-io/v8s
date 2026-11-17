@@ -1,4 +1,4 @@
-import type { ClusterState, Column, ViewQuery, Window } from './protocol.gen.ts';
+import type { ClusterState, Column, ErrorBody, ObjectPayload, ViewQuery, Window } from './protocol.gen.ts';
 
 declare const rawPayload: unique symbol;
 
@@ -28,6 +28,9 @@ export interface AgentEndpoint {
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error';
 
+/** The KindObject payload on the wire: ObjectPayload fields inline (Go embeds the struct) plus `deleted` / `error`. */
+export type ObjectFrameWire = ObjectPayload & { deleted?: boolean; error?: ErrorBody };
+
 export type { ClusterState, Column, ViewQuery, Window };
 
 // ---- worker protocol (structured-clone messages) ----
@@ -42,7 +45,9 @@ export type MainToWorker =
 
 export type WorkerToMain =
     | { t: 'status'; status: ConnectionStatus; message?: string; agentVersion?: string; mode?: string }
-    | { t: 'response'; rid: number; result?: unknown; error?: { code: string; message: string } }
+    | { t: 'response'; rid: number; result?: unknown; error?: ErrorBody }
+    /** A KindObject frame for an `object.subscribe` oid (payload as in ObjectFrame; the embedded ObjectPayload is flattened). */
+    | { t: 'object'; oid: number; frame: ObjectFrameWire }
     | { t: 'clusterStates'; states: ClusterState[] }
     | { t: 'columns'; qid: number; columns: Column[] }
     /** Up to 500 rows; applied immediately without a version bump. */

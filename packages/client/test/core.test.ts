@@ -11,6 +11,7 @@ import {
     KindClusterState,
     KindDict,
     KindHello,
+    KindObject,
     KindPatch,
     KindRequest,
     KindResponse
@@ -306,5 +307,29 @@ describe('DataCore posting', () => {
         h.core.handleClosed('bye');
         expect(h.of('response')[0].error?.code).toBe('unavailable');
         expect(h.of('status').at(-1)?.status).toBe('closed');
+    });
+});
+
+describe('DataCore objects and errors', () => {
+    it('forwards KindObject frames by oid without acking them', () => {
+        const h = harness();
+        h.frame(KindHello, 0, 1, { version: 1, agentVersion: 't', mode: 'fake' });
+        h.frame(KindObject, 9, 2, { yaml: 'a: 1\n', uid: 'u', resourceVersion: '5', managedBy: [], owners: [] });
+        h.frame(KindObject, 9, 3, { deleted: true, yaml: '', uid: 'u', resourceVersion: '6', managedBy: [], owners: [] });
+        const frames = h.of('object');
+        expect(frames).toHaveLength(2);
+        expect(frames[0]).toMatchObject({ oid: 9, frame: { resourceVersion: '5', yaml: 'a: 1\n' } });
+        expect(frames[1].frame.deleted).toBe(true);
+        expect(h.sent.filter(f => f.kind === KindAck)).toHaveLength(0);
+    });
+
+    it('passes a conflict error with the live object through', () => {
+        const h = harness();
+        h.frame(KindHello, 0, 1, { version: 1, agentVersion: 't', mode: 'fake' });
+        h.main({ t: 'request', rid: 4, method: 'object.apply', params: {} });
+        h.frame(KindResponse, 4, 2, {
+            error: { code: 'conflict', message: 'changed', live: { yaml: 'x', uid: 'u', resourceVersion: '9', managedBy: [], owners: [] } }
+        });
+        expect(h.of('response')[0].error).toMatchObject({ code: 'conflict', live: { resourceVersion: '9' } });
     });
 });

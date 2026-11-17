@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import ClusterSelector from './components/ClusterSelector.vue';
 import CommandBar from './components/CommandBar.vue';
-import DetailDrawer from './components/DetailDrawer.vue';
+import DialogHost from './components/DialogHost.vue';
 import ShortcutsOverlay from './components/ShortcutsOverlay.vue';
 import SideNav from './components/SideNav.vue';
+import Toaster from './components/Toaster.vue';
 import TopBar from './components/TopBar.vue';
-import { bootMessage, bootState, getAgent, startAgent } from './lib/agent.ts';
+import { bootMessage, bootState, getAgent, refreshKinds, startAgent } from './lib/agent.ts';
 import { installGlobalKeys } from './lib/keys.ts';
 import { useClustersStore } from './stores/clusters.ts';
+import { useSettingsStore } from './stores/settings.ts';
+import { useUiStore } from './stores/ui.ts';
+
+// Heavy surfaces load on first use: the drawer (CodeMirror, YAML, diff), the palette and the create dialog.
+const DetailDrawer = defineAsyncComponent(() => import('./components/DetailDrawer.vue'));
+const SearchPalette = defineAsyncComponent(() => import('./components/SearchPalette.vue'));
+const CreateDialog = defineAsyncComponent(() => import('./components/CreateDialog.vue'));
 
 const clusters = useClustersStore();
+const settings = useSettingsStore();
+const ui = useUiStore();
+const route = useRoute();
+const drawerOpen = computed(() => !!(route.query.c && route.query.n));
 const closed = computed(() => bootState.value === 'ready' && getAgent().status.value === 'closed');
 let uninstall: (() => void) | null = null;
 const reload = () => location.reload();
@@ -20,6 +33,7 @@ async function boot() {
     await startAgent();
     if (bootState.value === 'ready') {
         try {
+            await settings.load();
             await clusters.load();
         } catch (e) {
             bootMessage.value = e instanceof Error ? e.message : String(e);
@@ -27,6 +41,12 @@ async function boot() {
         }
     }
 }
+
+// A cluster finishing discovery changes the union of kinds; re-read `kinds.list` when the set of phases changes.
+watch(
+    () => clusters.states.map(s => s.id + s.phase).join(),
+    () => refreshKinds()
+);
 
 onMounted(() => {
     uninstall = installGlobalKeys(() => document.getElementById('pods-filter')?.focus());
@@ -44,13 +64,17 @@ onBeforeUnmount(() => uninstall?.());
         <div class="body">
             <SideNav />
             <div class="content">
-                <router-view />
+                <router-view v-slot="{ Component, route: r }"><component :is="Component" :key="r.path" /></router-view>
                 <CommandBar />
             </div>
         </div>
         <ClusterSelector />
         <ShortcutsOverlay />
-        <DetailDrawer />
+        <DetailDrawer v-if="drawerOpen" />
+        <SearchPalette v-if="ui.paletteOpen" />
+        <CreateDialog v-if="ui.createOpen" />
+        <DialogHost />
+        <Toaster />
     </div>
     <div v-else class="splash" role="status">
         <div class="mark" aria-hidden="true">

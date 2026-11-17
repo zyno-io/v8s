@@ -10,7 +10,7 @@ export interface ClusterRef {
 
 export interface CommandContext {
     kinds: readonly Kind[];
-    /** Namespaces seen in the current rows. */
+    /** Namespaces from the `v1/namespaces` view. */
     namespaces: readonly string[];
     clusters: readonly ClusterRef[];
     /** Cluster ids currently connected. */
@@ -25,6 +25,7 @@ export type Command =
     | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string }
     | { type: 'ns'; namespace: string | null }
     | { type: 'problems' }
+    | { type: 'star'; on: boolean }
     | { type: 'quit' }
     | { type: 'error'; message: string };
 
@@ -40,6 +41,8 @@ const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: s
     { name: 'ctx', aliases: ['context'], takesArgs: true, detail: 'choose clusters' },
     { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'set namespace filter' },
     { name: 'pb', aliases: ['problems'], takesArgs: false, detail: 'open problems' },
+    { name: 'star', aliases: [], takesArgs: false, detail: 'star the current type' },
+    { name: 'unstar', aliases: [], takesArgs: false, detail: 'unstar the current type' },
     { name: 'q', aliases: ['quit'], takesArgs: false, detail: 'close the bar' }
 ];
 
@@ -120,6 +123,8 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
         return { type: 'ns', namespace: args[0].toLowerCase() === 'all' ? null : args[0] };
     }
     if (cmd?.name === 'pb') return { type: 'problems' };
+    if (cmd?.name === 'star') return { type: 'star', on: true };
+    if (cmd?.name === 'unstar') return { type: 'star', on: false };
     if (cmd?.name === 'q') return { type: 'quit' };
 
     const found = findKind(head, ctx.kinds);
@@ -129,7 +134,7 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
     if (!kind.available) return { type: 'error', message: `${kind.kind} (${kind.plural}) is not available yet` };
     const arg = args[0];
     if (!arg || arg === 'all') return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural };
-    if (!kind.namespaced) return { type: 'error', message: `${kind.plural} are cluster-scoped; no namespace expected` };
+    if (!kind.namespaced) return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, name: arg };
     const slash = arg.indexOf('/');
     if (slash >= 0) {
         const namespace = arg.slice(0, slash);
@@ -197,7 +202,7 @@ export function complete(input: string, ctx: CommandContext, limit = 8): Complet
 
     const isNsCmd = cmd?.name === 'ns';
     const kindHit = !cmd ? findKind(head, ctx.kinds) : null;
-    if ((isNsCmd || (kindHit && 'kind' in kindHit)) && lastIdx === 1) {
+    if ((isNsCmd || (kindHit && 'kind' in kindHit && kindHit.kind.namespaced)) && lastIdx === 1) {
         const pool: Completion[] = [];
         if (isNsCmd) pool.push({ label: 'all', detail: 'clear the namespace filter', insert: before + 'all' });
         for (const ns of ctx.namespaces) pool.push({ label: ns, detail: 'namespace', insert: before + ns });

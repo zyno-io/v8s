@@ -16,6 +16,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['Enter', 'open the focused row'],
             ['x', 'select the focused row'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
+            ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['?', 'show this list']
         ]
     },
@@ -26,7 +27,8 @@ const groups: { title: string; rows: [string, string][] }[] = [
             [':ctx a b', 'connect exactly a and b'],
             [':ctx +a / -a', 'add / remove a cluster'],
             [':po [ns]', 'pods, optionally in a namespace'],
-            [':po ns/name', 'open one pod'],
+            [':<type> ns/name', 'open one object in the drawer'],
+            [':star / :unstar', 'star or unstar the current type'],
             [':ns <ns> / all', 'set or clear the namespace filter'],
             [':pb', 'problems'],
             [':q', 'close the bar']

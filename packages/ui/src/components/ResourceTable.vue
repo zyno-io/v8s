@@ -1,23 +1,29 @@
 <script setup lang="ts">
-import type { Cell, Row, ViewHandle } from '@v8s/client';
+import type { ObjectRef, Row, ViewHandle } from '@v8s/client';
 
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import { POD, TONE_NAMES } from '@v8s/client';
+import { TONE_NAMES } from '@v8s/client';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { useRouter } from 'vue-router';
+
+import type { ColPlan, TablePlan } from '@/lib/columns.ts';
 
 import { clusterColor } from '@/lib/colors.ts';
+import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
+import { openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
 import { setPageKeyHandler } from '@/lib/keys.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
-import { SORT_LABELS, usePodsStore } from '@/stores/pods.ts';
-import { useUiStore } from '@/stores/ui.ts';
+import { isFiltered, useTableStore } from '@/stores/table.ts';
 
-const props = defineProps<{ handle: ViewHandle }>();
+const props = defineProps<{ handle: ViewHandle; gvr: string; plan: TablePlan; title: string; namespaced: boolean }>();
+const emit = defineEmits<{ resize: [key: string, width: number] }>();
 
-const pods = usePodsStore();
-const ui = useUiStore();
+const table = useTableStore();
 const clusters = useClustersStore();
+const router = useRouter();
+const ui = computed(() => table.of(props.gvr));
 
 const HEADER_H = ROW_H_DESKTOP;
 const EMPTY_ROW = Object.freeze([]) as unknown as Row;
@@ -39,6 +45,18 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
 
 const totalPx = computed(() => props.handle.total.value * rowH.value);
 
+// ---- row refs (selection and actions are by id; the ref is a small snapshot taken at the moment of selection) ----
+
+function refOf(row: Row): ObjectRef {
+    const p = props.plan;
+    return {
+        cluster: p.clusterIdx >= 0 ? (row[p.clusterIdx] as string) : (clusters.activeIds[0] ?? ''),
+        gvr: props.gvr,
+        namespace: p.nsIdx >= 0 ? (row[p.nsIdx] as string) || undefined : undefined,
+        name: row[p.nameIdx] as string
+    };
+}
+
 // ---- visible slice: one v-for, plain elements, memoised on id + version + selection + focus + age text ----
 
 interface Item {
@@ -53,6 +71,8 @@ interface Item {
 
 const tick = shallowRef(0);
 let allOld = false;
+/** Captured when the slice is computed; age cells render from it so they only change together with the memo key. */
+let nowMs = Date.now();
 
 const slice = computed<Item[]>(() => {
     void tick.value;
@@ -61,9 +81,10 @@ const slice = computed<Item[]>(() => {
     const off = h.offset.value;
     const ids = h.ids;
     const rows = h.rows;
-    const sel = pods.selected;
-    const foc = pods.focusId;
-    const now = Date.now();
+    const sel = ui.value.selected;
+    const foc = ui.value.focusId;
+    const p = props.plan;
+    nowMs = Date.now();
     let old = true;
     const out: Item[] = [];
     for (const vi of virtualizer.value.getVirtualItems()) {
@@ -72,10 +93,13 @@ const slice = computed<Item[]>(() => {
         const id = k >= 0 && k < ids.length ? ids[k] : 0;
         const row = id ? rows.get(id) : undefined;
         let age = '';
-        if (row) {
-            const created = row[POD.createdAt] as number;
-            age = formatAge(created, now);
-            if (now - created < OLD_AGE_MS) old = false;
+        if (row && p.hasTime) {
+            for (const c of p.cols) {
+                if (c.kind !== 'age') continue;
+                const t = row[c.idx] as number;
+                age += formatAge(t, nowMs) + '|';
+                if (nowMs - t < OLD_AGE_MS) old = false;
+            }
         }
         out.push({ i, id, row: row ?? EMPTY_ROW, ver: row ? row[1] : -1, sel: id !== 0 && sel.has(id), foc: id !== 0 && id === foc, age });
     }
@@ -88,7 +112,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 let slowCount = 0;
 onMounted(() => {
     timer = setInterval(() => {
-        if (document.hidden) return;
+        if (document.hidden || !props.plan.hasTime) return;
         if (allOld && ++slowCount % 30 !== 0) return;
         tick.value++;
     }, 1000);
@@ -206,7 +230,7 @@ watch(isPhone, () => {
 });
 
 watch(
-    () => pods.query,
+    () => [ui.value.text, ui.value.namespaces, ui.value.tones, ui.value.sort],
     () => {
         anchor.id = 0;
         if (scroller.value) scroller.value.scrollTop = 0;
@@ -217,11 +241,12 @@ watch(
 // ---- `:po ns/name` ----
 
 function openPending() {
-    const p = pods.pendingOpen;
-    if (!p) return;
+    const p = ui.value.pendingOpen;
+    const pl = props.plan;
+    if (!p || pl.nameIdx < 0) return;
     for (const row of props.handle.rows.values()) {
-        if (row[POD.name] === p.name && (!p.namespace || row[POD.namespace] === p.namespace)) {
-            pods.pendingOpen = null;
+        if (row[pl.nameIdx] === p.name && (!p.namespace || pl.nsIdx < 0 || row[pl.nsIdx] === p.namespace)) {
+            ui.value.pendingOpen = null;
             openRow(row[0]);
             return;
         }
@@ -233,12 +258,17 @@ function openPending() {
 function openRow(id: number) {
     const row = props.handle.rows.get(id);
     if (!row) return;
-    pods.focusId = id;
-    ui.drawer = { id, name: row[POD.name] as string, cluster: row[POD.cluster] as string, namespace: row[POD.namespace] as string };
+    ui.value.focusId = id;
+    void openObject(router, refOf(row));
 }
 
 let longPressed = false;
 let pressTimer: ReturnType<typeof setTimeout> | undefined;
+
+function toggle(id: number) {
+    const row = props.handle.rows.get(id);
+    table.select(props.gvr, id, row ? refOf(row) : null);
+}
 
 function onPointerDown(e: PointerEvent) {
     if (!isPhone.value) return;
@@ -247,7 +277,7 @@ function onPointerDown(e: PointerEvent) {
     longPressed = false;
     pressTimer = setTimeout(() => {
         longPressed = true;
-        pods.toggleSelected(Number(el.dataset.id));
+        toggle(Number(el.dataset.id));
     }, 500);
 }
 function cancelPress() {
@@ -265,10 +295,10 @@ function onBodyClick(e: MouseEvent) {
     const id = Number(el.dataset.id);
     if (!id) return;
     if (t instanceof HTMLInputElement) {
-        pods.toggleSelected(id);
+        toggle(id);
         return;
     }
-    pods.focusId = id;
+    ui.value.focusId = id;
     if (isPhone.value || t.closest('[data-open]')) openRow(id);
 }
 
@@ -281,14 +311,14 @@ function moveFocus(delta: number) {
     const h = props.handle;
     const ids = h.ids;
     if (!ids.length) return;
-    let cur = pods.focusId ? ids.indexOf(pods.focusId) : -1;
+    let cur = ui.value.focusId ? ids.indexOf(ui.value.focusId) : -1;
     if (cur < 0) {
         const r = visibleRange();
         cur = Math.max(0, Math.min(ids.length - 1, (r?.first ?? 0) - h.offset.value));
     } else {
         cur = Math.max(0, Math.min(ids.length - 1, cur + delta));
     }
-    pods.focusId = ids[cur];
+    ui.value.focusId = ids[cur];
     virtualizer.value.scrollToIndex(h.offset.value + cur, { align: 'auto' });
 }
 
@@ -305,11 +335,11 @@ setPageKeyHandler(e => {
             moveFocus(-1);
             return true;
         case 'x':
-            if (pods.focusId) pods.toggleSelected(pods.focusId);
+            if (ui.value.focusId) toggle(ui.value.focusId);
             return true;
         case 'Enter':
-            if (pods.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {
-                openRow(pods.focusId);
+            if (ui.value.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {
+                openRow(ui.value.focusId);
                 return true;
             }
             return false;
@@ -319,57 +349,108 @@ setPageKeyHandler(e => {
 
 // ---- header ----
 
-const HEAD_ALL = [
-    { label: 'Cluster', sort: 'cluster' },
-    { label: 'Name', sort: 'name' },
-    { label: 'Namespace', sort: 'namespace' },
-    { label: 'Ready', sort: '' },
-    { label: 'Status', sort: 'status' },
-    { label: 'Restarts', sort: 'restarts' },
-    { label: 'Node', sort: 'node' },
-    { label: 'Age', sort: 'createdAt' }
-];
-
-const HEAD = computed(() => (showCluster.value ? HEAD_ALL : HEAD_ALL.filter(h => h.sort !== 'cluster')));
-
 function sortInfo(col: string): { arrow: string; aria: 'ascending' | 'descending' | 'none' } {
-    const i = pods.sort.findIndex(s => s.col === col);
+    const sort = ui.value.sort;
+    const i = sort.findIndex(s => s.col === col);
     if (i < 0) return { arrow: '', aria: 'none' };
-    const s = pods.sort[i];
-    return { arrow: (s.desc ? '↓' : '↑') + (pods.sort.length > 1 ? i + 1 : ''), aria: s.desc ? 'descending' : 'ascending' };
+    const s = sort[i];
+    return { arrow: (s.desc ? '↓' : '↑') + (sort.length > 1 ? i + 1 : ''), aria: s.desc ? 'descending' : 'ascending' };
 }
 
-const allSelected = computed(() => props.handle.ids.length > 0 && pods.selected.size >= props.handle.ids.length);
+const allSelected = computed(() => props.handle.ids.length > 0 && ui.value.selected.size >= props.handle.ids.length);
 function toggleAll() {
-    if (allSelected.value) pods.clearSelection();
-    else pods.setSelected(props.handle.ids);
+    if (allSelected.value) {
+        table.clearSelection(props.gvr);
+        return;
+    }
+    const entries: [number, ObjectRef][] = [];
+    for (const id of props.handle.ids) {
+        const row = props.handle.rows.get(id);
+        if (row) entries.push([id, refOf(row)]);
+    }
+    table.setSelected(props.gvr, entries);
 }
 
-const n = (c: Cell) => c as number;
-const s = (c: Cell) => c as string;
-const toneClass = (row: Row) => 'tag ' + TONE_NAMES[n(row[POD.statusTone])];
-const readyBad = (row: Row) => (n(row[POD.statusTone]) === 2 || n(row[POD.statusTone]) === 3) && n(row[POD.ready]) < n(row[POD.containers]);
+// ---- column resize: one CSS variable on the scroller changes while dragging; the layout is saved once on release ----
+
+function startResize(e: PointerEvent, c: ColPlan) {
+    const el = scroller.value;
+    const cell = (e.currentTarget as HTMLElement).parentElement;
+    if (!el || !cell) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = cell.getBoundingClientRect().width;
+    let width = startW;
+    const move = (ev: PointerEvent) => {
+        width = Math.max(48, Math.round(startW + ev.clientX - startX));
+        el.style.setProperty('--cols', gridTemplate(props.plan.cols, { key: c.key, width }));
+        el.style.setProperty('--minw', Math.max(minWidthOf(props.plan.cols), minWidthOf(props.plan.cols) - c.width + width) + 'px');
+    };
+    const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        if (width !== startW) emit('resize', c.key, width);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+}
+
+function onResizeKey(e: KeyboardEvent, c: ColPlan) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const cell = (e.currentTarget as HTMLElement).parentElement;
+    const w = Math.round(cell?.getBoundingClientRect().width ?? c.width);
+    emit('resize', c.key, Math.max(48, w + (e.key === 'ArrowRight' ? 16 : -16)));
+}
+
+const s = (c: unknown) => c as string;
+const n = (c: unknown) => c as number;
+const toneName = (row: Row) => (props.plan.toneIdx >= 0 ? TONE_NAMES[n(row[props.plan.toneIdx])] : 'neutral') ?? 'neutral';
+const containersIdx = computed(() => {
+    const i = (props.handle.columns.value ?? []).findIndex(c => c.key === 'containers');
+    return i < 0 ? -1 : i + 2;
+});
+const readyBad = (row: Row, idx: number) => {
+    const t = n(row[props.plan.toneIdx]);
+    return (t === 2 || t === 3) && containersIdx.value >= 0 && n(row[idx]) < n(row[containersIdx.value]);
+};
+
+function cellClass(c: ColPlan, row: Row) {
+    return {
+        name: c.kind === 'name',
+        mono: c.kind === 'mono',
+        r: c.align === 'right',
+        muted: c.kind === 'age' || c.key === 'namespace',
+        bad: (c.key === 'restarts' && n(row[c.idx]) > 5) || (c.kind === 'ready' && readyBad(row, c.idx))
+    };
+}
 
 defineExpose({ scroller });
 
 // The cluster column/tag only earns its width when more than one cluster is connected.
-const showCluster = computed(() => clusters.activeIds.length > 1);
-const COLS_MULTI = '15px 112px minmax(0, 1.7fr) 128px 48px 168px 64px 148px 64px';
-const COLS_SINGLE = '15px minmax(0, 1.7fr) 160px 56px 168px 72px minmax(120px, 1fr) 64px';
+const showCluster = computed(() => props.plan.clusterIdx >= 0 && props.plan.cols.some(c => c.kind === 'cluster'));
+const planKey = computed(() => props.plan.grid + props.plan.cols.length);
 
 const emptyKind = computed(() => {
     if (!clusters.activeIds.length) return 'no-clusters';
     if (props.handle.total.value > 0) return '';
     if (props.handle.version.value === 0) return 'loading';
-    if (pods.filtered) return 'filtered';
+    if (isFiltered(ui.value)) return 'filtered';
     if (clusters.states.some(st => st.phase === 'syncing' || st.phase === 'connecting')) return 'syncing';
     return 'none';
 });
 
-function clearFilters() {
-    pods.text = '';
-    pods.namespaces = [];
-    pods.tones = [];
+/** Phone card: the first few text/int columns beyond the identity and status columns, as "label value". */
+const cardMetrics = computed(() =>
+    props.plan.cols.filter(c => ['text', 'mono', 'int', 'ready'].includes(c.kind) && c.key !== 'namespace').slice(0, 2)
+);
+const statusCol = computed(() => props.plan.cols.find(c => c.kind === 'status' || c.kind === 'tone'));
+const ageCol = computed(() => props.plan.cols.find(c => c.kind === 'age'));
+
+function metricText(c: ColPlan, row: Row): string {
+    if (c.kind === 'ready') return `${row[c.idx]}/${containersIdx.value >= 0 ? row[containersIdx.value] : ''}`;
+    return String(row[c.idx] ?? '');
 }
 </script>
 
@@ -378,27 +459,43 @@ function clearFilters() {
         ref="scroller"
         class="scroller"
         :class="{ phone: isPhone }"
-        :style="{ '--row-h': rowH + 'px', '--cols': showCluster ? COLS_MULTI : COLS_SINGLE }"
+        :style="{ '--row-h': rowH + 'px', '--cols': plan.grid, '--minw': plan.minWidth + 'px' }"
         role="table"
         :aria-rowcount="handle.total.value + 1"
-        aria-label="Pods"
+        :aria-label="title"
         tabindex="0"
     >
-        <div v-if="!isPhone" class="tr th" role="row">
+        <div v-if="!isPhone" :key="planKey" class="tr th" role="row">
             <span role="columnheader"
                 ><input class="cb" type="checkbox" aria-label="Select all loaded rows" :checked="allSelected" @change="toggleAll"
             /></span>
-            <span v-for="hd in HEAD" :key="hd.label" role="columnheader" :aria-sort="hd.sort ? sortInfo(hd.sort).aria : undefined" class="c">
+            <span
+                v-for="c in plan.cols"
+                :key="c.key"
+                role="columnheader"
+                :aria-sort="c.sortable ? sortInfo(c.key).aria : undefined"
+                class="c hd"
+                :class="{ r: c.align === 'right' }"
+            >
                 <button
-                    v-if="hd.sort"
+                    v-if="c.sortable"
                     class="th-btn"
                     type="button"
-                    :title="`Sort by ${SORT_LABELS[hd.sort]} (shift-click adds a secondary key)`"
-                    @click="pods.sortBy(hd.sort, $event.shiftKey)"
+                    :title="`Sort by ${c.label.toLowerCase()} (shift-click adds a secondary key)`"
+                    @click="table.sortBy(gvr, c.key, $event.shiftKey)"
                 >
-                    {{ hd.label }}<span aria-hidden="true">{{ sortInfo(hd.sort).arrow }}</span>
+                    {{ c.label }}<span aria-hidden="true">{{ sortInfo(c.key).arrow }}</span>
                 </button>
-                <template v-else>{{ hd.label }}</template>
+                <template v-else>{{ c.label }}</template>
+                <span
+                    class="rz"
+                    role="separator"
+                    tabindex="0"
+                    :aria-label="`Resize ${c.label} column`"
+                    aria-orientation="vertical"
+                    @pointerdown="startResize($event, c)"
+                    @keydown="onResizeKey($event, c)"
+                ></span>
             </span>
         </div>
         <div
@@ -415,7 +512,7 @@ function clearFilters() {
                 <div
                     v-for="it in slice"
                     :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, showCluster]"
+                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, planKey]"
                     class="tr row"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_DESKTOP + 'px)' }"
@@ -426,32 +523,39 @@ function clearFilters() {
                 >
                     <template v-if="it.ver >= 0">
                         <span role="cell"><input class="cb" type="checkbox" tabindex="-1" aria-label="Select row" :checked="it.sel" /></span>
-                        <span v-if="showCluster" class="c" role="cell"
-                            ><span class="tag"
-                                ><span class="dot" :style="{ background: clusterColor(s(it.row[POD.cluster])) }"></span
-                                >{{ it.row[POD.cluster] }}</span
-                            ></span
+                        <span
+                            v-for="c in plan.cols"
+                            :key="c.key"
+                            class="c"
+                            :class="cellClass(c, it.row)"
+                            role="cell"
+                            :data-open="c.kind === 'name' ? '' : undefined"
                         >
-                        <span class="c name" role="cell" data-open>{{ it.row[POD.name] }}</span>
-                        <span class="c muted" role="cell">{{ it.row[POD.namespace] }}</span>
-                        <span class="c" :class="readyBad(it.row) ? 'bad' : 'dim'" role="cell"
-                            >{{ it.row[POD.ready] }}/{{ it.row[POD.containers] }}</span
-                        >
-                        <span class="c" role="cell"><span :class="toneClass(it.row)">{{ it.row[POD.status] }}</span></span>
-                        <span class="c" :class="n(it.row[POD.restarts]) > 5 ? 'bad' : 'dim'" role="cell">{{ it.row[POD.restarts] }}</span>
-                        <span class="c mono muted" role="cell">{{ it.row[POD.node] || '—' }}</span>
-                        <span class="c muted" role="cell">{{ it.age }}</span>
+                            <template v-if="c.kind === 'cluster'"
+                                ><span class="tag"
+                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx] }}</span
+                                ></template
+                            >
+                            <template v-else-if="c.kind === 'status' || c.kind === 'tone'"
+                                ><span
+                                    v-if="it.row[c.idx] !== '' && !(c.kind === 'tone' && n(it.row[c.idx]) === 0)"
+                                    class="tag"
+                                    :class="toneName(it.row)"
+                                    >{{ c.kind === 'tone' ? toneName(it.row) : it.row[c.idx] }}</span
+                                ><template v-else>—</template></template
+                            >
+                            <template v-else-if="c.kind === 'ready'"
+                                >{{ it.row[c.idx] }}/{{ containersIdx >= 0 ? it.row[containersIdx] : '' }}</template
+                            >
+                            <template v-else-if="c.kind === 'age'">{{ formatAge(n(it.row[c.idx]), nowMs) }}</template>
+                            <template v-else>{{
+                                it.row[c.idx] === '' || it.row[c.idx] == null ? (c.kind === 'name' ? '' : '—') : it.row[c.idx]
+                            }}</template>
+                        </span>
                     </template>
                     <template v-else>
                         <span></span>
-                        <span v-if="showCluster" class="c"><i style="width: 70%"></i></span>
-                        <span class="c"><i style="width: 80%"></i></span>
-                        <span class="c"><i style="width: 50%"></i></span>
-                        <span class="c"><i style="width: 60%"></i></span>
-                        <span class="c"><i style="width: 70%"></i></span>
-                        <span class="c"><i style="width: 40%"></i></span>
-                        <span class="c"><i style="width: 70%"></i></span>
-                        <span class="c"><i style="width: 60%"></i></span>
+                        <span v-for="c in plan.cols" :key="c.key" class="c"><i :style="{ width: 40 + ((c.idx * 17) % 45) + '%' }"></i></span>
                     </template>
                 </div>
             </template>
@@ -459,7 +563,7 @@ function clearFilters() {
                 <div
                     v-for="it in slice"
                     :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, showCluster]"
+                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, planKey]"
                     class="pcard"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_PHONE + 'px)' }"
@@ -470,18 +574,20 @@ function clearFilters() {
                 >
                     <div v-if="it.ver >= 0" class="pc-main" role="cell">
                         <div class="pc-top">
-                            <span class="c name">{{ it.row[POD.name] }}</span>
-                            <span :class="toneClass(it.row)">{{ it.row[POD.status] }}</span>
+                            <span class="c name">{{ it.row[plan.nameIdx] }}</span>
+                            <span v-if="statusCol && it.row[statusCol.idx] !== ''" class="tag" :class="toneName(it.row)">{{
+                                statusCol.kind === 'tone' ? toneName(it.row) : it.row[statusCol.idx]
+                            }}</span>
                         </div>
                         <div class="sub">
                             <template v-if="showCluster"
-                                ><span class="dot" :style="{ background: clusterColor(s(it.row[POD.cluster])) }"></span>{{ it.row[POD.cluster]
-                                }}<span>·</span></template
-                            >{{ it.row[POD.namespace] }}<span>·</span><span class="mono c">{{ it.row[POD.node] || '—' }}</span>
+                                ><span class="dot" :style="{ background: clusterColor(s(it.row[plan.clusterIdx])) }"></span
+                                >{{ it.row[plan.clusterIdx] }}<span>·</span></template
+                            ><template v-if="plan.nsIdx >= 0">{{ it.row[plan.nsIdx] }}<span>·</span></template
+                            ><template v-if="ageCol">{{ formatAge(n(it.row[ageCol.idx]), nowMs) }}</template>
                         </div>
                         <div class="pc-meta">
-                            <span>ready {{ it.row[POD.ready] }}/{{ it.row[POD.containers] }}</span><span>restarts {{ it.row[POD.restarts] }}</span
-                            ><span>{{ it.age }}</span>
+                            <span v-for="c in cardMetrics" :key="c.key" class="c">{{ c.label.toLowerCase() }} {{ metricText(c, it.row) }}</span>
                         </div>
                     </div>
                     <div v-else class="pc-main"><i style="width: 70%"></i><i style="width: 45%"></i><i style="width: 55%"></i></div>
@@ -493,13 +599,13 @@ function clearFilters() {
                 <p>No clusters connected.</p>
                 <button class="btn" type="button" @click="clusters.open()">Choose clusters</button>
             </template>
-            <template v-else-if="emptyKind === 'loading'"><p class="muted">Loading pods…</p></template>
+            <template v-else-if="emptyKind === 'loading'"><p class="muted">Loading {{ title.toLowerCase() }}…</p></template>
             <template v-else-if="emptyKind === 'filtered'">
-                <p>No pods match the current filters.</p>
-                <button class="btn sm" type="button" @click="clearFilters">Clear filters</button>
+                <p>No {{ title.toLowerCase() }} match the current filters.</p>
+                <button class="btn sm" type="button" @click="table.clearFilters(gvr)">Clear filters</button>
             </template>
             <template v-else-if="emptyKind === 'syncing'"><p class="muted">Clusters are still syncing; rows stream in as they arrive.</p></template>
-            <template v-else><p class="muted">No pods.</p></template>
+            <template v-else><p class="muted">No {{ title.toLowerCase() }}.</p></template>
         </div>
     </div>
 </template>
@@ -507,9 +613,6 @@ function clearFilters() {
 <style scoped>
 .bad {
     color: var(--danger);
-}
-.dim {
-    color: var(--text2);
 }
 .empty {
     position: sticky;
@@ -546,6 +649,8 @@ function clearFilters() {
     display: flex;
     gap: 12px;
     color: var(--text2);
+    min-width: 0;
+    overflow: hidden;
 }
 .pcard .mono {
     font-size: 11px;

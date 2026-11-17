@@ -22,6 +22,7 @@ const dotColor = computed(() => {
     return 'var(--success)';
 });
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark' })[ui.theme]);
 </script>
 
@@ -47,14 +48,21 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
                 <path d="M4 6l4 4 4-4" />
             </svg>
         </button>
-        <label class="field search">
+        <button
+            class="field search"
+            type="button"
+            aria-haspopup="dialog"
+            aria-label="Search objects and commands (Ctrl-K)"
+            data-testid="search-btn"
+            @click="ui.paletteOpen = true"
+        >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.5" />
                 <path d="M10.5 10.5L14 14" />
             </svg>
-            <input type="search" placeholder="Search objects, images, IPs across clusters" aria-label="Search" disabled />
-            <span class="kbd">⌘K</span>
-        </label>
+            <span class="ph">Search objects, kinds and commands</span>
+            <span class="kbd">{{ isMac ? '⌘K' : 'Ctrl K' }}</span>
+        </button>
         <div class="grow"></div>
         <button class="btn ghost" type="button" :aria-label="themeLabel" :title="themeLabel" @click="ui.cycleTheme()">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
@@ -81,6 +89,16 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
     width: 420px;
     margin-left: 8px;
     max-width: 40vw;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+}
+.search .ph {
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .problems {
     height: 24px;
@@ -88,6 +106,11 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
 }
 @media (max-width: 899.98px) {
     .search {
+        width: auto;
+        flex: none;
+    }
+    .search .ph,
+    .search .kbd {
         display: none;
     }
 }

@@ -1,16 +1,25 @@
 import type { Router } from 'vue-router';
 
 import { useClustersStore } from '@/stores/clusters.ts';
-import { usePodsStore } from '@/stores/pods.ts';
+import { useSettingsStore } from '@/stores/settings.ts';
+import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 import type { Command } from './command-parser.ts';
 
+import { kinds } from './agent.ts';
+import { kindLabel, labelFromGvr } from './kinds.ts';
+import { errorText } from './mutations.ts';
+import { gvrFromRoute, gvrPath } from './route.ts';
+
 /** Applies a parsed command. Returns an error message to show inline, or null when the bar should close. */
 export async function runCommand(cmd: Command, router: Router): Promise<string | null> {
     const clusters = useClustersStore();
-    const pods = usePodsStore();
+    const table = useTableStore();
+    const settings = useSettingsStore();
     const ui = useUiStore();
+    const route = router.currentRoute.value;
+    const here = gvrFromRoute(route.path, route.params);
     switch (cmd.type) {
         case 'empty':
         case 'quit':
@@ -32,19 +41,33 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
             return null;
         }
         case 'ns':
-            pods.namespaces = cmd.namespace ? [cmd.namespace] : [];
+            if (!here) return 'open a resource list first';
+            table.of(here).namespaces = cmd.namespace ? [cmd.namespace] : [];
             return null;
         case 'problems':
             await router.push('/problems');
             return null;
-        case 'open-kind':
-            // Only pods has a view in P0; the parser already rejects kinds with available:false.
-            await router.push('/pods');
-            if (cmd.namespace) pods.namespaces = [cmd.namespace];
-            if (cmd.name) {
-                pods.text = cmd.name;
-                pods.pendingOpen = { namespace: cmd.namespace ?? '', name: cmd.name };
+        case 'star': {
+            if (!here) return 'open a resource type first';
+            if (settings.isStarred(here) === cmd.on) return null;
+            const label = kinds.value.find(k => k.gvr === here);
+            try {
+                await settings.toggleStarred(here);
+                ui.toast('success', `${cmd.on ? 'Starred' : 'Unstarred'} ${label ? kindLabel(label) : labelFromGvr(here)}`);
+            } catch (e) {
+                return errorText(e);
             }
             return null;
+        }
+        case 'open-kind': {
+            await router.push(gvrPath(cmd.gvr));
+            const st = table.of(cmd.gvr);
+            if (cmd.namespace) st.namespaces = [cmd.namespace];
+            if (cmd.name) {
+                st.text = cmd.name;
+                st.pendingOpen = { namespace: cmd.namespace ?? '', name: cmd.name };
+            }
+            return null;
+        }
     }
 }
