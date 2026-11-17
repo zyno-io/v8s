@@ -13,6 +13,8 @@ export interface AskOptions {
     phrase?: string;
     note?: string;
     runAs?: string;
+    /** On a phone the confirm button is a hold-to-confirm (restart, trigger, scale, rollback). */
+    hold?: boolean;
 }
 
 const queue: ConfirmDialog[] = [];
@@ -47,6 +49,7 @@ export function ask(opts: AskOptions): Promise<boolean> {
             phrase: opts.phrase,
             note: opts.note,
             runAs: opts.runAs,
+            hold: opts.hold,
             run: () => resolve(true),
             onCancel: () => resolve(false)
         });

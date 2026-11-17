@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import AccountMenu from '@/components/AccountMenu.vue';
 import JobsTray from '@/components/JobsTray.vue';
 import PortForwardsButton from '@/components/PortForwardsButton.vue';
+import { getProblemsAll } from '@/lib/agent.ts';
+import { formatCount } from '@/lib/format.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const clusters = useClustersStore();
+const problemsAll = getProblemsAll();
+const problemCount = computed(() => problemsAll.total.value);
 const ui = useUiStore();
 
 const label = computed(() => {
@@ -68,20 +73,28 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
         <div class="grow"></div>
         <PortForwardsButton />
         <JobsTray />
-        <button class="btn ghost" type="button" :aria-label="themeLabel" :title="themeLabel" @click="ui.cycleTheme()">
+        <button class="btn ghost theme-btn" type="button" :aria-label="themeLabel" :title="themeLabel" @click="ui.cycleTheme()">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <circle cx="8" cy="8" r="3" />
                 <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
             </svg>
             <span class="theme-name">{{ ui.theme }}</span>
         </button>
-        <router-link class="tag danger problems" to="/problems">
+        <router-link
+            class="tag problems"
+            :class="problemCount ? 'danger' : 'success'"
+            to="/problems"
+            :aria-label="problemCount ? `${problemCount} problems` : 'No problems'"
+            data-testid="topbar-problems"
+        >
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M8 2l6.5 11.5h-13z" />
                 <path d="M8 6.5v3" />
             </svg>
-            Problems
+            <span class="pcount">{{ problemCount ? formatCount(problemCount) : '0' }}</span
+            ><span class="plabel">{{ problemCount === 1 ? 'problem' : 'problems' }}</span>
         </router-link>
+        <AccountMenu />
     </header>
 </template>
 
@@ -119,6 +132,13 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
     }
 }
 @media (max-width: 639.98px) {
+    .topbar :deep(.theme-btn),
+    .brand span:last-child {
+        display: none;
+    }
+    .plabel {
+        display: none;
+    }
     .theme-name {
         display: none;
     }

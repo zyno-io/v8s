@@ -15,6 +15,7 @@ import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
 import { gvrFromRoute, HELM_RELEASES_GVR, parseDrawer, tabsFor } from '@/lib/route.ts';
+import { useIntegrationsStore } from '@/stores/integrations.ts';
 
 const YamlPane = defineAsyncComponent(() => import('@/components/YamlPane.vue'));
 const EventsPane = defineAsyncComponent(() => import('@/components/EventsPane.vue'));
@@ -25,6 +26,9 @@ const ShellPane = defineAsyncComponent(() => import('@/components/ShellPane.vue'
 const FluxInventory = defineAsyncComponent(() => import('@/components/FluxInventory.vue'));
 const HelmReleaseFlux = defineAsyncComponent(() => import('@/components/HelmReleaseFlux.vue'));
 const HelmReleaseDrawer = defineAsyncComponent(() => import('@/components/HelmReleaseDrawer.vue'));
+const CveTable = defineAsyncComponent(() => import('@/components/CveTable.vue'));
+const SecurityPane = defineAsyncComponent(() => import('@/components/SecurityPane.vue'));
+const FlowsPane = defineAsyncComponent(() => import('@/components/FlowsPane.vue'));
 
 const route = useRoute();
 const router = useRouter();
@@ -37,7 +41,16 @@ const isSecret = computed(() => target.value?.gvr === 'v1/secrets');
 const isHelm = computed(() => target.value?.gvr === HELM_RELEASES_GVR);
 // Helm releases are virtual (no object to subscribe to); their drawer loads through `helm.release`.
 const sessionTarget = computed(() => (isSecret.value || isHelm.value ? null : target.value));
-const tabs = computed(() => (target.value ? tabsFor(target.value.gvr) : []));
+const integrations = useIntegrationsStore();
+const tabs = computed(() =>
+    target.value
+        ? tabsFor(target.value.gvr, {
+              security: integrations.detected.security,
+              // Flows exist only in clusters with a reachable relay; a namespace or workload of another cluster has none.
+              flows: integrations.hubbleClusters.includes(target.value.cluster)
+          })
+        : []
+);
 const { payload, parsed, deleted, error, loading, frames } = useObjectSession(sessionTarget);
 const EMPTY_PAYLOAD: ObjectPayload = Object.freeze({ yaml: '', uid: '', resourceVersion: '', managedBy: [], owners: [] }) as ObjectPayload;
 
@@ -50,7 +63,11 @@ const replicas = computed(() => {
     return typeof r === 'number' && Number.isFinite(r) ? r : undefined;
 });
 const revision = computed(() => revisionOf(parsed.value));
-const actionTargets = computed(() => (target.value ? [target.value] : []));
+// Pin actions to the incarnation the drawer shows: the live payload's uid travels with every action/delete/apply ref.
+// (`liveUid` is a separate computed so `pinned` keeps its identity across payload frames: ActionBar re-checks access when its targets change.)
+const liveUid = computed(() => payload.value?.uid || undefined);
+const pinned = computed(() => (target.value ? { ...target.value, uid: liveUid.value } : null));
+const actionTargets = computed(() => (pinned.value ? [pinned.value] : []));
 
 function setTab(t: DrawerTab) {
     if (target.value) void openObject(router, target.value, t, true);
@@ -127,6 +144,9 @@ const TAB_LABEL: Record<DrawerTab, string> = {
     shell: 'Shell',
     inventory: 'Inventory',
     release: 'Release',
+    report: 'Report',
+    security: 'Security',
+    flows: 'Flows',
     yaml: 'YAML',
     events: 'Events',
     related: 'Related'
@@ -242,7 +262,20 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     :refresh-key="frames"
                 />
                 <HelmReleaseFlux v-else-if="tab === 'release'" :target="target" :parsed="parsed" />
-                <YamlPane v-else-if="tab === 'yaml'" :target="target" :payload="payload" :deleted="deleted" :frames="frames" />
+                <CveTable v-else-if="tab === 'report'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="pinned ?? target" />
+                <SecurityPane
+                    v-else-if="tab === 'security'"
+                    :key="`${target.cluster}${target.namespace}${target.name}`"
+                    :target="target"
+                    :parsed="parsed"
+                />
+                <FlowsPane
+                    v-else-if="tab === 'flows'"
+                    :key="`${target.cluster}${target.namespace}${target.name}`"
+                    :target="target"
+                    :parsed="parsed"
+                />
+                <YamlPane v-else-if="tab === 'yaml'" :target="pinned ?? target" :payload="payload" :deleted="deleted" :frames="frames" />
                 <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
                 <RelatedPane v-else :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :payload="payload" />
             </template>
@@ -358,7 +391,8 @@ h2 {
 }
 .panel > :deep([data-testid='logs-pane']),
 .panel > :deep([data-testid='shell-pane']),
-.panel > :deep([data-testid='flux-inventory']) {
+.panel > :deep([data-testid='flux-inventory']),
+.panel > :deep([data-testid='flows-pane']) {
     flex: 1 1 0;
     height: auto;
     min-height: 320px;

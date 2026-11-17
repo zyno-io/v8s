@@ -1,9 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
+import { isPhone } from './lib/viewport.ts';
+
 export default createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes: [
-        { path: '/', redirect: '/pods' },
+        // Problems is the landing tab on a phone, pods on a desktop.
+        { path: '/', redirect: () => (isPhone.value ? '/problems' : '/pods') },
         { path: '/pods', name: 'pods', component: () => import('./pages/ResourcePage.vue'), props: { gvr: 'v1/pods' } },
         {
             path: '/r/:gvr(.*)',
@@ -14,7 +17,14 @@ export default createRouter({
         { path: '/flux', name: 'flux', component: () => import('./pages/FluxOverviewPage.vue') },
         { path: '/flux/graph', name: 'flux-graph', component: () => import('./pages/FluxGraphPage.vue') },
         { path: '/problems', name: 'problems', component: () => import('./pages/ProblemsPage.vue') },
-        { path: '/overview', name: 'overview', component: () => import('./pages/ProblemsPage.vue'), meta: { placeholder: 'Overview' } },
+        { path: '/overview', name: 'overview', component: () => import('./pages/OverviewPage.vue') },
+        // Security: `/security` is the Vulnerabilities overview (an image's reports open through `?image=`), `/security/policies` the Kyverno policies.
+        { path: '/security', name: 'security', component: () => import('./pages/SecurityPage.vue') },
+        { path: '/security/policies', name: 'security-policies', component: () => import('./pages/SecurityPage.vue') },
+        // Network (Hubble): drops, service map, relay status.
+        { path: '/network/drops', name: 'network-drops', component: () => import('./pages/NetworkPage.vue') },
+        { path: '/network/map', name: 'network-map', component: () => import('./pages/NetworkPage.vue') },
+        { path: '/network/status', name: 'network-status', component: () => import('./pages/NetworkPage.vue') },
         { path: '/:rest(.*)*', redirect: '/pods' }
     ]
 });

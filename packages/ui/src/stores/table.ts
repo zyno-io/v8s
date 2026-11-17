@@ -50,10 +50,12 @@ export function nextSort(cur: readonly Sort[], col: string, additive: boolean): 
 }
 
 /**
- * Selection key: the object's identity (`cluster|namespace|name`), never the wire row id, which belongs to one subscription
- * and is reused after a remount. (`uid` would be stronger, but ObjectRef does not carry one yet.)
+ * Selection key: the object's identity (`cluster|namespace|name`, plus `|uid` when the ref carries one), never the wire row id,
+ * which belongs to one subscription and is reused after a remount. Table rows carry no uid, so a row selection keys on the name;
+ * an object read through `object.get` (the drawer) keys on the incarnation as well.
  */
-export const selectionKey = (r: Pick<ObjectRef, 'cluster' | 'namespace' | 'name'>): string => `${r.cluster}|${r.namespace ?? ''}|${r.name ?? ''}`;
+export const selectionKey = (r: Pick<ObjectRef, 'cluster' | 'namespace' | 'name' | 'uid'>): string =>
+    `${r.cluster}|${r.namespace ?? ''}|${r.name ?? ''}` + (r.uid ? `|${r.uid}` : '');
 
 export type SelectionRefs = ReadonlyMap<string, ObjectRef>;
 

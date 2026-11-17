@@ -6,6 +6,10 @@ import type {
     ClustersListResult,
     ClusterStates,
     ErrorBody,
+    Flow,
+    FlowFilter,
+    FlowRate,
+    FlowScope,
     JobFrame,
     JobsListResult,
     KindsListResult,
@@ -20,6 +24,7 @@ import type {
     ClusterState,
     Column,
     ConnectionStatus,
+    FlowUpdate,
     LogLineView,
     LogSearchState,
     LogUpdate,
@@ -93,6 +98,41 @@ export interface LogStreamHandle {
     close(): void;
 }
 
+export interface FlowOpenOptions {
+    cluster: string;
+    scope: FlowScope;
+    filter?: FlowFilter;
+    /** Flows kept in the ring buffer: desktop 20k, phone 2k. */
+    capacity?: number;
+    useWriteContext?: boolean;
+}
+
+/**
+ * A Hubble flows stream owned by the Data Worker. Like a log stream nothing here is a dataset: the ring buffer lives in the worker
+ * and the main thread holds the counters and the flows of the viewport it asked for. Read `flowAt()` after touching `version.value`.
+ */
+export interface FlowStreamHandle {
+    readonly sid: number;
+    readonly usedContext: string;
+    readonly state: ShallowRef<'live' | 'ended' | 'error'>;
+    readonly endError: ShallowRef<string>;
+    /** Flows ever received (absolute index one past the newest). */
+    readonly total: ShallowRef<number>;
+    /** Absolute index of the oldest flow still buffered. */
+    readonly first: ShallowRef<number>;
+    /** Latest sampling report (`shown`/`total` per second); null until the agent sends one. */
+    readonly rate: ShallowRef<FlowRate | null>;
+    /** Bumped once per batched post (at most one per frame). */
+    readonly version: ShallowRef<number>;
+    flowAt(abs: number): Flow | undefined;
+    /** Tells the worker which flows to post: `[first, first + count)`, or the newest `count` when `follow`. */
+    setView(first: number, count: number, follow: boolean): void;
+    /** Pauses the agent side (hidden tab); a stream paused for 10 s is cancelled by the agent. */
+    setPaused(paused: boolean): void;
+    clear(): void;
+    close(): void;
+}
+
 /** A live single-object subscription (`object.subscribe`); frames arrive on `onFrame` until `close()`. */
 export interface ObjectSubscription {
     readonly oid: number;
@@ -119,6 +159,8 @@ export interface Agent {
     subscribeView(query: ViewQuery, window: Window): ViewHandle;
     /** Opens a log stream in the Data Worker. Rejects with RpcError (`write_confirm` etc.) when `stream.open` is refused. */
     openStream(type: 'logs', params: LogOpenOptions): Promise<LogStreamHandle>;
+    /** Opens a Hubble flows stream in the Data Worker. Rejects with RpcError (`bad_request` for an unscoped follow, `unavailable`, …). */
+    openStream(type: 'flows', params: FlowOpenOptions): Promise<FlowStreamHandle>;
     /** Opens an interactive stream (exec, debug container, node shell) on its own socket, on the main thread. */
     openStream(type: 'exec' | 'debug' | 'nodeshell', params: Omit<StreamOpenParams, 'type'>): Promise<ShellHandle>;
     /** Streams the whole log to a file (File System Access API when available, else a browser download). */
@@ -181,6 +223,11 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
     const jobMap = new Map<string, JobFrame>();
     let jobTimer: ReturnType<typeof setTimeout> | undefined;
     const logs = new Map<number, InternalLog>();
+    const flowStreams = new Map<number, { apply(m: FlowUpdate): void }>();
+    const flowOpens = new Map<
+        number,
+        { resolve: (h: FlowStreamHandle) => void; reject: (e: Error) => void; make: (usedContext: string) => FlowStreamHandle }
+    >();
     const logOpens = new Map<
         number,
         { resolve: (h: LogStreamHandle) => void; reject: (e: Error) => void; make: (usedContext: string) => LogStreamHandle }
@@ -260,6 +307,19 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             }
             case 'log':
                 logs.get(m.sid)?.apply(m);
+                break;
+            case 'flow.opened':
+                flowOpens.get(m.sid)?.resolve(flowOpens.get(m.sid)!.make(m.usedContext ?? ''));
+                flowOpens.delete(m.sid);
+                break;
+            case 'flow.error': {
+                const o = flowOpens.get(m.sid);
+                flowOpens.delete(m.sid);
+                o?.reject(new RpcError(m.error.code, m.error.message, m.error.live, m.error.hint, m.error.applied));
+                break;
+            }
+            case 'flow':
+                flowStreams.get(m.sid)?.apply(m);
                 break;
             case 'columns': {
                 const v = views.get(m.qid);
@@ -383,8 +443,9 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 // jobs are optional: an older agent simply has none
             }
         },
-        openStream(type: string, params: LogOpenOptions | Omit<StreamOpenParams, 'type'>): Promise<never> {
+        openStream(type: string, params: LogOpenOptions | FlowOpenOptions | Omit<StreamOpenParams, 'type'>): Promise<never> {
             if (type === 'logs') return openLogs(params as LogOpenOptions) as Promise<never>;
+            if (type === 'flows') return openFlows(params as FlowOpenOptions) as Promise<never>;
             return openShell(type, params as Omit<StreamOpenParams, 'type'>) as Promise<never>;
         },
         pickLogFile,
@@ -466,10 +527,76 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         });
     }
 
+    function openFlows(params: FlowOpenOptions): Promise<FlowStreamHandle> {
+        const { capacity = 20_000, useWriteContext, ...flows } = params;
+        const sid = nextSid++;
+        return new Promise<FlowStreamHandle>((resolve, reject) => {
+            const make = (usedContext: string): FlowStreamHandle => {
+                const state = shallowRef<'live' | 'ended' | 'error'>('live');
+                const endError = shallowRef('');
+                const total = shallowRef(0);
+                const first = shallowRef(0);
+                const rate = shallowRef<FlowRate | null>(null);
+                const version = shallowRef(0);
+                let list: readonly Flow[] = [];
+                let from = 0;
+                let closed = false;
+                const handle: FlowStreamHandle = markRaw({
+                    sid,
+                    usedContext,
+                    state,
+                    endError,
+                    total,
+                    first,
+                    rate,
+                    version,
+                    flowAt(abs: number) {
+                        const i = abs - from;
+                        return i >= 0 && i < list.length ? list[i] : undefined;
+                    },
+                    setView: (f: number, count: number, follow: boolean) => post({ t: 'flow.view', sid, first: f, count, follow }),
+                    setPaused: (paused: boolean) => post({ t: 'flow.pause', sid, paused }),
+                    clear: () => post({ t: 'flow.clear', sid }),
+                    close() {
+                        if (closed) return;
+                        closed = true;
+                        flowStreams.delete(sid);
+                        post({ t: 'flow.close', sid });
+                    }
+                });
+                flowStreams.set(sid, {
+                    apply(m) {
+                        if (m.flows) {
+                            list = m.flows;
+                            from = m.from;
+                        }
+                        if (m.rate) rate.value = m.rate;
+                        if (state.value !== m.state) state.value = m.state;
+                        if (m.error && endError.value !== m.error) endError.value = m.error;
+                        if (total.value !== m.total) total.value = m.total;
+                        if (first.value !== m.first) first.value = m.first;
+                        version.value++;
+                    }
+                });
+                return handle;
+            };
+            flowOpens.set(sid, { resolve, reject, make });
+            post({
+                t: 'flow.open',
+                sid,
+                params: { type: 'flows', flows: { cluster: flows.cluster, scope: flows.scope, filter: flows.filter ?? {} }, useWriteContext },
+                capacity
+            });
+        });
+    }
+
     async function openShell(type: string, params: Omit<StreamOpenParams, 'type'>): Promise<ShellHandle> {
         const res = await call<StreamOpenResult>('stream.open', { ...params, type });
         if (!res?.streamId) throw new RpcError('internal', 'stream.open returned no stream id');
-        const sock = new WebSocket(streamUrlOf(opts.url), [Subprotocol, 'token.' + opts.token, 'stream.' + res.streamId]);
+        const sock = new WebSocket(
+            streamUrlOf(opts.url),
+            opts.token ? [Subprotocol, 'token.' + opts.token, 'stream.' + res.streamId] : [Subprotocol, 'stream.' + res.streamId]
+        );
         return createShell({ socket: sock as unknown as import('./shell.ts').SocketLike, usedContext: res.usedContext ?? '' });
     }
 
@@ -489,7 +616,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         if (!res?.downloadUrl) throw new RpcError('internal', 'stream.open returned no download url');
         const url = httpOrigin(opts.url) + res.downloadUrl;
         if (file) {
-            const r = await fetch(url, { headers: { Authorization: 'Bearer ' + opts.token } });
+            const r = await fetch(url, opts.token ? { headers: { Authorization: 'Bearer ' + opts.token } } : { credentials: 'same-origin' });
             if (!r.ok || !r.body) throw new RpcError('unavailable', `download failed (${r.status})`);
             await r.body.pipeTo(await file.createWritable());
             return;

@@ -21,6 +21,8 @@ export interface ConfirmDialog {
     /** The user must type this exactly before the button enables. */
     phrase?: string;
     note?: string;
+    /** Phones confirm by holding the button (state-changing, not necessarily destructive actions). */
+    hold?: boolean;
     /** "Runs as <write context>": which context will perform the action; shown in the dialog body. */
     runAs?: string;
     run: () => Promise<void> | void;

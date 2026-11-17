@@ -15,6 +15,7 @@ import {
     KindRequest,
     KindResponse
 } from '../codec.ts';
+import { FlowSession } from '../flows/session.ts';
 import { LogSession } from '../logs/session.ts';
 import { ColDict, Subprotocol, Version } from '../protocol.gen.ts';
 
@@ -61,6 +62,7 @@ type Pending =
     | { kind: 'passthrough'; rid: number }
     | { kind: 'subscribe'; qid: number }
     | { kind: 'logopen'; sid: number; capacity: number; maxBytes?: number; multi: boolean }
+    | { kind: 'flowopen'; sid: number; capacity: number }
     | { kind: 'ignore' };
 
 /** `ws://host/ws?x` → `ws://host/stream?x`. */
@@ -83,6 +85,8 @@ export class DataCore {
     private endpoint = { url: '', token: '' };
     private logs = new Map<number, LogSession>();
     private cancelledLogs = new Set<number>();
+    private flows = new Map<number, FlowSession>();
+    private cancelledFlows = new Set<number>();
 
     constructor(private io: CoreIO) {}
 
@@ -159,6 +163,32 @@ export class DataCore {
                     this.io.closeStream(msg.sid);
                 } else {
                     this.cancelledLogs.add(msg.sid);
+                }
+                break;
+            }
+            case 'flow.open': {
+                const rid = this.nextRid++;
+                this.pending.set(rid, { kind: 'flowopen', sid: msg.sid, capacity: msg.capacity });
+                this.sendRequest(rid, 'stream.open', { ...msg.params, type: 'flows' });
+                break;
+            }
+            case 'flow.view':
+                this.flows.get(msg.sid)?.setView(msg.first, msg.count, msg.follow);
+                break;
+            case 'flow.pause':
+                this.flows.get(msg.sid)?.setPaused(msg.paused);
+                break;
+            case 'flow.clear':
+                this.flows.get(msg.sid)?.clear();
+                break;
+            case 'flow.close': {
+                const s = this.flows.get(msg.sid);
+                if (s) {
+                    s.dispose();
+                    this.flows.delete(msg.sid);
+                    this.io.closeStream(this.flowKey(msg.sid));
+                } else {
+                    this.cancelledFlows.add(msg.sid);
                 }
                 break;
             }
@@ -246,6 +276,8 @@ export class DataCore {
         for (const [, p] of this.pending) {
             if (p.kind === 'passthrough') {
                 this.io.post({ t: 'response', rid: p.rid, error: { code: 'unavailable', message: 'connection closed' } });
+            } else if (p.kind === 'flowopen' && !this.cancelledFlows.delete(p.sid)) {
+                this.io.post({ t: 'flow.error', sid: p.sid, error: { code: 'unavailable', message: 'connection closed' } });
             } else if (p.kind === 'logopen' && !this.cancelledLogs.delete(p.sid)) {
                 // A stream.open that never gets its response: settle the opener so the pane can offer Reconnect.
                 this.io.post({ t: 'log.error', sid: p.sid, error: { code: 'unavailable', message: 'connection closed' } });
@@ -286,8 +318,31 @@ export class DataCore {
                 }
             );
             this.logs.set(sid, session);
-            this.io.connectStream(sid, streamUrl(this.endpoint.url), [Subprotocol, 'token.' + this.endpoint.token, 'stream.' + r.streamId]);
+            this.io.connectStream(sid, streamUrl(this.endpoint.url), this.streamProtocols(r.streamId));
             this.io.post({ t: 'log.opened', sid, usedContext: r.usedContext });
+        } else if (p.kind === 'flowopen') {
+            if (this.cancelledFlows.delete(p.sid)) return;
+            const r = res.result as StreamOpenResult | undefined;
+            if (res.error || !r?.streamId) {
+                this.io.post({ t: 'flow.error', sid: p.sid, error: res.error ?? { code: 'internal', message: 'stream.open returned no stream id' } });
+                return;
+            }
+            const sid = p.sid;
+            const key = this.flowKey(sid);
+            const session = new FlowSession(
+                { sid, capacity: p.capacity },
+                {
+                    send: text => this.io.sendStream(key, text),
+                    closeSocket: () => this.io.closeStream(key),
+                    post: m => this.io.post(m),
+                    schedule: (fn, ms) => this.io.schedule(fn, ms),
+                    cancel: h => this.io.cancel(h),
+                    now: () => this.io.now()
+                }
+            );
+            this.flows.set(sid, session);
+            this.io.connectStream(key, streamUrl(this.endpoint.url), this.streamProtocols(r.streamId));
+            this.io.post({ t: 'flow.opened', sid, usedContext: r.usedContext });
         } else if (p.kind === 'subscribe') {
             const view = this.views.get(p.qid);
             if (!view) return;
@@ -403,16 +458,33 @@ export class DataCore {
 
     // ---- log stream sockets ----
 
+    /** Log and flow streams share one socket-key space: flows use the negative of their sid. */
+    private flowKey(sid: number): number {
+        return -sid;
+    }
+
+    /** Offered subprotocols of a `/stream` socket: no `token.*` in hosted mode (the cookie authenticates). */
+    private streamProtocols(streamId: string): string[] {
+        return this.endpoint.token ? [Subprotocol, 'token.' + this.endpoint.token, 'stream.' + streamId] : [Subprotocol, 'stream.' + streamId];
+    }
+
     handleStreamBinary(sid: number, bytes: Uint8Array): void {
-        this.logs.get(sid)?.onBinary(bytes);
+        if (sid > 0) this.logs.get(sid)?.onBinary(bytes);
     }
 
     handleStreamText(sid: number, text: string): void {
-        this.logs.get(sid)?.onText(text);
+        if (sid < 0) this.flows.get(-sid)?.onText(text);
+        else this.logs.get(sid)?.onText(text);
     }
 
     handleStreamClosed(sid: number, reason: string): void {
-        this.logs.get(sid)?.onClose(reason);
+        if (sid < 0) this.flows.get(-sid)?.onClose(reason);
+        else this.logs.get(sid)?.onClose(reason);
+    }
+
+    /** Test/diagnostic accessor. */
+    flowSession(sid: number): FlowSession | undefined {
+        return this.flows.get(sid);
     }
 
     /** Test/diagnostic accessor. */

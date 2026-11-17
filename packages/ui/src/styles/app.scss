@@ -574,3 +574,23 @@ h1 {
         flex-wrap: wrap;
     }
 }
+
+/* Touch targets: 44px hit areas on coarse pointers (the 32px controls keep their look and grow by padding). */
+@media (pointer: coarse) {
+    .btn,
+    .field,
+    .chip,
+    .nav {
+        min-height: 44px;
+    }
+    .cb {
+        min-width: 20px;
+        min-height: 20px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hold .fill {
+        transition: none;
+    }
+}

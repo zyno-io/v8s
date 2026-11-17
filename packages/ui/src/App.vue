@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import BottomNav from './components/BottomNav.vue';
 import ClusterSelector from './components/ClusterSelector.vue';
 import CommandBar from './components/CommandBar.vue';
 import DialogHost from './components/DialogHost.vue';
@@ -13,8 +14,10 @@ import SideNav from './components/SideNav.vue';
 import Toaster from './components/Toaster.vue';
 import TopBar from './components/TopBar.vue';
 import { bootMessage, bootState, getAgent, refreshKinds, startAgent } from './lib/agent.ts';
+import { clusterLoginUrl, hostedMe, loginUrl, logoutState, sessionEnded } from './lib/hosted.ts';
 import { installGlobalKeys } from './lib/keys.ts';
 import { useClustersStore } from './stores/clusters.ts';
+import { useIntegrationsStore } from './stores/integrations.ts';
 import { useSettingsStore } from './stores/settings.ts';
 import { useUiStore } from './stores/ui.ts';
 
@@ -26,11 +29,33 @@ const CreateDialog = defineAsyncComponent(() => import('./components/CreateDialo
 const clusters = useClustersStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
+const integrations = useIntegrationsStore();
 const route = useRoute();
 const drawerOpen = computed(() => !!(route.query.c && route.query.n));
 const closed = computed(() => bootState.value === 'ready' && getAgent().status.value === 'closed');
 let uninstall: (() => void) | null = null;
 const reload = () => location.reload();
+
+// Hosted: a cluster whose app login lapsed (`auth-required`), or `/api/me` saying `clusterAuth: required`, needs the cluster-login flow.
+const needsClusterLogin = computed(
+    () => !!hostedMe.value && (hostedMe.value.clusterAuth === 'required' || clusters.states.some(s => s.phase === 'auth-required'))
+);
+const returnPath = () => location.pathname + location.search;
+const signIn = () => {
+    try {
+        sessionStorage.removeItem('v8s.loginAt');
+    } catch {
+        // no storage
+    }
+    location.assign(loginUrl('/'));
+};
+const clusterLogin = () => location.assign(clusterLoginUrl(returnPath()));
+
+// A hosted socket that closes may mean the session ended (expiry, eviction, logout elsewhere): then sign in again.
+watch(closed, async isClosed => {
+    if (isClosed && hostedMe.value && !logoutState.active && (await sessionEnded(fetch.bind(globalThis))) && !logoutState.active)
+        location.assign(loginUrl(returnPath()));
+});
 
 async function boot() {
     await startAgent();
@@ -48,7 +73,10 @@ async function boot() {
 // A cluster finishing discovery changes the union of kinds; re-read `kinds.list` when the set of phases changes.
 watch(
     () => clusters.states.map(s => s.id + s.phase).join(),
-    () => refreshKinds()
+    () => {
+        refreshKinds();
+        void integrations.refreshHubble();
+    }
 );
 
 onMounted(() => {
@@ -64,6 +92,9 @@ onBeforeUnmount(() => uninstall?.());
         <div v-if="closed" class="banner" role="alert">
             Disconnected from the agent. <button class="btn sm" type="button" @click="reload">Reload</button>
         </div>
+        <div v-if="needsClusterLogin" class="banner warn" role="alert" data-testid="cluster-auth-banner">
+            Sign in to the clusters to continue. <button class="btn sm" type="button" @click="clusterLogin">Sign in to clusters</button>
+        </div>
         <div class="body">
             <SideNav />
             <div class="content">
@@ -71,6 +102,7 @@ onBeforeUnmount(() => uninstall?.());
                 <CommandBar />
             </div>
         </div>
+        <BottomNav />
         <ClusterSelector />
         <ShortcutsOverlay />
         <DetailDrawer v-if="drawerOpen" />
@@ -94,6 +126,15 @@ onBeforeUnmount(() => uninstall?.());
             <p class="muted">
                 Open this page with <span class="mono">#agent=ws://127.0.0.1:PORT/ws&amp;token=…</span> or run inside the v8s desktop app.
             </p>
+        </template>
+        <template v-else-if="bootState === 'signed-out'">
+            <p><b>You have been signed out.</b></p>
+            <button class="btn primary" type="button" data-testid="sign-in" @click="signIn">Sign in</button>
+        </template>
+        <template v-else-if="bootState === 'login-loop'">
+            <p><b>Sign-in did not complete.</b></p>
+            <p class="muted">The session cookie was not kept. Check that cookies are allowed for this site, then try again.</p>
+            <button class="btn" type="button" data-testid="sign-in" @click="signIn">Try again</button>
         </template>
         <template v-else>
             <p><b>Could not connect.</b></p>
@@ -132,6 +173,11 @@ onBeforeUnmount(() => uninstall?.());
     display: flex;
     gap: 10px;
     align-items: center;
+}
+.banner.warn {
+    background: var(--warning-soft);
+    border-bottom-color: var(--warning-b);
+    color: var(--warning);
 }
 .splash {
     height: 100%;
