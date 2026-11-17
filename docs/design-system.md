@@ -70,6 +70,25 @@ The core component. It is not built from PixelCI's `list-row` (14px × 18px padd
 - **Keyboard**: `j`/`k` move focus, `Enter` opens detail, `x` toggles selection, `/` focuses filter, `e` edit YAML, `l` logs, `s` shell, `d` describe. Shown in a legend like PixelCI's shortcut legend.
 - **Empty, loading, partial** states: an empty filtered result says what filter hid what. While a cluster is still syncing, its rows stream in and the toolbar shows "syncing prod-eu · 4,210 rows" (desktop) or "syncing prod-eu · 35%" (hosted, where totals are never unfiltered). Never a full-table spinner.
 
+### Command bar (k9s-style)
+
+Typing `:` anywhere opens a one-line command bar at the top of the content (Floating shadow, mono input, completion list below). It is the keyboard-first way around v8s, modelled on k9s:
+
+| Command | Effect |
+| --- | --- |
+| `:ctx` | open the cluster selector |
+| `:ctx <name> [<name>…]` | select exactly these clusters (names or groups; completes from contexts and groups) |
+| `:ctx +<name>` / `:ctx -<name>` | add or remove one cluster from the selection |
+| `:<type>` | open a resource type by plural, kind, or short name (`:pods`, `:po`, `:deploy`, `:svc`, `:hr`, `:ks`); CRDs complete from discovery |
+| `:<type> <ns>` | open the type filtered to a namespace (`:po payments`) |
+| `:<type> <ns>/<name>` | open one object's detail |
+| `:ns <ns>` / `:ns all` | set or clear the namespace filter on the current view |
+| `:problems` (`:pb`) | open Problems |
+| `:star` / `:unstar` | star or unstar the current type |
+| `:q` / `Esc` | close the bar |
+
+Also, outside the bar: `/` focuses the filter, `?` shows every shortcut, `Esc` clears filter then selection then closes the drawer, and `Ctrl-a`-style shortcuts are avoided so browser and OS shortcuts keep working. Completion is prefix-then-fuzzy over commands, kinds, namespaces (from the agent's per-cluster namespace index), clusters, and groups. Unknown commands say so inline; they never navigate somewhere unexpected.
+
 ### Filter bar
 
 Lifted from the CI Dashboard's filter bar: a search field (max 360px) with a `/` key cap, then **tone filter chips**: a checkbox styled as a 28px chip with an icon and a live count, tooltip carrying the name and description, accessible label carrying both. The Problems view uses exactly this pattern for problem classes. Namespace filter is a multi-select with search.

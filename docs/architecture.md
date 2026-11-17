@@ -216,7 +216,7 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 - Curated views for P1 kinds in the [coverage matrix](data-model.md#coverage-matrix); detail drawer; events; related objects.
 - YAML view/edit (Update with resourceVersion, `kubectl edit` semantics) with server-side dry run, ownership warnings from `managedFields`, and conflict diff; create from YAML (server-side apply); delete; scale; restart.
 - Logs (single container, follow, search, download).
-- Starred resource types, bookmarks, global search, keyboard navigation, light/dark.
+- Starred resource types, bookmarks, global search, keyboard navigation and the k9s-style command bar (`:ctx`, `:<type> [ns]`, `:ns`; [design-system.md](design-system.md#command-bar-k9s-style)), light/dark.
 - RBAC-aware UI (`SelfSubjectReview`, `SelfSubjectRulesReview`, `SelfSubjectAccessReview`).
 - `v8s serve`. Signed builds for macOS, Windows, Linux; auto-update.
 
