@@ -115,3 +115,37 @@ func TestNamespaceIndexSwapRemove(t *testing.T) {
 		t.Fatalf("wrong survivors: %v", seen)
 	}
 }
+
+func TestProvisionalRowsThenReplaceReconciles(t *testing.T) {
+	s := New()
+	notified := 0
+	s.SetNotify(func() { notified++ })
+	s.Provisional([]*ingest.Row{row("u1", "ns", "a", 0), row("u2", "ns", "b", 0), row("gone", "ns", "gone", 0)})
+	if s.Len() != 3 || s.Synced() || notified == 0 {
+		t.Fatalf("provisional rows not visible: len=%d synced=%v", s.Len(), s.Synced())
+	}
+	s.Drain(nil, -1, nil, nil)
+	// the final list: u1 unchanged, u2 changed, gone removed, u3 new
+	if err := s.Replace([]interface{}{row("u1", "ns", "a", 0), row("u2", "ns", "b", 5), row("u3", "ns", "c", 0)}, "9"); err != nil {
+		t.Fatal(err)
+	}
+	evs, _, _ := s.Drain(nil, -1, nil, nil)
+	kinds := map[string]int{}
+	for _, e := range evs {
+		switch {
+		case e.Old == nil:
+			kinds["add"]++
+		case e.New == nil:
+			kinds["del"]++
+		default:
+			kinds["upd"]++
+		}
+	}
+	if s.Len() != 3 || !s.Synced() || kinds["add"] != 1 || kinds["del"] != 1 || kinds["upd"] != 1 {
+		t.Fatalf("replace did not reconcile: len=%d events=%v", s.Len(), kinds)
+	}
+	s.Provisional([]*ingest.Row{row("late", "ns", "late", 0)})
+	if s.Len() != 3 {
+		t.Fatal("provisional rows must be ignored once synced")
+	}
+}

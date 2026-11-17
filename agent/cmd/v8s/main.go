@@ -22,6 +22,8 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/cluster"
 	"github.com/zyno-io/v8s/agent/internal/fake"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	"github.com/zyno-io/v8s/agent/internal/ops"
+	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/webui"
@@ -50,6 +52,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	fakeOpt := fs.String("fake", "", "serve synthetic clusters, e.g. clusters=3,pods=50000,churn=200")
 	staticDir := fs.String("static-dir", "", "serve UI files from this directory at /")
 	devToken := fs.String("dev-token", "", "fixed token (only with --fake)")
+	settingsPath := fs.String("settings", "", "settings file (default: <user config dir>/v8s/settings.json; memory-only with --fake unless set)")
 	lifeline := fs.Bool("stdin-lifeline", false, "exit when stdin reaches EOF")
 	var origins stringList
 	fs.Var(&origins, "allowed-origin", "allowed WebSocket Origin (repeatable)")
@@ -79,7 +82,7 @@ func runAgent(args []string, hooks agentHooks) error {
 		}
 		src = fake.NewSource(cfg)
 	} else {
-		src = cluster.KubeSource{Loader: kube.Loader{Path: *kubeconfig}}
+		src = &cluster.KubeSource{Loader: kube.Loader{Path: *kubeconfig}}
 	}
 
 	token := *devToken
@@ -97,8 +100,24 @@ func runAgent(args []string, hooks agentHooks) error {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 
+	spath := *settingsPath
+	if spath == "" && !fakeSet {
+		if spath, err = settings.DefaultPath(); err != nil {
+			return err
+		}
+	}
+	set, err := settings.Open(spath)
+	if err != nil {
+		return err
+	}
 	eng := view.NewEngine()
 	mgr := cluster.NewManager(ctx, src, eng, log)
+	mgr.SetSettings(set)
+	opsSvc := ops.New(ops.Config{
+		Conn:    func(id string) (kube.Conn, error) { return src.Backend(id) },
+		Links:   mgr.Links,
+		Resolve: mgr.Resolve,
+	})
 	if fakeSet {
 		// Remembered selection in fake mode = all fake clusters; the UI still calls clusters.select.
 		log.Info("fake mode", "clusters", len(src.Clusters()))
@@ -106,7 +125,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	go eng.Run(ctx)
 
 	srv := wire.NewServer(wire.Options{
-		Manager: mgr, Engine: eng, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
+		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: set, Token: token, Mode: src.Mode(), AgentVersion: version.Version,
 		Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "",
 		StaticDir: *staticDir, Log: log,
 	})

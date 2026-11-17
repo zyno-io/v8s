@@ -18,21 +18,28 @@ const rebuildThreshold = 512
 
 const MaxWindow = 20000
 
-type clusterRec struct {
-	name     string
+// srcRec is the store of one (cluster, GVR) attached to the engine.
+type srcRec struct {
+	cl       uint16
+	gv       uint16
+	epoch    uint32 // bumped whenever a different store is attached: handles and gens restart with a new store
 	st       *store.Store
 	attached bool
 	evbuf    []store.Event
 	snap     []store.Item
 }
 
+type srcKey struct{ cl, gv uint16 }
+
 // Engine owns the materialized views of every selected cluster. All mutation happens under mu.
 type Engine struct {
 	mu    sync.Mutex
 	names []string
 	strs  []ingest.Str
-	recs  []*clusterRec
-	idx   map[string]uint16
+	idx   map[string]uint16 // cluster name → index
+	gvrs  map[string]uint16 // gvr → index
+	srcs  map[srcKey]*srcRec
+	srcL  []*srcRec // iteration order
 	views map[string]*View
 
 	wake chan struct{}
@@ -48,7 +55,8 @@ type Engine struct {
 
 func NewEngine() *Engine {
 	return &Engine{
-		idx: make(map[string]uint16), views: make(map[string]*View), wake: make(chan struct{}, 1),
+		idx: make(map[string]uint16), gvrs: make(map[string]uint16), srcs: make(map[srcKey]*srcRec),
+		views: make(map[string]*View), wake: make(chan struct{}, 1),
 		listeners: make(map[chan struct{}]struct{}),
 		Debounce:  8 * time.Millisecond, IdleTTL: 60 * time.Second,
 	}
@@ -102,26 +110,53 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 }
 
-// Attach makes a cluster's store part of every view whose query accepts it.
-func (e *Engine) Attach(name string, st *store.Store) {
-	e.mu.Lock()
+// Attach makes a cluster's pod store part of every pod view (shorthand for AttachKind).
+func (e *Engine) Attach(name string, st *store.Store) { e.AttachKind(name, PodsGVR, st) }
+
+func (e *Engine) clusterIdx(name string) uint16 {
 	cl, ok := e.idx[name]
 	if !ok {
-		cl = uint16(len(e.recs))
+		cl = uint16(len(e.names))
 		e.idx[name] = cl
 		e.names = append(e.names, name)
 		e.strs = append(e.strs, ingest.Str(intern(name)))
-		e.recs = append(e.recs, &clusterRec{name: name})
 	}
-	rec := e.recs[cl]
+	return cl
+}
+
+func (e *Engine) gvrIdx(gvr string) uint16 {
+	gv, ok := e.gvrs[gvr]
+	if !ok {
+		gv = uint16(len(e.gvrs))
+		e.gvrs[gvr] = gv
+	}
+	return gv
+}
+
+// AttachKind makes the store of (cluster, gvr) part of every view of that gvr whose query accepts it.
+func (e *Engine) AttachKind(name, gvr string, st *store.Store) {
+	e.mu.Lock()
+	cl, gv := e.clusterIdx(name), e.gvrIdx(gvr)
+	k := srcKey{cl, gv}
+	rec := e.srcs[k]
+	if rec == nil {
+		rec = &srcRec{cl: cl, gv: gv}
+		e.srcs[k] = rec
+		e.srcL = append(e.srcL, rec)
+	}
+	if rec.st != st {
+		rec.epoch++
+	}
 	rec.st, rec.attached = st, true
 	st.SetNotify(e.signal)
-	// Bulk-load: drain + snapshot atomically, then merge into every view.
+	// Bulk-load: drain + snapshot atomically, then merge into every view of the gvr.
 	events, snap, _ := st.Drain(rec.evbuf, 0, rec.snap, nil)
 	rec.evbuf, rec.snap = events, snap
 	changed := false
 	for _, v := range e.views {
-		changed = v.replaceCluster(cl, snap) || changed
+		if v.gv == gv {
+			changed = v.replaceCluster(cl, snap) || changed
+		}
 	}
 	e.mu.Unlock()
 	if changed {
@@ -129,23 +164,46 @@ func (e *Engine) Attach(name string, st *store.Store) {
 	}
 }
 
-// Detach removes a cluster's rows from every view (the store itself is not touched).
+// Detach removes every store of a cluster from the views (the stores themselves are not touched).
 func (e *Engine) Detach(name string) {
 	e.mu.Lock()
 	cl, ok := e.idx[name]
-	if !ok || !e.recs[cl].attached {
+	if !ok {
 		e.mu.Unlock()
 		return
 	}
-	rec := e.recs[cl]
-	rec.attached = false
-	rec.st.SetNotify(nil)
-	rec.st, rec.evbuf, rec.snap = nil, nil, nil
-	for _, v := range e.views {
-		v.replaceCluster(cl, nil)
+	for _, rec := range e.srcL {
+		if rec.cl == cl && rec.attached {
+			e.detachLocked(rec)
+		}
 	}
 	e.mu.Unlock()
 	e.markAllDirty()
+}
+
+// DetachKind removes one (cluster, gvr) store from the views.
+func (e *Engine) DetachKind(name, gvr string) {
+	e.mu.Lock()
+	cl, ok1 := e.idx[name]
+	gv, ok2 := e.gvrs[gvr]
+	if ok1 && ok2 {
+		if rec := e.srcs[srcKey{cl, gv}]; rec != nil && rec.attached {
+			e.detachLocked(rec)
+		}
+	}
+	e.mu.Unlock()
+	e.markAllDirty()
+}
+
+func (e *Engine) detachLocked(rec *srcRec) {
+	rec.attached = false
+	rec.st.SetNotify(nil)
+	rec.st, rec.evbuf, rec.snap = nil, nil, nil // epoch stays: a later attach of a new store bumps it
+	for _, v := range e.views {
+		if v.gv == rec.gv {
+			v.replaceCluster(rec.cl, nil)
+		}
+	}
 }
 
 func (e *Engine) markAllDirty() {
@@ -178,7 +236,7 @@ func (e *Engine) Pump() bool {
 
 func (e *Engine) pumpLocked() bool {
 	changed := false
-	for cl, rec := range e.recs {
+	for _, rec := range e.srcL {
 		if !rec.attached {
 			continue
 		}
@@ -188,11 +246,14 @@ func (e *Engine) pumpLocked() bool {
 			continue
 		}
 		for _, v := range e.views {
+			if v.gv != rec.gv {
+				continue
+			}
 			var c bool
 			if took {
-				c = v.replaceCluster(uint16(cl), snap)
+				c = v.replaceCluster(rec.cl, snap)
 			} else {
-				c = v.apply(uint16(cl), events)
+				c = v.apply(rec.cl, events)
 			}
 			if c {
 				v.markDirty()
@@ -216,12 +277,13 @@ func (e *Engine) Views() int {
 // View is a materialized sorted list for one normalized query, shared by equal queries.
 type View struct {
 	e         *Engine
+	gv        uint16
 	n         *Norm
 	entries   []entry
 	subs      map[*Sub]struct{}
 	cmp       cmpFn
 	key       keyFn
-	match     func(r *ingest.PodRow, cl uint16) bool
+	match     func(r *ingest.Row, cl uint16) bool
 	idleSince time.Time
 }
 
@@ -231,7 +293,7 @@ func (v *View) markDirty() {
 	}
 }
 
-func (v *View) find(row *ingest.PodRow, cl uint16, h uint32) (int, bool) {
+func (v *View) find(row *ingest.Row, cl uint16, h uint32) (int, bool) {
 	probe := mkEntry(row, cl, h, 0)
 	return slices.BinarySearchFunc(v.entries, probe, func(a, b entry) int { return v.cmp(&a, &b) })
 }
@@ -312,15 +374,19 @@ func (e *Engine) viewFor(n *Norm) *View {
 	if v, ok := e.views[n.Key]; ok {
 		return v
 	}
-	v := &View{e: e, n: n, subs: make(map[*Sub]struct{})}
+	gv := e.gvrIdx(n.GVR)
+	v := &View{e: e, gv: gv, n: n, subs: make(map[*Sub]struct{})}
 	v.cmp = e.buildCmp(n)
 	v.key = e.buildKey(n)
 	v.match = e.buildMatch(n)
-	// Drain every cluster atomically with its snapshot so no event is applied twice; existing
-	// views get the events, the new view the snapshot.
+	// Drain every store of the gvr atomically with its snapshot so no event is applied twice;
+	// existing views get the events, the new view the snapshot.
+	// Apply pending feeds first, through the bulk path, so the quadratic per-event application below
+	// only ever sees the few events that race in after.
+	e.pumpLocked()
 	var all []entry
-	for cl, rec := range e.recs {
-		if !rec.attached {
+	for _, rec := range e.srcL {
+		if !rec.attached || rec.gv != gv {
 			continue
 		}
 		events, snap, _ := rec.st.Drain(rec.evbuf, 0, rec.snap, n.Namespaces)
@@ -329,7 +395,7 @@ func (e *Engine) viewFor(n *Norm) *View {
 			// Events were computed against full-state; the snapshot above may be namespace-restricted,
 			// which is fine for the new view but existing views need the events.
 			for _, ov := range e.views {
-				if ov.apply(uint16(cl), events) {
+				if ov.gv == gv && ov.apply(rec.cl, events) {
 					ov.markDirty()
 				}
 			}
@@ -337,8 +403,8 @@ func (e *Engine) viewFor(n *Norm) *View {
 		}
 		for i := range snap {
 			it := &snap[i]
-			if v.match(it.Row, uint16(cl)) {
-				all = append(all, mkEntry(it.Row, uint16(cl), it.H, it.Gen))
+			if v.match(it.Row, rec.cl) {
+				all = append(all, mkEntry(it.Row, rec.cl, it.H, it.Gen))
 			}
 		}
 	}
@@ -349,8 +415,8 @@ func (e *Engine) viewFor(n *Norm) *View {
 }
 
 func (e *Engine) alive(k refKey) bool {
-	rec := e.recs[k.cl]
-	if !rec.attached {
+	rec := e.srcs[srcKey{k.cl, k.gv}]
+	if rec == nil || !rec.attached || rec.epoch != k.ep {
 		return false
 	}
 	_, ok := rec.st.Row(k.h, k.gen)
@@ -360,7 +426,8 @@ func (e *Engine) alive(k refKey) bool {
 // ---- subscriptions --------------------------------------------------------------------
 
 type refKey struct {
-	cl     uint16
+	cl, gv uint16
+	ep     uint32 // attach epoch of the (cluster, gvr) store
 	h, gen uint32
 }
 
@@ -476,7 +543,11 @@ func (s *Sub) totalLocked() int {
 }
 
 func (s *Sub) idFor(en *entry) uint32 {
-	k := refKey{en.cl, en.h, en.gen}
+	var ep uint32
+	if rec := s.e.srcs[srcKey{en.cl, s.v.gv}]; rec != nil {
+		ep = rec.epoch
+	}
+	k := refKey{en.cl, s.v.gv, ep, en.h, en.gen}
 	if id, ok := s.idOf[k]; ok {
 		return id
 	}
@@ -491,8 +562,14 @@ func (s *Sub) indexOfID(id uint32) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	rec := s.e.recs[k.cl]
-	if rec.attached {
+	if k.gv != s.v.gv {
+		return 0, false
+	}
+	rec := s.e.srcs[srcKey{k.cl, k.gv}]
+	if rec != nil && rec.epoch != k.ep {
+		return 0, false
+	}
+	if rec != nil && rec.attached {
 		if row, ok := rec.st.Row(k.h, k.gen); ok {
 			if i, ok := s.v.find(row, k.cl, k.h); ok && s.v.entries[i].gen == k.gen {
 				return i, true
@@ -511,7 +588,18 @@ func (s *Sub) indexOfID(id uint32) (int, bool) {
 func (s *Sub) bounds(total int) (start, end int) {
 	off := s.win.Offset
 	if s.win.AnchorID != 0 {
-		if idx, ok := s.indexOfID(s.win.AnchorID); ok {
+		idx, ok := s.indexOfID(s.win.AnchorID)
+		steady := s.sentOnce && s.sentGen == s.gen
+		switch {
+		case ok && steady && (idx < s.sentOffset || idx >= s.sentOffset+max(1, len(s.sentIDs))) &&
+			s.sentVer[s.win.AnchorID] != s.v.entries[idx].row.Ver():
+			// the anchor row itself changed and re-sorted outside the window the client holds: do not
+			// chase it. (An unchanged anchor that moved because rows were inserted above is followed.)
+			off, ok = s.sentOffset, false
+		case !ok && steady:
+			// the anchor is gone: keep the previous position instead of reading Offset as absolute
+			off = s.sentOffset
+		case ok:
 			off += idx
 		}
 	}
@@ -524,7 +612,7 @@ func (s *Sub) bounds(total int) (start, end int) {
 // PendRow is a row to send.
 type PendRow struct {
 	ID      uint32
-	Row     *ingest.PodRow
+	Row     *ingest.Row
 	Cluster ingest.Str
 }
 
@@ -532,6 +620,7 @@ type PendRow struct {
 // The wire layer consumes it in frames (Commit after each) so a large first patch is split.
 type Pending struct {
 	s       *Sub
+	Mod     *ingest.Module
 	Gen     uint32
 	Total   int
 	Offset  int
@@ -601,7 +690,7 @@ func (s *Sub) Prepare() *Pending {
 			}
 		}
 	}
-	return &Pending{s: s, Gen: s.gen, Total: total, Offset: start, IDs: ids, SendIDs: idsChanged, Rows: rows, Removed: removed}
+	return &Pending{s: s, Mod: s.v.n.Mod, Gen: s.gen, Total: total, Offset: start, IDs: ids, SendIDs: idsChanged, Rows: rows, Removed: removed}
 }
 
 // Commit records that the next nRows rows and nRemoved removed ids (and the ids list when withIDs)
@@ -636,4 +725,14 @@ func (v *View) sort(es []entry) {
 		return
 	}
 	sortEntries(es, v.cmp)
+}
+
+// Module returns the module of the subscription's current view.
+func (s *Sub) Module() *ingest.Module {
+	s.e.mu.Lock()
+	defer s.e.mu.Unlock()
+	if s.v == nil {
+		return nil
+	}
+	return s.v.n.Mod
 }

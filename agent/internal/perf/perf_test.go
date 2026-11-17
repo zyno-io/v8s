@@ -186,7 +186,7 @@ func BenchmarkReflectorIngest10k(b *testing.B) {
 		st := store.New()
 		done := make(chan struct{})
 		st.OnReplace = func(int) { close(done) }
-		r := cache.NewReflectorWithOptions(&ingest.ListerWatcher{API: c}, &ingest.PodRow{}, st, cache.ReflectorOptions{Name: "bench"})
+		r := cache.NewReflectorWithOptions(&ingest.ListerWatcher{API: ingest.PodAdapter{PodAPI: c}}, &ingest.PodRow{}, st, cache.ReflectorOptions{Name: "bench"})
 		ctx, cancel := context.WithCancel(context.Background())
 		go r.RunWithContext(ctx)
 		<-done

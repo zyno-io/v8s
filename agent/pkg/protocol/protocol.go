@@ -36,6 +36,9 @@ const (
 	KindDict FrameKind = 6
 	// KindClusterState (agent → client). Payload: ClusterStates. Sent on any cluster state change.
 	KindClusterState FrameKind = 7
+	// KindObject (agent → client). channel = oid (chosen by the client in object.subscribe). Payload: ObjectFrame.
+	// Sent once after object.subscribe and again on every change of the object. Not acknowledged.
+	KindObject FrameKind = 8
 )
 
 // Hello is sent by the agent right after the WebSocket upgrade.
@@ -53,6 +56,17 @@ type Hello struct {
 //	"view.update"        ViewUpdateParams → (empty)
 //	"view.unsubscribe"   ViewUnsubscribeParams → (empty)
 //	"kinds.list"         → KindsListResult (no params)
+//	"object.get"         ObjectGetParams → ObjectPayload
+//	"object.subscribe"   ObjectSubscribeParams → (empty); frames of KindObject follow on channel oid
+//	"object.unsubscribe" ObjectUnsubscribeParams → (empty)
+//	"object.dryRun"      ObjectDryRunParams → ObjectDryRunResult
+//	"object.apply"       ObjectApplyParams → ObjectApplyResult
+//	"object.delete"      ObjectDeleteParams → MutationResult
+//	"object.action"      ObjectActionParams → MutationResult
+//	"access.check"       AccessCheckParams → AccessCheckResult
+//	"settings.get"       → Settings (no params)
+//	"settings.set"       SettingsSetParams → Settings (the merged document)
+//	"search"             SearchParams → SearchResult
 type Request struct {
 	Method string `msgpack:"method" json:"method"`
 	Params any    `msgpack:"params,omitempty" json:"params,omitempty" tstype:"unknown"`
@@ -65,8 +79,13 @@ type Response struct {
 }
 
 type ErrorBody struct {
-	Code    string `msgpack:"code" json:"code"` // "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal"
-	Message string `msgpack:"message" json:"message"`
+	// Code is one of "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal" |
+	// "conflict" (object.apply update lost a resourceVersion race; Live carries the current object) |
+	// "write_unavailable" (the linked write context was rejected with 401/403; Message is the server's) |
+	// "invalid" (the API server rejected the object, e.g. validation or admission).
+	Code    string         `msgpack:"code" json:"code"`
+	Message string         `msgpack:"message" json:"message"`
+	Live    *ObjectPayload `msgpack:"live,omitempty" json:"live,omitempty"`
 }
 
 // ---- clusters -------------------------------------------------------------------------
@@ -76,6 +95,8 @@ type Cluster struct {
 	Name   string   `msgpack:"name" json:"name"`     // display name
 	Server string   `msgpack:"server" json:"server"` // API server URL, for display
 	Groups []string `msgpack:"groups" json:"groups"`
+	// WriteContext is the id of the linked write context (settings.links), if any.
+	WriteContext string `msgpack:"writeContext,omitempty" json:"writeContext,omitempty"`
 }
 
 type ClustersListResult struct {
@@ -114,14 +135,19 @@ type ClusterStates struct {
 
 // ---- kinds ----------------------------------------------------------------------------
 
-// Kind describes a resource type the UI can open (P0: pods only; the list grows with discovery).
+// Kind describes a resource type the UI can open. kinds.list returns the union over the selected
+// clusters' discovery results.
 type Kind struct {
 	GVR        string   `msgpack:"gvr" json:"gvr"` // "v1/pods", "apps/v1/deployments"
+	Group      string   `msgpack:"group" json:"group"`
+	Version    string   `msgpack:"version" json:"version"`
 	Kind       string   `msgpack:"kind" json:"kind"`
 	Plural     string   `msgpack:"plural" json:"plural"`
 	ShortNames []string `msgpack:"shortNames" json:"shortNames"` // from discovery: "po", "deploy", …
 	Namespaced bool     `msgpack:"namespaced" json:"namespaced"`
-	Available  bool     `msgpack:"available" json:"available"` // false: known to the UI but no view yet
+	Available  bool     `msgpack:"available" json:"available"` // true for every listable kind
+	Curated    bool     `msgpack:"curated" json:"curated"`     // hand-written columns (mode A) vs Table columns (mode C)
+	Clusters   []string `msgpack:"clusters" json:"clusters"`   // selected clusters that serve it
 }
 
 type KindsListResult struct {
@@ -142,8 +168,11 @@ const (
 )
 
 type Column struct {
-	Key  string     `msgpack:"key" json:"key"`
-	Type ColumnType `msgpack:"type" json:"type"`
+	Key   string     `msgpack:"key" json:"key"`
+	Type  ColumnType `msgpack:"type" json:"type"`
+	Label string     `msgpack:"label,omitempty" json:"label,omitempty"`
+	Width int        `msgpack:"width,omitempty" json:"width,omitempty"` // px hint
+	Align string     `msgpack:"align,omitempty" json:"align,omitempty"` // "left" | "right"
 }
 
 type Filter struct {
@@ -226,20 +255,208 @@ type DictAdd struct {
 	Strings []string `msgpack:"strings" json:"strings"`
 }
 
-// ---- pods (P0's one curated kind) ------------------------------------------------------
+// ---- pods ------------------------------------------------------------------------------
 
-// PodColumns is the column schema of the "v1/pods" view, in cell order.
+// PodColumns is the column schema of the "v1/pods" view, in cell order. Other kinds' schemas are
+// returned by view.subscribe (curated modules: docs/protocol.md; Table-mode kinds: from the API server).
 var PodColumns = []Column{
-	{Key: "cluster", Type: ColDict},
-	{Key: "name", Type: ColStr},
-	{Key: "namespace", Type: ColDict},
-	{Key: "ready", Type: ColInt},      // ready containers
-	{Key: "containers", Type: ColInt}, // total containers
-	{Key: "status", Type: ColDict},    // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
-	{Key: "statusTone", Type: ColTone},
-	{Key: "restarts", Type: ColInt},
-	{Key: "node", Type: ColDict},
-	{Key: "createdAt", Type: ColTime},
+	{Key: "cluster", Type: ColDict, Label: "Cluster", Width: 110},
+	{Key: "name", Type: ColStr, Label: "Name", Width: 320},
+	{Key: "namespace", Type: ColDict, Label: "Namespace", Width: 160},
+	{Key: "ready", Type: ColInt, Label: "Ready", Width: 64, Align: "right"},           // ready containers
+	{Key: "containers", Type: ColInt, Label: "Containers", Width: 84, Align: "right"}, // total containers
+	{Key: "status", Type: ColDict, Label: "Status", Width: 140},                       // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
+	{Key: "statusTone", Type: ColTone, Label: "Tone", Width: 40},
+	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 76, Align: "right"},
+	{Key: "node", Type: ColDict, Label: "Node", Width: 160},
+	{Key: "createdAt", Type: ColTime, Label: "Age", Width: 72, Align: "right"},
+}
+
+// ---- objects --------------------------------------------------------------------------
+
+// ObjectRef addresses one object. GVR is "v1/pods" or "apps/v1/deployments".
+type ObjectRef struct {
+	Cluster   string `msgpack:"cluster" json:"cluster"`
+	GVR       string `msgpack:"gvr" json:"gvr"`
+	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string `msgpack:"name,omitempty" json:"name,omitempty"` // empty only for object.dryRun/apply in create mode
+}
+
+type ObjectGetParams struct {
+	Cluster           string `msgpack:"cluster" json:"cluster"`
+	GVR               string `msgpack:"gvr" json:"gvr"`
+	Namespace         string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name              string `msgpack:"name" json:"name"`
+	KeepManagedFields bool   `msgpack:"keepManagedFields,omitempty" json:"keepManagedFields,omitempty"`
+}
+
+// ManagedBy summarizes one managedFields entry: which manager owns which field paths.
+type ManagedBy struct {
+	Manager   string   `msgpack:"manager" json:"manager"`
+	Operation string   `msgpack:"operation" json:"operation"` // "Apply" | "Update"
+	Fields    []string `msgpack:"fields" json:"fields"`       // dotted paths, e.g. "spec.replicas", "metadata.labels.app"
+}
+
+type ObjectOwner struct {
+	Kind string `msgpack:"kind" json:"kind"`
+	Name string `msgpack:"name" json:"name"`
+}
+
+// GitOps names the controller that manages an object, from Flux and Helm labels.
+type GitOps struct {
+	Kind      string `msgpack:"kind" json:"kind"` // "Kustomization" | "HelmRelease" | "Helm"
+	Name      string `msgpack:"name" json:"name"`
+	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// ObjectPayload is a full object as YAML plus the facts the editor needs. managedFields is
+// stripped from YAML unless keepManagedFields is set.
+type ObjectPayload struct {
+	YAML            string        `msgpack:"yaml" json:"yaml"`
+	UID             string        `msgpack:"uid" json:"uid"`
+	ResourceVersion string        `msgpack:"resourceVersion" json:"resourceVersion"`
+	ManagedBy       []ManagedBy   `msgpack:"managedBy" json:"managedBy"`
+	Owners          []ObjectOwner `msgpack:"owners" json:"owners"`
+	GitOps          *GitOps       `msgpack:"gitops,omitempty" json:"gitops,omitempty"`
+}
+
+type ObjectSubscribeParams struct {
+	OID               uint32    `msgpack:"oid" json:"oid"` // chosen by the client, unique per socket; the KindObject channel
+	Ref               ObjectRef `msgpack:"ref" json:"ref"`
+	KeepManagedFields bool      `msgpack:"keepManagedFields,omitempty" json:"keepManagedFields,omitempty"`
+}
+
+type ObjectUnsubscribeParams struct {
+	OID uint32 `msgpack:"oid" json:"oid"`
+}
+
+// ObjectFrame is the KindObject payload: the object's current state, or Deleted (payload fields hold
+// the last known state) when it was removed, or Error when the watch failed.
+type ObjectFrame struct {
+	ObjectPayload
+	Deleted bool       `msgpack:"deleted,omitempty" json:"deleted,omitempty"`
+	Error   *ErrorBody `msgpack:"error,omitempty" json:"error,omitempty"`
+}
+
+type ObjectDryRunParams struct {
+	Ref  ObjectRef `msgpack:"ref" json:"ref"`
+	YAML string    `msgpack:"yaml" json:"yaml"`
+	Mode string    `msgpack:"mode" json:"mode"` // "update" | "create"
+}
+
+// FieldConflict: a changed field path that another field manager owns.
+type FieldConflict struct {
+	Path    string `msgpack:"path" json:"path"`
+	Manager string `msgpack:"manager" json:"manager"`
+}
+
+type ObjectDryRunResult struct {
+	OK        bool            `msgpack:"ok" json:"ok"`
+	Warnings  []string        `msgpack:"warnings" json:"warnings"`
+	Error     *ErrorBody      `msgpack:"error,omitempty" json:"error,omitempty"`
+	Conflicts []FieldConflict `msgpack:"conflicts" json:"conflicts"`
+}
+
+type ObjectApplyParams struct {
+	RequestID       string    `msgpack:"requestId" json:"requestId"`
+	Ref             ObjectRef `msgpack:"ref" json:"ref"`
+	YAML            string    `msgpack:"yaml" json:"yaml"`
+	Mode            string    `msgpack:"mode" json:"mode"`                                           // "update" | "create"
+	ResourceVersion string    `msgpack:"resourceVersion,omitempty" json:"resourceVersion,omitempty"` // update: the version the user opened
+}
+
+type ObjectApplyResult struct {
+	ResourceVersion string      `msgpack:"resourceVersion" json:"resourceVersion"`
+	UsedContext     string      `msgpack:"usedContext" json:"usedContext"`
+	Applied         []ObjectRef `msgpack:"applied,omitempty" json:"applied,omitempty"` // create mode: every object applied
+}
+
+type ObjectDeleteParams struct {
+	RequestID   string    `msgpack:"requestId" json:"requestId"`
+	Ref         ObjectRef `msgpack:"ref" json:"ref"`
+	Propagation string    `msgpack:"propagation,omitempty" json:"propagation,omitempty"` // "Background" (default) | "Foreground" | "Orphan"
+}
+
+// ObjectActionParams: Action is "scale" {replicas}, "restart", "cordon", "uncordon", "suspend",
+// "resume", "trigger", "rollback" {revision}.
+type ObjectActionParams struct {
+	RequestID string         `msgpack:"requestId" json:"requestId"`
+	Ref       ObjectRef      `msgpack:"ref" json:"ref"`
+	Action    string         `msgpack:"action" json:"action"`
+	Params    map[string]any `msgpack:"params,omitempty" json:"params,omitempty" tstype:"{ [key: string]: unknown }"`
+}
+
+// MutationResult answers object.delete and object.action.
+type MutationResult struct {
+	UsedContext     string `msgpack:"usedContext" json:"usedContext"`
+	ResourceVersion string `msgpack:"resourceVersion,omitempty" json:"resourceVersion,omitempty"`
+	Name            string `msgpack:"name,omitempty" json:"name,omitempty"` // action "trigger": the created Job
+}
+
+// ---- access ---------------------------------------------------------------------------
+
+type AccessCheck struct {
+	Cluster   string `msgpack:"cluster" json:"cluster"`
+	Verb      string `msgpack:"verb" json:"verb"`
+	GVR       string `msgpack:"gvr" json:"gvr"`
+	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string `msgpack:"name,omitempty" json:"name,omitempty"`
+}
+
+type AccessCheckParams struct {
+	Checks []AccessCheck `msgpack:"checks" json:"checks"`
+}
+
+type AccessResult struct {
+	Allowed  bool   `msgpack:"allowed" json:"allowed"`
+	ViaWrite bool   `msgpack:"viaWrite" json:"viaWrite"` // allowed only through the linked write context
+	Reason   string `msgpack:"reason" json:"reason"`
+}
+
+type AccessCheckResult struct {
+	Results []AccessResult `msgpack:"results" json:"results"`
+}
+
+// ---- settings and search --------------------------------------------------------------
+
+type Bookmark struct {
+	Name string `msgpack:"name" json:"name"`
+	URL  string `msgpack:"url" json:"url"`
+}
+
+// Settings is the per-user document persisted by the agent (desktop: <user config dir>/v8s/settings.json).
+type Settings struct {
+	Groups          map[string][]string `msgpack:"groups" json:"groups"`
+	Links           map[string]string   `msgpack:"links" json:"links"` // clusterId → write context id
+	AutoSwitchWrite bool                `msgpack:"autoSwitchWrite" json:"autoSwitchWrite"`
+	Stars           []string            `msgpack:"stars" json:"stars"` // gvrs
+	Bookmarks       []Bookmark          `msgpack:"bookmarks" json:"bookmarks"`
+	Selection       []string            `msgpack:"selection" json:"selection"`
+	ColumnLayouts   map[string]any      `msgpack:"columnLayouts" json:"columnLayouts" tstype:"{ [key: string]: unknown }"`
+	ProblemPrefs    map[string]any      `msgpack:"problemPrefs" json:"problemPrefs" tstype:"{ [key: string]: unknown }"`
+	Acks            map[string]any      `msgpack:"acks" json:"acks" tstype:"{ [key: string]: unknown }"`
+}
+
+// SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
+type SettingsSetParams struct {
+	Patch map[string]any `msgpack:"patch" json:"patch" tstype:"{ [key: string]: unknown }"`
+}
+
+type SearchParams struct {
+	Text  string `msgpack:"text" json:"text"`
+	Limit int    `msgpack:"limit" json:"limit"`
+}
+
+type SearchHit struct {
+	Cluster   string `msgpack:"cluster" json:"cluster"`
+	GVR       string `msgpack:"gvr" json:"gvr"`
+	Kind      string `msgpack:"kind" json:"kind"`
+	Namespace string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string `msgpack:"name" json:"name"`
+}
+
+type SearchResult struct {
+	Results []SearchHit `msgpack:"results" json:"results"`
 }
 
 // Flow control (agent side): at most MaxUnacked patch frames or MaxInFlightBytes in flight per socket.

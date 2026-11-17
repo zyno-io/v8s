@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
-const PodsGVR = "v1/pods"
+const PodsGVR = ingest.PodsGVR
 
 // BadQueryError is returned for queries the engine cannot serve (maps to bad_request).
 type BadQueryError struct{ Msg string }
@@ -29,6 +30,7 @@ type sortKey struct {
 
 type filterSpec struct {
 	col      string
+	c        *ingest.Col
 	op       string
 	vals     []string // sorted
 	toneMask uint8    // for statusTone
@@ -37,6 +39,8 @@ type filterSpec struct {
 // Norm is a normalized, canonical form of a ViewQuery.
 type Norm struct {
 	Key        string
+	GVR        string
+	Mod        *ingest.Module
 	Clusters   []string
 	Namespaces []string
 	Text       string // lower-cased
@@ -44,11 +48,6 @@ type Norm struct {
 	sort       []sortKey
 	nsSet      map[string]struct{}
 }
-
-var sortable = map[string]bool{"cluster": true, "name": true, "namespace": true, "status": true,
-	"statusTone": true, "restarts": true, "node": true, "createdAt": true}
-
-var filterable = map[string]bool{"statusTone": true, "status": true, "node": true, "cluster": true, "namespace": true, "name": true}
 
 func filterValues(v any) ([]string, error) {
 	switch v := v.(type) {
@@ -74,10 +73,15 @@ func filterValues(v any) ([]string, error) {
 
 // Normalize validates q and produces its canonical form; equal queries yield equal Keys.
 func Normalize(q protocol.ViewQuery) (*Norm, error) {
-	if q.GVR != "" && q.GVR != PodsGVR {
+	gvr := q.GVR
+	if gvr == "" {
+		gvr = PodsGVR
+	}
+	mod := ingest.Lookup(gvr)
+	if mod == nil {
 		return nil, bad("unsupported gvr %q", q.GVR)
 	}
-	n := &Norm{Text: strings.ToLower(strings.TrimSpace(q.Text))}
+	n := &Norm{GVR: gvr, Mod: mod, Text: strings.ToLower(strings.TrimSpace(q.Text))}
 	n.Clusters = sortedUnique(q.Clusters)
 	n.Namespaces = sortedUnique(q.Namespaces)
 	if len(n.Namespaces) > 0 {
@@ -87,7 +91,8 @@ func Normalize(q protocol.ViewQuery) (*Norm, error) {
 		}
 	}
 	for _, f := range q.Filters {
-		if !filterable[f.Col] {
+		col := mod.Col(f.Col)
+		if col == nil || !col.Filterable {
 			return nil, bad("cannot filter on %q", f.Col)
 		}
 		vals, err := filterValues(f.Value)
@@ -99,11 +104,11 @@ func Normalize(q protocol.ViewQuery) (*Norm, error) {
 		default:
 			return nil, bad("unknown filter op %q", f.Op)
 		}
-		if f.Op == "contains" && f.Col != "name" {
-			return nil, bad("contains only supported on name")
+		if f.Op == "contains" && col.Src == ingest.SrcTone {
+			return nil, bad("contains not supported on %q", f.Col)
 		}
-		fs := filterSpec{col: f.Col, op: f.Op, vals: sortedUnique(vals)}
-		if f.Col == "statusTone" {
+		fs := filterSpec{col: f.Col, c: col, op: f.Op, vals: sortedUnique(vals)}
+		if col.Src == ingest.SrcTone {
 			for _, v := range fs.vals {
 				t, err := strconv.Atoi(v)
 				if err != nil || t < 0 || t > 7 {
@@ -123,16 +128,21 @@ func Normalize(q protocol.ViewQuery) (*Norm, error) {
 		return cmp.Or(cmp.Compare(a.col, b.col), cmp.Compare(a.op, b.op), slices.Compare(a.vals, b.vals))
 	})
 	for _, s := range q.Sort {
-		if !sortable[s.Col] {
+		if c := mod.Col(s.Col); (c == nil || !c.Sortable) && s.Col != "statusTone" {
 			return nil, bad("cannot sort on %q", s.Col)
 		}
 		n.sort = append(n.sort, sortKey{s.Col, s.Desc})
 	}
 	if len(n.sort) == 0 {
+		for _, s := range mod.DefaultSort {
+			n.sort = append(n.sort, sortKey{s.Col, s.Desc})
+		}
+	}
+	if len(n.sort) == 0 {
 		n.sort = []sortKey{{col: "statusTone"}, {col: "name"}}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "c=%q|n=%q|t=%q|f=", n.Clusters, n.Namespaces, n.Text)
+	fmt.Fprintf(&b, "g=%s|c=%q|n=%q|t=%q|f=", n.GVR, n.Clusters, n.Namespaces, n.Text)
 	for _, f := range n.filters {
 		fmt.Fprintf(&b, "%s:%s:%q;", f.col, f.op, f.vals)
 	}

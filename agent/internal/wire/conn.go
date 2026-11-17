@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/vmihailenco/msgpack/v5"
+	"github.com/zyno-io/v8s/agent/internal/cluster"
+	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/ops"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
@@ -28,11 +32,17 @@ type inMsg struct {
 }
 
 type connSub struct {
-	qid    uint32
-	sub    *view.Sub
-	last   time.Time
-	urgent bool // client-initiated change: bypass the tick once
+	qid      uint32
+	sub      *view.Sub
+	scope    *cluster.Scope // keeps the kind's watches alive for this subscription
+	gvr      string
+	clusters []string
+	last     time.Time
+	urgent   bool // client-initiated change: bypass the tick once
 }
+
+// objSub is a live object.subscribe.
+type objSub struct{ cancel context.CancelFunc }
 
 type conn struct {
 	s   *Server
@@ -41,6 +51,9 @@ type conn struct {
 	seq uint32
 
 	subs     map[uint32]*connSub
+	pendingQ map[uint32]bool // view.subscribe requests still resolving their kind
+	objs     map[uint32]*objSub
+	post     chan func() error // work to run on the connection goroutine (async responses, object frames)
 	unacked  map[uint32]int
 	inflight int
 
@@ -59,7 +72,8 @@ type conn struct {
 }
 
 func newConn(s *Server, ws *websocket.Conn) *conn {
-	c := &conn{s: s, ws: ws, in: make(chan inMsg, 16), subs: map[uint32]*connSub{}, unacked: map[uint32]int{}}
+	c := &conn{s: s, ws: ws, in: make(chan inMsg, 16), subs: map[uint32]*connSub{}, unacked: map[uint32]int{},
+		pendingQ: map[uint32]bool{}, objs: map[uint32]*objSub{}, post: make(chan func() error, 64)}
 	c.initCodec()
 	ws.SetReadLimit(1 << 20)
 	return c
@@ -81,6 +95,12 @@ func (c *conn) run(ctx context.Context) {
 	defer func() {
 		for _, cs := range c.subs {
 			cs.sub.Close()
+			if cs.scope != nil {
+				cs.scope.Close()
+			}
+		}
+		for _, o := range c.objs {
+			o.cancel()
 		}
 	}()
 
@@ -111,6 +131,13 @@ func (c *conn) run(ctx context.Context) {
 				return
 			}
 			if c.handle(m) != nil {
+				return
+			}
+			if c.flushDirty() != nil {
+				return
+			}
+		case f := <-c.post:
+			if f() != nil {
 				return
 			}
 			if c.flushDirty() != nil {
@@ -302,7 +329,7 @@ func (c *conn) buildPatch(p *view.Pending) (nr, nd int, withIDs bool) {
 	c.rows.Reset()
 	for i, r := range p.RemainingRows() {
 		mark := c.rows.Len()
-		_ = view.EncodeRow(c.rowsEnc, c.d, &r)
+		_ = view.EncodeRow(c.rowsEnc, c.d, p.Mod, &r)
 		if c.rows.Len() > budget && i > 0 {
 			c.rows.Truncate(mark)
 			break
@@ -396,16 +423,90 @@ func decodeParams(req *rawRequest, v any) error {
 	return msgpack.Unmarshal(req.Params, v)
 }
 
+// async runs fn off the connection goroutine and delivers its response on it.
+func (c *conn) async(id uint32, fn func(ctx context.Context) (any, error)) {
+	go func() {
+		res, err := fn(c.ctx)
+		c.postf(func() error {
+			if err != nil {
+				return c.respondBody(id, errBody(err))
+			}
+			return c.respond(id, res)
+		})
+	}()
+}
+
+// postf queues work for the connection goroutine.
+func (c *conn) postf(f func() error) {
+	select {
+	case c.post <- f:
+	case <-c.ctx.Done():
+	}
+}
+
+func (c *conn) respondBody(id uint32, b protocol.ErrorBody) error {
+	return c.send(protocol.KindResponse, id, protocol.Response{Error: &b})
+}
+
+// errBody converts an error from the managers into a protocol error.
+func errBody(err error) protocol.ErrorBody {
+	var oe *ops.Error
+	if errors.As(err, &oe) {
+		return oe.Body
+	}
+	var bq *view.BadQueryError
+	switch {
+	case errors.As(err, &bq):
+		return protocol.ErrorBody{Code: "bad_request", Message: err.Error()}
+	case errors.Is(err, cluster.ErrNotServed):
+		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
+	case errors.Is(err, context.DeadlineExceeded):
+		return protocol.ErrorBody{Code: "unavailable", Message: "timed out waiting for the kind's schema"}
+	case errors.Is(err, cluster.ErrBudget):
+		return protocol.ErrorBody{Code: "unavailable", Message: err.Error()}
+	}
+	return protocol.ErrorBody{Code: "internal", Message: err.Error()}
+}
+
+func queryGVR(q protocol.ViewQuery) string {
+	if q.GVR == "" {
+		return ingest.PodsGVR
+	}
+	return q.GVR
+}
+
+// resolve finds the module and opens the watch scope for a query. Known kinds resolve inline; a generic
+// kind waits (off the connection goroutine) for its first columnDefinitions. cb runs on the connection goroutine.
+func (c *conn) resolve(q protocol.ViewQuery, cb func(mod *ingest.Module, scope *cluster.Scope, err error)) {
+	gvr, mgr := queryGVR(q), c.s.opt.Manager
+	if mod := ingest.Lookup(gvr); mod != nil {
+		cb(mod, mgr.OpenScope(gvr, q.Clusters), nil)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(c.ctx, 20*time.Second)
+		defer cancel()
+		mod, err := mgr.ResolveModule(ctx, gvr, q.Clusters)
+		var scope *cluster.Scope
+		if err == nil {
+			scope = mgr.OpenScope(gvr, q.Clusters)
+		}
+		c.postf(func() error { cb(mod, scope, err); return nil })
+	}()
+}
+
 func (c *conn) dispatch(id uint32, req *rawRequest) error {
+	opt := c.s.opt
+	bad := func(err error) error { return c.respondErr(id, "bad_request", err.Error()) }
 	switch req.Method {
 	case "clusters.list":
-		return c.respond(id, c.s.opt.Manager.List())
+		return c.respond(id, opt.Manager.List())
 	case "clusters.select":
 		var p protocol.ClustersSelectParams
 		if err := decodeParams(req, &p); err != nil {
-			return c.respondErr(id, "bad_request", err.Error())
+			return bad(err)
 		}
-		st, err := c.s.opt.Manager.Select(p.IDs)
+		st, err := opt.Manager.Select(p.IDs)
 		if err != nil {
 			return c.respondErr(id, "not_found", err.Error())
 		}
@@ -415,53 +516,191 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		}
 		return c.sendStates()
 	case "kinds.list":
-		return c.respond(id, protocol.KindsListResult{Kinds: Kinds})
+		return c.respond(id, protocol.KindsListResult{Kinds: opt.Manager.Kinds()})
 	case "view.subscribe":
 		var p protocol.ViewSubscribeParams
 		if err := decodeParams(req, &p); err != nil {
-			return c.respondErr(id, "bad_request", err.Error())
+			return bad(err)
 		}
-		if _, dup := c.subs[p.QID]; dup || p.QID == 0 {
+		if _, dup := c.subs[p.QID]; dup || c.pendingQ[p.QID] || p.QID == 0 {
 			return c.respondErr(id, "bad_request", "qid must be non-zero and unique")
 		}
-		sub, err := c.s.opt.Engine.Subscribe(p.Query, p.Gen, p.Window)
-		if err != nil {
-			return c.respondErr(id, errCode(err), err.Error())
-		}
-		c.subs[p.QID] = &connSub{qid: p.QID, sub: sub, urgent: true}
-		return c.respond(id, protocol.ViewSubscribeResult{Columns: protocol.PodColumns})
+		c.pendingQ[p.QID] = true
+		c.resolve(p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+			delete(c.pendingQ, p.QID)
+			if err != nil {
+				_ = c.respondBody(id, errBody(err))
+				return
+			}
+			sub, err := opt.Engine.Subscribe(p.Query, p.Gen, p.Window)
+			if err != nil {
+				scope.Close()
+				_ = c.respondBody(id, errBody(err))
+				return
+			}
+			c.subs[p.QID] = &connSub{qid: p.QID, sub: sub, scope: scope, gvr: queryGVR(p.Query), clusters: p.Query.Clusters, urgent: true}
+			_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
+		})
+		return nil
 	case "view.update":
 		var p protocol.ViewUpdateParams
 		if err := decodeParams(req, &p); err != nil {
-			return c.respondErr(id, "bad_request", err.Error())
+			return bad(err)
 		}
 		cs := c.subs[p.QID]
 		if cs == nil {
 			return c.respondErr(id, "not_found", "no such subscription")
 		}
+		if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters))) {
+			gvrChanged := queryGVR(*p.Query) != cs.gvr
+			c.resolve(*p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+				if err != nil {
+					_ = c.respondBody(id, errBody(err))
+					return
+				}
+				if c.subs[p.QID] != cs {
+					scope.Close()
+					_ = c.respondErr(id, "not_found", "no such subscription")
+					return
+				}
+				if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
+					scope.Close()
+					_ = c.respondBody(id, errBody(err))
+					return
+				}
+				cs.scope.Close()
+				cs.scope, cs.gvr, cs.clusters, cs.urgent = scope, queryGVR(*p.Query), p.Query.Clusters, true
+				if gvrChanged { // the client needs the new schema
+					_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
+				} else {
+					_ = c.respond(id, nil)
+				}
+			})
+			return nil
+		}
 		if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
-			return c.respondErr(id, errCode(err), err.Error())
+			return c.respondBody(id, errBody(err))
 		}
 		cs.urgent = true
 		return c.respond(id, nil)
 	case "view.unsubscribe":
 		var p protocol.ViewUnsubscribeParams
 		if err := decodeParams(req, &p); err != nil {
-			return c.respondErr(id, "bad_request", err.Error())
+			return bad(err)
 		}
 		if cs := c.subs[p.QID]; cs != nil {
 			cs.sub.Close()
+			if cs.scope != nil {
+				cs.scope.Close()
+			}
 			delete(c.subs, p.QID)
 		}
 		return c.respond(id, nil)
+
+	case "object.get":
+		var p protocol.ObjectGetParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Ops.Get(ctx, p) })
+		return nil
+	case "object.subscribe":
+		var p protocol.ObjectSubscribeParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if _, dup := c.objs[p.OID]; dup || p.OID == 0 {
+			return c.respondErr(id, "bad_request", "oid must be non-zero and unique")
+		}
+		ctx, cancel := context.WithCancel(c.ctx)
+		c.objs[p.OID] = &objSub{cancel: cancel}
+		oid := p.OID
+		go func() {
+			_ = opt.Ops.Watch(ctx, p.Ref, p.KeepManagedFields, func(f protocol.ObjectFrame) {
+				c.postf(func() error {
+					if c.objs[oid] == nil {
+						return nil
+					}
+					return c.send(protocol.KindObject, oid, f)
+				})
+			})
+		}()
+		return c.respond(id, nil)
+	case "object.unsubscribe":
+		var p protocol.ObjectUnsubscribeParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if o := c.objs[p.OID]; o != nil {
+			o.cancel()
+			delete(c.objs, p.OID)
+		}
+		return c.respond(id, nil)
+	case "object.dryRun":
+		var p protocol.ObjectDryRunParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Ops.DryRun(ctx, p) })
+		return nil
+	case "object.apply":
+		var p protocol.ObjectApplyParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Ops.Apply(ctx, p) })
+		return nil
+	case "object.delete":
+		var p protocol.ObjectDeleteParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Ops.Delete(ctx, p) })
+		return nil
+	case "object.action":
+		var p protocol.ObjectActionParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Ops.Action(ctx, p) })
+		return nil
+	case "access.check":
+		var p protocol.AccessCheckParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) {
+			return protocol.AccessCheckResult{Results: opt.Ops.Access(ctx, p.Checks)}, nil
+		})
+		return nil
+	case "settings.get":
+		return c.respond(id, opt.Settings.Get())
+	case "settings.set":
+		var p protocol.SettingsSetParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		st, err := opt.Settings.Patch(p.Patch)
+		if err != nil {
+			return c.respondErr(id, "bad_request", err.Error())
+		}
+		opt.Manager.Changed() // linked contexts and groups may have changed the cluster list
+		return c.respond(id, st)
+	case "search":
+		var p protocol.SearchParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) {
+			return protocol.SearchResult{Results: opt.Manager.Search(p.Text, p.Limit)}, nil
+		})
+		return nil
 	}
 	return c.respondErr(id, "bad_request", "unknown method "+req.Method)
 }
 
-func errCode(err error) string {
-	var bq *view.BadQueryError
-	if errors.As(err, &bq) {
-		return "bad_request"
-	}
-	return "internal"
+func normClusters(in []string) []string {
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return slices.Compact(out)
 }

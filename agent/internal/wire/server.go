@@ -13,6 +13,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/zyno-io/v8s/agent/internal/cluster"
+	"github.com/zyno-io/v8s/agent/internal/ops"
+	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
@@ -23,6 +25,8 @@ const csp = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-in
 type Options struct {
 	Manager      *cluster.Manager
 	Engine       *view.Engine
+	Ops          *ops.Service
+	Settings     *settings.Store
 	Token        string
 	Mode         string // "desktop" | "serve" | "fake"
 	AgentVersion string

@@ -137,7 +137,7 @@ func TestListerWatcherProjectsBeforeReflector(t *testing.T) {
 	a.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: "m"}}
 	api := &fakeAPI{pages: []*corev1.PodList{{ListMeta: metav1.ListMeta{ResourceVersion: "9"}, Items: []corev1.Pod{*a}}}, w: watch.NewFake()}
 	n := 0
-	lw := &ListerWatcher{API: api, Hooks: Hooks{OnSyncProgress: func(c int) { n = c }}}
+	lw := &ListerWatcher{API: PodAdapter{PodAPI: api}, Hooks: Hooks{OnSyncProgress: func(c int) { n = c }}}
 	obj, err := lw.List(metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)

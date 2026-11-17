@@ -4,15 +4,17 @@ import (
 	"cmp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
 // entry is one row of a materialized view. row is immutable, so an entry is a consistent snapshot.
 type entry struct {
-	row  *ingest.PodRow
+	row  *ingest.Row
 	pfx  uint64 // first 8 bytes of the name, big-endian, zero padded: decides most name compares without touching the row
 	cl   uint16
 	rank uint8 // severity rank (default sort)
@@ -31,7 +33,7 @@ func namePrefix(s string) uint64 {
 	return v
 }
 
-func mkEntry(row *ingest.PodRow, cl uint16, h, gen uint32) entry {
+func mkEntry(row *ingest.Row, cl uint16, h, gen uint32) entry {
 	return entry{row: row, pfx: namePrefix(row.Name()), cl: cl, rank: row.SeverityRank(), h: h, gen: gen}
 }
 
@@ -48,62 +50,80 @@ func cmpName(a, b *entry) int {
 
 type cmpFn func(a, b *entry) int
 
+// colString returns an accessor for the string form of a column (used by filters).
+func (e *Engine) colString(c *ingest.Col) func(r *ingest.Row, cl uint16) string {
+	switch c.Src {
+	case ingest.SrcCluster:
+		return func(_ *ingest.Row, cl uint16) string { return e.names[cl] }
+	case ingest.SrcName:
+		return func(r *ingest.Row, _ uint16) string { return r.Name() }
+	case ingest.SrcNS:
+		return func(r *ingest.Row, _ uint16) string { return r.NS().Value() }
+	case ingest.SrcOwner:
+		return func(r *ingest.Row, _ uint16) string { return r.OwnerName().Value() }
+	case ingest.SrcCell:
+		idx := c.Idx
+		if c.Type == protocol.ColInt || c.Type == protocol.ColTime {
+			return func(r *ingest.Row, _ uint16) string { return strconv.FormatInt(r.Cell(idx).N, 10) }
+		}
+		return func(r *ingest.Row, _ uint16) string { return r.StrCell(idx) }
+	}
+	return func(*ingest.Row, uint16) string { return "" }
+}
+
 // buildMatch compiles the query's membership predicate.
-func (e *Engine) buildMatch(n *Norm) func(r *ingest.PodRow, cl uint16) bool {
-	var preds []func(r *ingest.PodRow, cl uint16) bool
+func (e *Engine) buildMatch(n *Norm) func(r *ingest.Row, cl uint16) bool {
+	var preds []func(r *ingest.Row, cl uint16) bool
 	if len(n.Clusters) > 0 {
 		set := n.Clusters
-		preds = append(preds, func(_ *ingest.PodRow, cl uint16) bool {
+		preds = append(preds, func(_ *ingest.Row, cl uint16) bool {
 			_, ok := slices.BinarySearch(set, e.names[cl])
 			return ok
 		})
 	}
 	if n.nsSet != nil {
 		set := n.nsSet
-		preds = append(preds, func(r *ingest.PodRow, _ uint16) bool {
+		preds = append(preds, func(r *ingest.Row, _ uint16) bool {
 			_, ok := set[r.NS().Value()]
 			return ok
 		})
 	}
 	if n.Text != "" {
 		t := n.Text
-		preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return containsFold(r.Name(), t) })
+		preds = append(preds, func(r *ingest.Row, _ uint16) bool { return containsFold(r.Name(), t) })
 	}
 	for _, f := range n.filters {
 		f := f
-		switch f.col {
-		case "statusTone":
-			preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return f.toneMask&(1<<r.Tone()) != 0 })
-		case "status":
-			preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return slices.Contains(f.vals, r.Status().Value()) })
-		case "node":
-			preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return slices.Contains(f.vals, r.Node().Value()) })
-		case "namespace":
-			preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return slices.Contains(f.vals, r.NS().Value()) })
-		case "cluster":
-			preds = append(preds, func(_ *ingest.PodRow, cl uint16) bool { return slices.Contains(f.vals, e.names[cl]) })
-		case "name":
-			if f.op == "contains" {
-				preds = append(preds, func(r *ingest.PodRow, _ uint16) bool {
-					for _, v := range f.vals {
-						if containsFold(r.Name(), v) {
-							return true
-						}
-					}
-					return false
-				})
-			} else {
-				preds = append(preds, func(r *ingest.PodRow, _ uint16) bool { return slices.Contains(f.vals, r.Name()) })
-			}
+		if f.c.Src == ingest.SrcTone {
+			preds = append(preds, func(r *ingest.Row, _ uint16) bool { return f.toneMask&(1<<r.Tone()) != 0 })
+			continue
 		}
+		get := e.colString(f.c)
+		if f.op == "contains" {
+			preds = append(preds, func(r *ingest.Row, cl uint16) bool {
+				s := get(r, cl)
+				for _, v := range f.vals {
+					if containsFold(s, v) {
+						return true
+					}
+				}
+				return false
+			})
+			continue
+		}
+		if f.c.Src == ingest.SrcName { // hot path: no closure indirection
+			preds = append(preds, func(r *ingest.Row, _ uint16) bool { return slices.Contains(f.vals, r.Name()) })
+			continue
+		}
+		preds = append(preds, func(r *ingest.Row, cl uint16) bool { return slices.Contains(f.vals, get(r, cl)) })
 	}
 	switch len(preds) {
 	case 0:
-		return func(*ingest.PodRow, uint16) bool { return true }
+		return func(*ingest.Row, uint16) bool { return true }
 	case 1:
 		return preds[0]
 	}
-	return func(r *ingest.PodRow, cl uint16) bool {
+	return func(r *ingest.Row, cl uint16) bool {
 		for _, p := range preds {
 			if !p(r, cl) {
 				return false
@@ -134,25 +154,31 @@ func (e *Engine) buildCmp(n *Norm) cmpFn {
 	var keys []cmpFn
 	for _, k := range n.sort {
 		desc := k.desc
-		switch k.col {
-		case "cluster":
+		if k.col == "statusTone" {
+			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.rank, b.rank), desc) })
+			continue
+		}
+		c := n.Mod.Col(k.col)
+		switch c.Src {
+		case ingest.SrcCluster:
 			keys = append(keys, func(a, b *entry) int { return dir(cmpStr(e.names[a.cl], e.names[b.cl]), desc) })
-		case "name":
+		case ingest.SrcName:
 			keys = append(keys, func(a, b *entry) int { return dir(cmpName(a, b), desc) })
-		case "namespace":
+		case ingest.SrcNS:
 			keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.NS(), b.row.NS()), desc) })
-		case "status":
-			keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.Status(), b.row.Status()), desc) })
-		case "node":
-			keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.Node(), b.row.Node()), desc) })
-		case "statusTone":
-			keys = append(keys, func(a, b *entry) int {
-				return dir(cmp.Compare(a.rank, b.rank), desc)
-			})
-		case "restarts":
-			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.row.Restarts(), b.row.Restarts()), desc) })
-		case "createdAt":
+		case ingest.SrcOwner:
+			keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.OwnerName(), b.row.OwnerName()), desc) })
+		case ingest.SrcCreated:
 			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.row.CreatedMs(), b.row.CreatedMs()), desc) })
+		case ingest.SrcTone:
+			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.rank, b.rank), desc) })
+		case ingest.SrcCell:
+			idx := c.Idx
+			if c.Type == protocol.ColInt || c.Type == protocol.ColTime {
+				keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.row.Cell(idx).N, b.row.Cell(idx).N), desc) })
+			} else {
+				keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.Cell(idx).S, b.row.Cell(idx).S), desc) })
+			}
 		}
 	}
 	// Fast path for the default order.
