@@ -103,7 +103,7 @@ Every projection drops `managedFields` and `kubectl.kubernetes.io/last-applied-c
   | Gateway API (Gateway, HTTPRoute, GRPCRoute), cert-manager Certificate | ≤ 4 |
   | Hosted shared-cache clusters only: Roles, ClusterRoles, RoleBindings, ClusterRoleBindings (authz cache invalidation) | 4 |
   | **Total** | **~20 bare cluster; ≤ 50 with everything installed** |
-- **On demand.** Any other resource type a view opens. Reference-counted by subscriptions; **lingers** after the last subscriber leaves (desktop 5 min, hosted 2 min) so flicking between views is instant. The lingering set is LRU-evicted to stay inside the watch budget (§5).
+- **On demand.** Any other resource type a view opens. Reference-counted by subscriptions; **lingers** after the last subscriber leaves (desktop 5 min, hosted 2 min) so flicking between views is instant. The lingering set is LRU-evicted to stay inside the watch budget (§5). An open Events tab holds one more kind of on-demand watch: the events of that one object (§5, "Events"), which counts against the same budget but lingers only 30 s.
 - **Never watched**: Hubble flows (streamed on demand, §8), SbomReports, full vulnerability reports, Kubescape manifests, `metrics.k8s.io` (polled, §5).
 
 ### Cluster deselect and GC
@@ -128,7 +128,7 @@ v8s must never be the reason an API server is slow.
 | --- | --- |
 | Read QPS | 20, burst 40 per (user, cluster); ceiling 100 per cluster across all users of a hosted install |
 | Writes per user per cluster | 10/s |
-| Watches per (cluster, identity) from the agent | ≤ 96: tier 0 (≤ 50) first, on-demand LRU gets the remainder (≥ 32), restricted-user per-namespace watches and per-user hosted watches count against the same budget |
+| Watches per (cluster, identity) from the agent | ≤ 96: tier 0 (≤ 50) first, on-demand LRU gets the remainder (≥ 32), restricted-user per-namespace watches, per-user hosted watches and per-object event watches (an open Events tab) count against the same budget |
 | Lazy body fetches (reports, Helm payloads) | ≤ 4 concurrent per cluster, queued |
 | Discovery | aggregated discovery (one request); desktop caches on disk; invalidated by CRD/APIService events |
 | Hosted authorization reviews | ≤ 20 SubjectAccessReviews/s per cluster across all users, ≤ 5 concurrent per user; computed lazily for the namespaces a user's open views and problems actually touch, never as a full namespace × GVR sweep |
@@ -136,7 +136,7 @@ v8s must never be the reason an API server is slow.
 | `metrics.k8s.io` | polled every 30 s, only while a visible view shows usage columns |
 | Relists | jittered exponential backoff; never triggered by opening a view |
 | API Priority and Fairness | honour `429` + `Retry-After`. FlowSchemas match subjects, not User-Agents: v8s traffic is the user's identity (or, behind a gateway, the target's role identity, shared with `kubectl`), so operators who want to isolate it give those identities their own FlowSchema |
-| Events | Warning-only field selector in tier 0; full event stream only for an open object's Events tab (field selector on `involvedObject.uid`) |
+| Events | Warning-only field selector in tier 0. An open Events tab lists all events (Normal and Warning) of that one object: a namespaced LIST + WATCH with the field selector `involvedObject.kind=K,involvedObject.name=N,involvedObject.namespace=NS`, in the object's namespace, or in `default` with an empty `involvedObject.namespace=` for a cluster-scoped object (Node, PersistentVolume, Namespace): Kubernetes records those events in `default`. There is no `involvedObject.uid` term: the kubelet records Node events with the node name as uid, so a uid filter would miss them (and events of an earlier object with the same name show until Kubernetes expires them, about an hour). The agent keeps the newest 200 events per object, the watch lingers 30 s after the tab closes (a 5-minute linger would pile up per-object etcd watches), and it counts against the 96-watch budget and is LRU-evictable while lingering. API servers do not put events in the watch cache, so every events LIST and WATCH is served from etcd: these watches are always namespaced and never cluster-wide. |
 
 ## 6. Agent store, indexes, and view engine
 

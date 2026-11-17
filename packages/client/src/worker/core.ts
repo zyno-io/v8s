@@ -347,7 +347,12 @@ export class DataCore {
             const view = this.views.get(p.qid);
             if (!view) return;
             if (res.error || !res.result) {
-                this.io.post({ t: 'columns', qid: p.qid, columns: [] });
+                this.io.post({
+                    t: 'columns',
+                    qid: p.qid,
+                    columns: [],
+                    error: res.error ?? { code: 'internal', message: 'The agent returned no result for the view.' }
+                });
                 return;
             }
             const { columns } = res.result as ViewSubscribeResult;

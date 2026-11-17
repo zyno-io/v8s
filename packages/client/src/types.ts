@@ -147,7 +147,7 @@ export type WorkerToMain =
     | FlowUpdate
     | { t: 'flow.opened'; sid: number; usedContext?: string }
     | { t: 'flow.error'; sid: number; error: ErrorBody }
-    | { t: 'columns'; qid: number; columns: Column[] }
+    | { t: 'columns'; qid: number; columns: Column[]; error?: ErrorBody }
     /** Up to 500 rows; applied immediately without a version bump. */
     | { t: 'rows'; qid: number; gen: number; rows: Row[] }
     /** Last message of a flush: ids/total/offset/removed, then the main thread bumps the view version. */

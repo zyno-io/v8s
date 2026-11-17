@@ -65,7 +65,9 @@ export function tabsFor(gvr: string, caps?: TabCaps): DrawerTab[] {
     if (/^helm\.toolkit\.fluxcd\.io\/[^/]+\/helmreleases$/.test(gvr)) out.push('release');
     if (SECURITY_GVRS.has(gvr) && (!caps || caps.security)) out.push('security');
     if (FLOWS_GVRS.has(gvr) && (!caps || caps.flows)) out.push('flows');
-    out.push('yaml', 'events', 'related');
+    out.push('yaml');
+    if (gvr !== 'v1/events' && gvr !== 'events.k8s.io/v1/events') out.push('events'); // an Event has no events of its own
+    out.push('related');
     return out;
 }
 

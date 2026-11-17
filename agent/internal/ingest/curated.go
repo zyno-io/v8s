@@ -508,15 +508,14 @@ func registerClusterKinds() {
 			return r
 		})
 
-	m := &Module{GVR: "v1/events", Kind: "Event", Namespaced: true, Short: []string{"ev"}, Tier0: true,
+	m := &Module{GVR: EventsGVR, Kind: "Event", Namespaced: true, Short: []string{"ev"}, Tier0: true,
 		// The agent only ever holds Warning events (docs/performance.md §5).
 		Tweak:       func(o *metav1.ListOptions) { o.FieldSelector = "type=Warning" },
 		DefaultSort: []protocol.Sort{{Col: "lastSeen", Desc: true}},
-		Cols: []Col{cCluster(), cName(), cNS(), cDict("type", "Type", 80), cDict("reason", "Reason", 150), cStr("object", "Object", 260),
-			cStr("message", "Message", 480), cInt("count", "Count", 64), cTime("lastSeen", "Last seen", 90), cTone(), cAge()}}
+		Cols:        eventCols()}
 	typed(m, func(l *corev1.EventList) []corev1.Event { return l.Items },
 		func(e *corev1.Event) *Row {
-			r := newRow(&e.ObjectMeta, 6)
+			r := newRow(&e.ObjectMeta, 7)
 			r.putS(e.Type)
 			r.putS(e.Reason)
 			r.putS(e.InvolvedObject.Kind + "/" + e.InvolvedObject.Name)
@@ -536,6 +535,11 @@ func registerClusterKinds() {
 				last = e.CreationTimestamp.UnixMilli()
 			}
 			r.putN(last)
+			src := e.Source.Component
+			if src == "" {
+				src = e.ReportingController
+			}
+			r.putS(src)
 			if e.InvolvedObject.Namespace != e.Namespace { // an event about a cluster-scoped object lives in another namespace
 				r.SetFacts(&EventFacts{InvolvedNS: e.InvolvedObject.Namespace})
 			}
@@ -544,6 +548,11 @@ func registerClusterKinds() {
 			}
 			return r
 		})
+
+	// The view-only module behind an involved-object events view (docs/protocol.md "Events of one object"): same
+	// columns and projection, but not curated, tier-0 or served by discovery.
+	Register(&Module{GVR: ObjectEventsGVR, Kind: "Event", Namespaced: true, DefaultSort: m.DefaultSort, Cols: eventCols(),
+		NewList: m.NewList, Each: m.Each, ProjectObj: m.ProjectObj})
 
 	typed(&Module{GVR: "v1/serviceaccounts", Kind: "ServiceAccount", Namespaced: true, Short: []string{"sa"},
 		Cols: []Col{cCluster(), cName(), cNS(), cInt("secrets", "Secrets", 70), cAge()}},
@@ -679,4 +688,15 @@ func setFacts[T any](r *Row, f *T) {
 	if f != nil {
 		r.facts = f
 	}
+}
+
+// eventLastSeenCell is the cell index of the lastSeen column (the rank of an event in an object-events store).
+const eventLastSeenCell = 5
+
+// EventLastSeen is an event row's lastSeen in epoch milliseconds.
+func EventLastSeen(r *Row) int64 { return r.Cell(eventLastSeenCell).N }
+
+func eventCols() []Col {
+	return []Col{cCluster(), cName(), cNS(), cDict("type", "Type", 80), cDict("reason", "Reason", 150), cStr("object", "Object", 260),
+		cStr("message", "Message", 480), cInt("count", "Count", 64), cTime("lastSeen", "Last seen", 90), cDict("source", "Source", 140), cTone(), cAge()}
 }

@@ -222,7 +222,14 @@ type ViewQuery struct {
 	Text       string   `msgpack:"text" json:"text"`             // substring match on name
 	Filters    []Filter `msgpack:"filters" json:"filters"`
 	Sort       []Sort   `msgpack:"sort" json:"sort"`
+	// Involved, with GVR "v1/events", makes this the view of every event (Normal and Warning) of one object, listed
+	// on demand while the view is open (docs/protocol.md "Events of one object"). Clusters and Namespaces are then
+	// ignored; Filters, Text and Sort still apply.
+	Involved *ObjectRef `msgpack:"involved,omitempty" json:"involved,omitempty"`
 }
+
+// MaxObjectEvents is the events of one object an involved view keeps, newest by lastSeen.
+const MaxObjectEvents = 200
 
 // Window selects which slice of the sorted view the client holds.
 // If AnchorID is set and still in the view, the agent positions the window around it

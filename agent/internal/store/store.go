@@ -410,6 +410,21 @@ func (s *Store) Reset() {
 
 var ErrClosed = errors.New("store closed")
 
+// Apply upserts rows and deletes uids in one critical section with one notification.
+func (s *Store) Apply(up []*ingest.Row, del []string) {
+	s.mu.Lock()
+	for _, r := range up {
+		s.upsertLocked(r)
+	}
+	for _, uid := range del {
+		if h, ok := s.byUID[uid]; ok {
+			s.deleteLocked(h)
+		}
+	}
+	s.mu.Unlock()
+	s.after(false, 0)
+}
+
 // Scan calls fn for every live row under a read lock (fn must not call back into the store); it
 // stops when fn returns false.
 func (s *Store) Scan(fn func(*ingest.Row) bool) {

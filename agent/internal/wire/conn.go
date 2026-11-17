@@ -42,6 +42,8 @@ type connSub struct {
 	scope    *cluster.Scope // keeps the kind's watches alive for this subscription
 	gvr      string
 	clusters []string
+	involved *protocol.ObjectRef // what the client sent for an involved-object events view (nil otherwise)
+	inv      *cluster.ObjectEvents
 	last     time.Time
 	urgent   bool // client-initiated change: bypass the tick once
 
@@ -555,8 +557,14 @@ func errBody(err error) protocol.ErrorBody {
 		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
 	case errors.Is(err, context.DeadlineExceeded):
 		return protocol.ErrorBody{Code: "unavailable", Message: "timed out waiting for the kind's schema"}
-	case errors.Is(err, cluster.ErrBudget):
+	case errors.Is(err, cluster.ErrBudget), errors.Is(err, cluster.ErrEventsTimeout), errors.Is(err, cluster.ErrEventsUnsupported):
 		return protocol.ErrorBody{Code: "unavailable", Message: err.Error()}
+	case errors.Is(err, cluster.ErrClusterNotSelected):
+		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
+	case apierrors.IsUnauthorized(err):
+		return protocol.ErrorBody{Code: "forbidden", Message: err.Error()}
+	case apierrors.IsBadRequest(err), apierrors.IsInvalid(err):
+		return protocol.ErrorBody{Code: "bad_request", Message: err.Error()}
 	}
 	return protocol.ErrorBody{Code: "internal", Message: err.Error()}
 }
@@ -568,13 +576,51 @@ func queryGVR(q protocol.ViewQuery) string {
 	return q.GVR
 }
 
+// resolved is a query's module and watch scope. q is the query to give the engine: the client's, or for an
+// involved-object events view its rewrite over the shared object-events store (inv is then set).
+type resolved struct {
+	mod   *ingest.Module
+	scope *cluster.Scope
+	q     protocol.ViewQuery
+	inv   *cluster.ObjectEvents
+}
+
 // resolve finds the module and opens the watch scope for a query. Known kinds resolve inline; a generic
-// kind waits (off the connection goroutine) for its first columnDefinitions. cb runs on the connection
-// goroutine and owns scope; when cb can never run, the scope is closed here.
-func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(mod *ingest.Module, scope *cluster.Scope, err error)) {
+// kind waits (off the connection goroutine) for its first columnDefinitions, and an involved-object events
+// view waits for the object's first events list. cb runs on the connection goroutine and owns res.scope;
+// when cb can never run, the scope is closed here.
+func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(res resolved, err error)) {
 	gvr, mgr := queryGVR(q), c.s.opt.Manager
+	if gvr == ingest.ObjectEventsGVR {
+		cb(resolved{}, &view.BadQueryError{Msg: "unsupported gvr " + `"` + q.GVR + `"`})
+		return
+	}
+	if q.Involved != nil {
+		if gvr != ingest.EventsGVR {
+			cb(resolved{}, &view.BadQueryError{Msg: "involved requires gvr " + ingest.EventsGVR})
+			return
+		}
+		go func() {
+			rctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			scope, oe, err := mgr.OpenObjectEvents(rctx, *q.Involved)
+			var res resolved
+			if err == nil {
+				res = resolved{mod: ingest.Lookup(ingest.ObjectEventsGVR), scope: scope, q: oe.Rewrite(q), inv: oe}
+			}
+			closeScope := func() {
+				if scope != nil {
+					scope.Close()
+				}
+			}
+			if !c.postfClean(func() error { cb(res, err); return nil }, closeScope) {
+				closeScope()
+			}
+		}()
+		return
+	}
 	if mod := ingest.Lookup(gvr); mod != nil {
-		cb(mod, mgr.OpenScope(gvr, q.Clusters), nil)
+		cb(resolved{mod: mod, scope: mgr.OpenScope(gvr, q.Clusters), q: q}, nil)
 		return
 	}
 	go func() {
@@ -590,7 +636,7 @@ func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(mod *i
 				scope.Close()
 			}
 		}
-		if !c.postfClean(func() error { cb(mod, scope, err); return nil }, closeScope) {
+		if !c.postfClean(func() error { cb(resolved{mod: mod, scope: scope, q: q}, err); return nil }, closeScope) {
 			closeScope()
 		}
 	}()
@@ -629,11 +675,11 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		rctx, rcancel := context.WithCancel(c.ctx)
 		ps := &pendingSub{cancel: rcancel}
 		c.pendingQ[p.QID] = ps
-		c.resolve(rctx, p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+		c.resolve(rctx, p.Query, func(res resolved, err error) {
 			delete(c.pendingQ, p.QID)
 			rcancel()
 			if err == nil && ps.cancelled { // unsubscribed while resolving
-				scope.Close()
+				res.scope.Close()
 				_ = c.respondErr(id, "not_found", "unsubscribed")
 				return
 			}
@@ -641,14 +687,15 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
-			sub, err := opt.Engine.Subscribe(p.Query, p.Gen, p.Window)
+			sub, err := opt.Engine.Subscribe(res.q, p.Gen, p.Window)
 			if err != nil {
-				scope.Close()
+				res.scope.Close()
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
-			c.subs[p.QID] = &connSub{qid: p.QID, sub: sub, scope: scope, gvr: queryGVR(p.Query), clusters: p.Query.Clusters, urgent: true}
-			_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
+			c.subs[p.QID] = &connSub{qid: p.QID, sub: sub, scope: res.scope, gvr: queryGVR(p.Query), clusters: p.Query.Clusters,
+				involved: p.Query.Involved, inv: res.inv, urgent: true}
+			_ = c.respond(id, protocol.ViewSubscribeResult{Columns: res.mod.Columns()})
 		})
 		return nil
 	case "view.update":
@@ -950,8 +997,9 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 	if c.subs[p.QID] != cs {
 		return c.respondErr(id, "not_found", "no such subscription")
 	}
-	if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters))) {
-		gvrChanged := queryGVR(*p.Query) != cs.gvr
+	if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !sameInvolved(p.Query.Involved, cs.involved) ||
+		(p.Query.Involved == nil && !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters)))) {
+		gvrChanged := queryGVR(*p.Query) != cs.gvr || (p.Query.Involved != nil) != (cs.involved != nil)
 		st := &asyncUpdate{}
 		cs.busy = st
 		finish := func() {
@@ -962,14 +1010,14 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 				next()
 			}
 		}
-		c.resolve(c.ctx, *p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+		c.resolve(c.ctx, *p.Query, func(res resolved, err error) {
 			defer finish()
 			if err != nil {
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
 			if st.superseded || c.subs[p.QID] != cs { // a newer update replaced this one, or the view is gone
-				scope.Close()
+				res.scope.Close()
 				if c.subs[p.QID] != cs {
 					_ = c.respondErr(id, "not_found", "no such subscription")
 				} else {
@@ -977,26 +1025,40 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 				}
 				return
 			}
-			if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
-				scope.Close()
+			if err := cs.sub.Update(&res.q, p.Gen, p.Window); err != nil {
+				res.scope.Close()
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
 			cs.scope.Close()
-			cs.scope, cs.gvr, cs.clusters, cs.urgent = scope, queryGVR(*p.Query), p.Query.Clusters, true
+			cs.scope, cs.gvr, cs.clusters, cs.urgent = res.scope, queryGVR(*p.Query), p.Query.Clusters, true
+			cs.involved, cs.inv = p.Query.Involved, res.inv
 			if gvrChanged { // the client needs the new schema
-				_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
+				_ = c.respond(id, protocol.ViewSubscribeResult{Columns: res.mod.Columns()})
 			} else {
 				_ = c.respond(id, nil)
 			}
 		})
 		return nil
 	}
-	if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
+	q := p.Query
+	if q != nil && cs.inv != nil { // an involved view: the same rewrite over the shared store
+		rq := cs.inv.Rewrite(*q)
+		q = &rq
+	}
+	if err := cs.sub.Update(q, p.Gen, p.Window); err != nil {
 		return c.respondBody(id, errBody(err))
 	}
 	cs.urgent = true
 	return c.respond(id, nil)
+}
+
+// sameInvolved reports whether two involved refs name the same object (the uid is ignored).
+func sameInvolved(a, b *protocol.ObjectRef) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Cluster == b.Cluster && a.GVR == b.GVR && a.Namespace == b.Namespace && a.Name == b.Name
 }
 
 func normClusters(in []string) []string {

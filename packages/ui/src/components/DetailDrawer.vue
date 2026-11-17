@@ -240,7 +240,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     </div>
                 </div>
                 <SecretPane v-else-if="tab === 'yaml'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
-                <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
+                <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.gvr}${target.namespace}${target.name}`" :target="target" />
                 <RelatedPane v-else :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :payload="EMPTY_PAYLOAD" />
             </template>
             <p v-else-if="error && !payload" class="notice danger" role="alert">{{ error }}</p>
@@ -276,7 +276,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     :parsed="parsed"
                 />
                 <YamlPane v-else-if="tab === 'yaml'" :target="pinned ?? target" :payload="payload" :deleted="deleted" :frames="frames" />
-                <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
+                <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.gvr}${target.namespace}${target.name}`" :target="target" />
                 <RelatedPane v-else :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :payload="payload" />
             </template>
         </div>

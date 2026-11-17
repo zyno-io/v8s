@@ -303,6 +303,15 @@ describe('DataCore posting', () => {
         expect(h.of('rows')[0].rows[0]).toEqual([1, 1, 'c', 'a', '', 0]);
     });
 
+    it('posts empty columns with the error when the subscribe fails', () => {
+        const h = harness();
+        h.frame(KindHello, 0, 1, { version: 1, agentVersion: 't', mode: 'fake' });
+        h.main({ t: 'subscribe', qid: 1, gen: 1, query: QUERY, window: { offset: 0, limit: 10 } });
+        const req = h.sent.find(s => s.kind === KindRequest)!;
+        h.frame(KindResponse, req.channel, 2, { error: { code: 'forbidden', message: 'no permission' } });
+        expect(h.of('columns')).toEqual([{ t: 'columns', qid: 1, columns: [], error: { code: 'forbidden', message: 'no permission' } }]);
+    });
+
     it('fails outstanding requests when the socket closes', () => {
         const h = harness();
         h.frame(KindHello, 0, 1, { version: 1, agentVersion: 't', mode: 'fake' });

@@ -73,6 +73,9 @@ func filterValues(v any) ([]string, error) {
 
 // Normalize validates q and produces its canonical form; equal queries yield equal Keys.
 func Normalize(q protocol.ViewQuery) (*Norm, error) {
+	if q.Involved != nil {
+		return nil, bad("involved queries are resolved by the agent")
+	}
 	gvr := q.GVR
 	if gvr == "" {
 		gvr = PodsGVR

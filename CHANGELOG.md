@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+- The Events tab of a resource now shows all of its events, Normal and Warning, newest first, with the component that reported each one (the new Source column also appears in the global Events list). The events load when you open the tab and stay live while it is open; the always-on watch still keeps Warning events only. Events of cluster-scoped objects come from the `default` namespace, and Event objects themselves no longer offer an Events tab.
+
 ## 0.1.0 — 2026-11-17
 
 First release. v8s is a multi-cluster Kubernetes manager for desktop, browser, and phone, built around a Go agent that keeps compact projections of your clusters and sends the UI only the rows on screen.

@@ -279,6 +279,13 @@ func Tier0Modules() []*Module {
 
 const PodsGVR = "v1/pods"
 
+// EventsGVR is the Warning-only tier-0 events kind.
+const EventsGVR = "v1/events"
+
+// ObjectEventsGVR is the view-only kind behind an involved-object events view: one shared per-cluster store
+// holding every watched object's events (Normal and Warning). It is never served by discovery and never on the wire.
+const ObjectEventsGVR = "v8s/v1/objectevents"
+
 // ParseGVR splits "v1/pods" or "apps/v1/deployments".
 func ParseGVR(s string) (group, version, resource string, err error) {
 	parts := strings.Split(s, "/")

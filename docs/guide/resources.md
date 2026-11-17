@@ -27,8 +27,10 @@ Press `Enter` on a row, or click it, to open the drawer. The URL changes with it
 | Security  | Kyverno, Trivy, and Kubescape findings for this workload. See [Security](/guide/security)             |
 | Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network) |
 | YAML      | The live object. Read, copy, or edit it                                                               |
-| Events    | Events for this object, newest first                                                                  |
+| Events    | All events for this object, newest first                                                              |
 | Related   | What owns this object and what it owns                                                                |
+
+The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 
 Tabs appear in that order, and only those that apply to the type and, for Security and Flows, to the clusters you selected. Use the arrow keys, `Home`, and `End` to move between tabs. `l`, `s`, `e`, and `d` jump to Logs, Shell, YAML (in edit mode), and Overview from a table. See [Navigation](/guide/navigation#keyboard-shortcuts).
 

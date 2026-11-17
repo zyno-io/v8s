@@ -186,6 +186,20 @@ func (w *World) putLocked(gvr string, o map[string]any) {
 	m[key(ns, nameOf(o))] = &unstructured.Unstructured{Object: o}
 }
 
+// eventLocked records one event about an object (inv is its involvedObject: kind, name, namespace, uid). While the
+// world is generated (emit false) it is put silently; later it is stored and sent to watchers.
+func (w *World) eventLocked(ns string, inv map[string]any, typ, reason, msg, source string, at time.Time, emit bool) {
+	name := fmt.Sprintf("%v.%x", inv["name"], 0x2a00000+w.rv+1)
+	o := map[string]any{"metadata": objMeta(ns, name, nil), "type": typ, "reason": reason, "message": msg, "count": int64(1),
+		"source": map[string]any{"component": source}, "involvedObject": inv, "lastTimestamp": ts(at)}
+	if !emit {
+		w.putLocked("v1/events", o)
+		return
+	}
+	mapOf(o, "metadata")["creationTimestamp"] = ts(at)
+	w.storeLocked("v1/events", &unstructured.Unstructured{Object: o}, true)
+}
+
 func objMeta(ns, name string, labels map[string]string) map[string]any {
 	md := map[string]any{"name": name}
 	if ns != "" {
@@ -287,6 +301,18 @@ func (w *World) generate(c *Cluster) {
 				"nodeInfo": map[string]any{"kubeletVersion": "v1.31.4", "osImage": "Ubuntu 24.04 LTS", "kernelVersion": "6.8.0-51-generic",
 					"containerRuntimeVersion": "containerd://1.7.24"},
 			}})
+		// Node events live in "default" and carry no involvedObject.namespace; the kubelet records its events
+		// with the node name as uid, the node controller with the real one.
+		nname := "node-" + strconv.Itoa(i)
+		nuid := string(w.objs["v1/nodes"][key("", nname)].GetUID())
+		w.eventLocked("default", map[string]any{"kind": "Node", "name": nname, "uid": nname}, "Normal", "Starting", "Starting kubelet.", "kubelet",
+			time.Now().Add(-47*time.Hour), false)
+		w.eventLocked("default", map[string]any{"kind": "Node", "name": nname, "uid": nuid}, "Normal", "RegisteredNode",
+			"Node "+nname+" event: Registered Node "+nname+" in Controller", "node-controller", time.Now().Add(-47*time.Hour), false)
+		if ready == "False" {
+			w.eventLocked("default", map[string]any{"kind": "Node", "name": nname, "uid": nuid}, "Normal", "NodeNotReady",
+				"Node "+nname+" status is now: NodeNotReady", "node-controller", time.Now().Add(-20*time.Minute), false)
+		}
 	}
 	for a := 0; a < apps; a++ {
 		name, ns := "svc-"+strconv.Itoa(a), teamNS(a)
@@ -333,6 +359,8 @@ func (w *World) generate(c *Cluster) {
 			"spec":   map[string]any{"replicas": replicas, "selector": map[string]any{"matchLabels": map[string]any{"app": name}}, "template": podTemplate(name, image)},
 			"status": map[string]any{"replicas": replicas, "readyReplicas": avail, "availableReplicas": avail, "updatedReplicas": replicas}})
 		duid := w.objs["apps/v1/deployments"][key(ns, name)].GetUID()
+		w.eventLocked(ns, map[string]any{"kind": "Deployment", "name": name, "namespace": ns, "uid": string(duid)}, "Normal", "ScalingReplicaSet",
+			"Scaled up replica set "+rs+" to "+strconv.FormatInt(replicas, 10), "deployment-controller", time.Now().Add(-48*time.Hour), false)
 		for i, rsn := range []string{oldRS, rs} {
 			rmeta := objMeta(ns, rsn, map[string]string{"app": name, "pod-template-hash": fmt.Sprintf("%x", rsHash(a))})
 			rmeta["annotations"] = map[string]any{"deployment.kubernetes.io/revision": strconv.Itoa(i + 1)}
@@ -417,9 +445,18 @@ func (w *World) generate(c *Cluster) {
 			"spec": map[string]any{"podSelector": map[string]any{}, "policyTypes": []any{"Ingress"}}})
 	}
 	for i, f := range fails {
+		inv := map[string]any{"kind": "Pod", "name": f.name, "namespace": f.ns, "uid": f.uid}
+		src := "kubelet"
+		if f.reason == "FailedScheduling" {
+			src = "default-scheduler"
+		} else {
+			w.eventLocked(f.ns, inv, "Normal", "Scheduled", "Successfully assigned "+f.ns+"/"+f.name+" to node-"+strconv.Itoa(i%nodes), "default-scheduler",
+				time.Now().Add(-time.Duration(i%120+5)*time.Minute), false)
+		}
 		ev := objMeta(f.ns, fmt.Sprintf("%s.%x", f.name, 0x17a0000+i), nil)
 		w.putLocked("v1/events", map[string]any{"metadata": ev, "type": "Warning", "reason": f.reason, "message": f.msg, "count": int64(f.count),
-			"involvedObject": map[string]any{"kind": "Pod", "name": f.name, "namespace": f.ns, "uid": f.uid},
+			"source":         map[string]any{"component": src},
+			"involvedObject": inv,
 			"lastTimestamp":  ts(time.Now().Add(-time.Duration(i%120) * time.Minute))})
 	}
 	for _, sc := range []string{"fast", "standard", "archive"} {

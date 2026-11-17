@@ -110,6 +110,22 @@ async function main() {
             await toast(page, /Scaled/);
         });
 
+        await step('events tab lists every event, live', async () => {
+            await page.getByRole('tab', { name: 'Events' }).click();
+            const pane = page.getByTestId('events-pane');
+            await pane.locator('li[data-type="Normal"]').first().waitFor({ timeout: 15000 });
+            if ((await page.getByText(/keeps Warning events only/).count()) > 0) throw new Error('the Warning-only note is still shown');
+            await pane.getByText('from deployment-controller').first().waitFor();
+            // Another scale lands as a new row without reopening the tab.
+            await page.getByTestId('actions-menu').click();
+            await page.getByRole('menuitem', { name: /Scale/ }).click();
+            const dlg = page.getByRole('dialog', { name: /Scale/ });
+            await dlg.getByLabel('Replicas').fill('6');
+            await dlg.getByRole('button', { name: 'Scale', exact: true }).click();
+            await toast(page, /Scaled/);
+            await pane.getByText(/to 6$/).first().waitFor({ timeout: 10000 });
+        });
+
         await step('conflict: server changes under an open edit, Overwrite applies mine', async () => {
             await page.getByRole('tab', { name: 'YAML' }).click();
             await page.getByTestId('edit-yaml').click();

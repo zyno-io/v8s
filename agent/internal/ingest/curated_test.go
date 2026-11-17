@@ -99,7 +99,7 @@ func TestCuratedProjections(t *testing.T) {
 				Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}, StorageClassName: "std"},
 			Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}}, "Released|ns/c|1Gi||Retain|std", ToneWarning},
 		{"v1/events", &corev1.Event{ObjectMeta: om("e", "ns"), Type: "Warning", Reason: "BackOff", Message: "boom", Count: 4,
-			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "p"}, LastTimestamp: metav1.Time{Time: time.UnixMilli(5000)}}, "Warning|BackOff|Pod/p|boom|4|5000", ToneWarning},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "p"}, LastTimestamp: metav1.Time{Time: time.UnixMilli(5000)}}, "Warning|BackOff|Pod/p|boom|4|5000|", ToneWarning},
 		{"v1/serviceaccounts", &corev1.ServiceAccount{ObjectMeta: om("sa", "ns"), Secrets: []corev1.ObjectReference{{}, {}}}, "2", ToneNeutral},
 		{"autoscaling/v2/horizontalpodautoscalers", &autoscalingv2.HorizontalPodAutoscaler{ObjectMeta: om("h", "ns"),
 			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: "api"}, MinReplicas: i32p(2), MaxReplicas: 5,

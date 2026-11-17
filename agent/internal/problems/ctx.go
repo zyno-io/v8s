@@ -28,7 +28,7 @@ const (
 
 var builtinGRs = []string{GRPods, GRReplicas, GRDeploys, GRSets, GRDaemons, GRJobs, GRCronJobs, GRSlices, GRServices, GRIngresses, GREvents, GRNodes}
 
-// Event row cells (module v1/events): type, reason, object, message, count, lastSeen.
+// Event row cells (module v1/events): type, reason, object, message, count, lastSeen (then source, cell 6, unused here).
 const (
 	evType = iota
 	evReason
