@@ -550,9 +550,9 @@ const (
 // Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
 // Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
 const (
-	StreamChanStdin  byte = 0x00
-	StreamChanStdout byte = 0x01
-	StreamChanStderr byte = 0x02
+	StreamChanStdin  uint8 = 0x00
+	StreamChanStdout uint8 = 0x01
+	StreamChanStderr uint8 = 0x02
 )
 
 // StreamClientMsg is a client → agent text frame: {"credit": n} (logs: grants n more bytes) or

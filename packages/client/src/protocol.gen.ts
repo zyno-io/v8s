@@ -575,17 +575,17 @@ export const LogBatchMillis = 100;
  * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
  * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
  */
-export const StreamChanStdin: byte = 0x00;
+export const StreamChanStdin: number /* uint8 */ = 0x00;
 /**
  * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
  * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
  */
-export const StreamChanStdout: byte = 0x01;
+export const StreamChanStdout: number /* uint8 */ = 0x01;
 /**
  * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
  * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
  */
-export const StreamChanStderr: byte = 0x02;
+export const StreamChanStderr: number /* uint8 */ = 0x02;
 /**
  * StreamClientMsg is a client → agent text frame: {"credit": n} (logs: grants n more bytes) or
  * {"resize": {"cols": c, "rows": r}} (exec, node shell, debug).
