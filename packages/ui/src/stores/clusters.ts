@@ -51,7 +51,9 @@ export const useClustersStore = defineStore('clusters', () => {
     }
 
     function open() {
-        checked.value = new Set(activeIds.value.length ? activeIds.value : remembered.value);
+        // A context linked as another one's write context is not listed, so it must not stay checked.
+        const ids = activeIds.value.length ? activeIds.value : remembered.value;
+        checked.value = new Set(list.value.length ? ids.filter(id => nameById.value.has(id)) : ids);
         popoverOpen.value = true;
     }
 

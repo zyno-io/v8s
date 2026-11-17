@@ -51,6 +51,7 @@ const note = computed(() => {
 watch(
     () => clusters.popoverOpen,
     async open => {
+        if (!open) linkedOpen.value = false;
         if (open) {
             filter.value = '';
             await nextTick();
@@ -237,7 +238,7 @@ const suggestions = computed(() =>
             <p v-if="clusters.error" class="err" role="alert">{{ clusters.error }}</p>
             <div class="foot">
                 <span class="small note">{{ note }}</span>
-                <button class="btn ghost sm" type="button" aria-haspopup="dialog" @click="linkedOpen = true">
+                <button class="btn ghost sm" type="button" aria-haspopup="dialog" data-testid="linked-open" @click="linkedOpen = true">
                     Linked contexts…{{ linkCount ? ` (${linkCount})` : '' }}
                 </button>
                 <div class="grow"></div>

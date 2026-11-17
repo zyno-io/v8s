@@ -26,6 +26,8 @@ const current = computed(() => Object.entries(settings.links).sort((a, b) => nam
 const suggestions = computed(() => suggestLinks(candidates.value, settings.links, dismissedLinks(settings.doc)));
 const readOptions = computed(() => pairOptions(candidates.value, settings.links, write.value));
 const writeOptions = computed(() => pairOptions(candidates.value, settings.links, read.value));
+// A pick can become invalid after another link (the option disappears but the value stays): only valid picks link.
+const pairValid = computed(() => readOptions.value.some(o => o.id === read.value) && writeOptions.value.some(o => o.id === write.value));
 
 onMounted(async () => {
     returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -35,7 +37,9 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
     if (el.value?.open) el.value.close();
-    returnFocus?.focus?.();
+    // Opened from the suggestions banner, which may be gone by now: fall back to the footer button.
+    const target = returnFocus?.isConnected ? returnFocus : document.querySelector<HTMLElement>('[data-testid="linked-open"]');
+    target?.focus?.();
 });
 
 async function guard(fn: () => Promise<unknown>) {
@@ -58,6 +62,7 @@ function link(r: string, w: string) {
     });
 }
 function linkManual() {
+    if (!pairValid.value) return;
     link(read.value, write.value);
     read.value = '';
     write.value = '';
@@ -90,6 +95,7 @@ function setAutoSwitch(e: Event) {
         data-testid="linked-dialog"
         @cancel.prevent="emit('close')"
         @click.self="emit('close')"
+        @keydown.stop
     >
         <div class="body">
             <h2 id="lc-title">Linked contexts</h2>
@@ -165,7 +171,7 @@ function setAutoSwitch(e: Event) {
                             <option v-for="o in writeOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
                         </select></label
                     >
-                    <button class="btn sm" type="submit" :disabled="!read || !write" data-testid="lc-link">Link</button>
+                    <button class="btn sm" type="submit" :disabled="!pairValid" data-testid="lc-link">Link</button>
                 </form>
             </section>
 

@@ -646,9 +646,20 @@ async function main() {
             const item = dlg.getByTestId('lc-current').locator('li', { hasText: r });
             await item.waitFor({ timeout: 10000 });
             assert.match((await item.textContent()) ?? '', new RegExp(w));
+            // The write context leaves the selector as its own cluster.
+            await sel.getByRole('checkbox', { name: `Select ${w}`, exact: true }).waitFor({ state: 'detached', timeout: 10000 });
             await page.screenshot({ path: shot('linked-dialog') });
             await item.getByRole('button', { name: 'Unlink' }).click();
             await item.waitFor({ state: 'detached', timeout: 10000 });
+            // Escape closes only the dialog: the selector stays open and app shortcuts do not fire behind it.
+            await dlg.getByRole('button', { name: 'Done' }).focus();
+            await page.keyboard.press(':');
+            assert.equal(await page.getByRole('dialog', { name: 'Command bar' }).count(), 0, 'no command bar behind the dialog');
+            await page.keyboard.press('Escape');
+            await dlg.waitFor({ state: 'hidden' });
+            assert.ok(await sel.isVisible(), 'Escape in the dialog keeps the selector open');
+            await sel.getByRole('button', { name: /^Linked contexts…/ }).click();
+            await dlg.waitFor();
             await dlg.getByRole('button', { name: 'Done' }).click();
             await dlg.waitFor({ state: 'hidden' });
             await sel.waitFor();
