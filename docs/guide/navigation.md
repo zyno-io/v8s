@@ -29,20 +29,20 @@ Every resource list is the same component, so the controls work everywhere.
 
 Press `?` for the same list in the app.
 
-| Key                | Action                                                                          |
-| ------------------ | ------------------------------------------------------------------------------- |
-| `:`                | Open the command bar                                                            |
-| `/`                | Focus the filter                                                                |
-| `j` / `k`          | Move the focus down / up (arrow keys also work)                                 |
-| `Enter`            | Open the focused row in the drawer                                              |
-| `x`                | Select or deselect the focused row                                              |
-| `l`                | Open the Logs tab of the focused pod or workload                                |
-| `s`                | Open the Shell tab of the focused pod                                           |
-| `e`                | Edit the YAML of the focused row, or of the object open in the drawer           |
-| `d`                | Describe: open the focused row, or the open object, on the Overview tab         |
-| `Esc`              | Clear the filter, then the selection, then close the drawer                     |
-| `Ctrl+K` / `Cmd+K` | Open the search palette                                                         |
-| `?`                | Show the shortcut list                                                          |
+| Key                | Action                                                                  |
+| ------------------ | ----------------------------------------------------------------------- |
+| `:`                | Open the command bar                                                    |
+| `/`                | Focus the filter                                                        |
+| `j` / `k`          | Move the focus down / up (arrow keys also work)                         |
+| `Enter`            | Open the focused row in the drawer                                      |
+| `x`                | Select or deselect the focused row                                      |
+| `l`                | Open the Logs tab of the focused pod or workload                        |
+| `s`                | Open the Shell tab of the focused pod                                   |
+| `e`                | Edit the YAML of the focused row, or of the object open in the drawer   |
+| `d`                | Describe: open the focused row, or the open object, on the Overview tab |
+| `Esc`              | Clear the filter, then the selection, then close the drawer             |
+| `Ctrl+K` / `Cmd+K` | Open the search palette                                                 |
+| `?`                | Show the shortcut list                                                  |
 
 `l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).
 
@@ -67,23 +67,23 @@ You cannot mix plain names with `+name` and `-name` in one command. A group name
 
 Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `deploy`, `svc`, `no`, `cj`, `hr`, `ks` all work, and CRDs complete from discovery. If a prefix matches several types, the bar lists the candidates.
 
-| Command                 | Effect                                                         |
-| ----------------------- | -------------------------------------------------------------- |
-| `:po`                   | Open pods (all namespaces)                                     |
-| `:po payments`          | Open pods in the `payments` namespace                          |
-| `:deploy payments/api`  | Open the Deployment `api` in `payments`, in the drawer        |
-| `:no worker-1`          | For cluster-scoped types, the argument is the object name      |
-| `:hr`                   | Open Flux HelmReleases                                         |
+| Command                | Effect                                                    |
+| ---------------------- | --------------------------------------------------------- |
+| `:po`                  | Open pods (all namespaces)                                |
+| `:po payments`         | Open pods in the `payments` namespace                     |
+| `:deploy payments/api` | Open the Deployment `api` in `payments`, in the drawer    |
+| `:no worker-1`         | For cluster-scoped types, the argument is the object name |
+| `:hr`                  | Open Flux HelmReleases                                    |
 
 ### Other commands
 
-| Command                    | Effect                                                    |
-| -------------------------- | --------------------------------------------------------- |
-| `:ns payments`             | Filter the current view to a namespace                    |
-| `:ns all`                  | Clear the namespace filter                                |
-| `:pb` or `:problems`       | Open the [Problems view](/guide/problems)                 |
-| `:star` / `:unstar`        | Star or unstar the current resource type                  |
-| `:q`                       | Close the bar (`Esc` does the same)                       |
+| Command              | Effect                                    |
+| -------------------- | ----------------------------------------- |
+| `:ns payments`       | Filter the current view to a namespace    |
+| `:ns all`            | Clear the namespace filter                |
+| `:pb` or `:problems` | Open the [Problems view](/guide/problems) |
+| `:star` / `:unstar`  | Star or unstar the current resource type  |
+| `:q`                 | Close the bar (`Esc` does the same)       |
 
 Aliases: `:context` for `:ctx`, `:namespace` for `:ns`.
 

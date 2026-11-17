@@ -4,11 +4,11 @@ v8s ships as a desktop app, a static CLI binary that serves the UI, a container 
 
 ## Desktop app
 
-| Platform                        | Package                         | Notes                                              |
-| ------------------------------- | ------------------------------- | -------------------------------------------------- |
-| macOS (Apple silicon and Intel) | `.dmg`                          | Signed and notarized                               |
-| Windows (x64)                   | `.exe` installer                | Signed. Per-user install, you can change the folder |
-| Linux (x64)                     | `.AppImage`, `.deb`, `.rpm`     |                                                    |
+| Platform                        | Package                     | Notes                                               |
+| ------------------------------- | --------------------------- | --------------------------------------------------- |
+| macOS (Apple silicon and Intel) | `.dmg`                      | Signed and notarized                                |
+| Windows (x64)                   | `.exe` installer            | Signed. Per-user install, you can change the folder |
+| Linux (x64)                     | `.AppImage`, `.deb`, `.rpm` |                                                     |
 
 Installer files are named `v8s-<version>-<os>-<arch>.<ext>`.
 
@@ -54,12 +54,12 @@ tar xzf v8s_0.1.0_linux_amd64.tar.gz
 
 macOS binaries are signed and notarized. The Windows executable is signed. Put the binary somewhere on your `PATH` to run it as `v8s`.
 
-| Command       | What it does                                                                                                      |
-| ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `v8s serve`   | Runs the agent on loopback, serves the embedded UI, and opens your browser. Flags: `--port`, `--no-browser`, `--kubeconfig` |
-| `v8s server`  | Runs hosted multi-user mode. Flag: `--config`. See [Hosted mode](/guide/hosted)                                   |
+| Command       | What it does                                                                                                                             |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `v8s serve`   | Runs the agent on loopback, serves the embedded UI, and opens your browser. Flags: `--port`, `--no-browser`, `--kubeconfig`              |
+| `v8s server`  | Runs hosted multi-user mode. Flag: `--config`. See [Hosted mode](/guide/hosted)                                                          |
 | `v8s agent`   | Runs the bare agent. The desktop app launches this. Also used for [demo mode](/guide/getting-started#try-it-without-a-cluster-demo-mode) |
-| `v8s version` | Prints the version                                                                                                |
+| `v8s version` | Prints the version                                                                                                                       |
 
 Every flag is listed in the [CLI reference](/guide/cli).
 

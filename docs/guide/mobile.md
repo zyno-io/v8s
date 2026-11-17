@@ -18,26 +18,26 @@ The server does the watching, so your phone's battery and data plan do not pay f
 
 ## What works on a phone
 
-| Task                                            | On a phone                                                  |
-| ----------------------------------------------- | ----------------------------------------------------------- |
-| Problems across clusters                        | The main use. Grouped by workload, severity filter, acknowledge, snooze |
-| Choose clusters and groups                      | Yes. Group chips are the fast path                          |
-| Search objects by name                          | Yes                                                         |
-| Object detail: status, conditions, events       | Yes, full screen                                            |
+| Task                                            | On a phone                                                                                   |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Problems across clusters                        | The main use. Grouped by workload, severity filter, acknowledge, snooze                      |
+| Choose clusters and groups                      | Yes. Group chips are the fast path                                                           |
+| Search objects by name                          | Yes                                                                                          |
+| Object detail: status, conditions, events       | Yes, full screen                                                                             |
 | Logs                                            | Yes: tail, follow, search, with a 5,000-line buffer. Merged multi-pod logs are desktop-first |
-| Flux status, suspend, resume, reconcile         | Yes. One-tap reconcile is the most common phone action      |
-| Helm status, history, rollback                  | Yes. Rollback is hold-to-confirm                            |
-| Scale, restart, delete a pod, trigger a CronJob | Yes, hold-to-confirm                                        |
-| Cordon, uncordon                                | Yes                                                         |
-| Drain                                           | Yes. The pre-flight summary is shown in full before you confirm |
-| Security summaries                              | Yes, as summaries. Full CVE tables work but are desktop-first |
-| Pod shell                                       | Works, with a simplified terminal and an accessory key row. Best on desktop |
-| Edit YAML                                       | Reading is fine. Editing works but is not designed for a phone |
-| Node shell                                      | Desktop only. Hidden on phones                              |
-| Port-forward                                    | Desktop only                                                |
-| Dense multi-cluster tables                      | Works as cards, but steers you to filtered views            |
-| Hubble service map, Flux graphs                 | Desktop only. The phone has the Drops and Hubble status views |
-| Bulk actions across clusters                    | Desktop only. Too easy to fat-finger                        |
+| Flux status, suspend, resume, reconcile         | Yes. One-tap reconcile is the most common phone action                                       |
+| Helm status, history, rollback                  | Yes. Rollback is hold-to-confirm                                                             |
+| Scale, restart, delete a pod, trigger a CronJob | Yes, hold-to-confirm                                                                         |
+| Cordon, uncordon                                | Yes                                                                                          |
+| Drain                                           | Yes. The pre-flight summary is shown in full before you confirm                              |
+| Security summaries                              | Yes, as summaries. Full CVE tables work but are desktop-first                                |
+| Pod shell                                       | Works, with a simplified terminal and an accessory key row. Best on desktop                  |
+| Edit YAML                                       | Reading is fine. Editing works but is not designed for a phone                               |
+| Node shell                                      | Desktop only. Hidden on phones                                                               |
+| Port-forward                                    | Desktop only                                                                                 |
+| Dense multi-cluster tables                      | Works as cards, but steers you to filtered views                                             |
+| Hubble service map, Flux graphs                 | Desktop only. The phone has the Drops and Hubble status views                                |
+| Bulk actions across clusters                    | Desktop only. Too easy to fat-finger                                                         |
 
 ## Layout differences
 

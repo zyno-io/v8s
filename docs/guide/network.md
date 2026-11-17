@@ -35,12 +35,12 @@ Per cluster: whether the relay is available, its version and uptime, flows seen 
 
 ## Network problem classes
 
-| Class                  | Raised when                                                                              | Default |
-| ---------------------- | ---------------------------------------------------------------------------------------- | ------- |
-| `network.policy-drops` | Sustained policy-denied drops between two workloads (about 10 in 5 minutes)              | Off     |
-| `network.l7-errors`    | HTTP 5xx count for a service above a threshold (about 20 in 5 minutes)                   | Off     |
-| `network.dns-errors`   | A spike in NXDOMAIN or SERVFAIL (about 20 in 5 minutes)                                  | Off     |
-| `hubble.relay-down`    | Hubble Relay is unreachable                                                              | On      |
+| Class                  | Raised when                                                                 | Default |
+| ---------------------- | --------------------------------------------------------------------------- | ------- |
+| `network.policy-drops` | Sustained policy-denied drops between two workloads (about 10 in 5 minutes) | Off     |
+| `network.l7-errors`    | HTTP 5xx count for a service above a threshold (about 20 in 5 minutes)      | Off     |
+| `network.dns-errors`   | A spike in NXDOMAIN or SERVFAIL (about 20 in 5 minutes)                     | Off     |
+| `hubble.relay-down`    | Hubble Relay is unreachable                                                 | On      |
 
 The three flow classes are **off by default** because they need a continuous flow subscription: a port-forward that runs only while you have v8s open. v8s subscribes to a narrow server-side filter (only dropped flows, plus HTTP 5xx only if you enabled that class), counts per pair per minute, and keeps nothing else. Turn them on in the [Problems view](/guide/problems). `hubble.relay-down` is on by default and raises only where a relay exists.
 

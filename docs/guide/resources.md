@@ -79,16 +79,16 @@ Creation uses server-side apply with `force=false`, so a conflict with another f
 
 Actions appear on a row's action bar and in the bulk bar for a selection. They are disabled, with a reason, when your RBAC does not allow them. If your cluster has a [linked write context](/guide/clusters#linked-read-and-write-contexts), the tooltip says the action will run through it.
 
-| Type                         | Actions                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| Deployment                   | Scale, Restart, Roll back                                                   |
-| StatefulSet                  | Scale, Restart                                                              |
-| DaemonSet                    | Restart                                                                     |
-| ReplicaSet                   | Scale                                                                       |
-| Node                         | Cordon, Uncordon, Drain (see [Operations](/guide/operations#cordon-and-drain)) |
-| CronJob                      | Suspend, Resume, Trigger now                                                |
-| Flux and Helm objects        | See [Flux](/guide/flux) and [Helm](/guide/helm)                             |
-| Any type                     | Delete                                                                      |
+| Type                  | Actions                                                                        |
+| --------------------- | ------------------------------------------------------------------------------ |
+| Deployment            | Scale, Restart, Roll back                                                      |
+| StatefulSet           | Scale, Restart                                                                 |
+| DaemonSet             | Restart                                                                        |
+| ReplicaSet            | Scale                                                                          |
+| Node                  | Cordon, Uncordon, Drain (see [Operations](/guide/operations#cordon-and-drain)) |
+| CronJob               | Suspend, Resume, Trigger now                                                   |
+| Flux and Helm objects | See [Flux](/guide/flux) and [Helm](/guide/helm)                                |
+| Any type              | Delete                                                                         |
 
 - **Scale** asks for the replica count.
 - **Restart** patches the pod template's `kubectl.kubernetes.io/restartedAt` annotation, the same thing `kubectl rollout restart` does.
@@ -102,11 +102,11 @@ These send small targeted patches that touch only their own field, so they do no
 
 Every destructive action asks first. How hard it asks depends on the blast radius:
 
-| Situation                                                   | Confirmation                                      |
-| ----------------------------------------------------------- | ------------------------------------------------- |
-| One object in a non-production cluster                      | A confirm dialog                                  |
-| More than one object, or objects in more than one cluster   | Type the count to confirm                         |
-| Any object in a cluster that belongs to a production group  | Type the object name (or the count) to confirm    |
+| Situation                                                  | Confirmation                                   |
+| ---------------------------------------------------------- | ---------------------------------------------- |
+| One object in a non-production cluster                     | A confirm dialog                               |
+| More than one object, or objects in more than one cluster  | Type the count to confirm                      |
+| Any object in a cluster that belongs to a production group | Type the object name (or the count) to confirm |
 
 Bulk dialogs list the exact objects and clusters. A selection always resolves to the objects you chose when you press confirm, even if the list moved underneath you. Retrying after a reconnect cannot apply an action twice.
 

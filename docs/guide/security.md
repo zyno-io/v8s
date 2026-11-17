@@ -12,15 +12,15 @@ Kyverno 1.17 deprecated classic `ClusterPolicy` and `Policy`, and from **Kyverno
 
 ### Policies table
 
-| Column     | Meaning                                                                          |
-| ---------- | -------------------------------------------------------------------------------- |
-| Mode       | `Audit`, `Enforce`, or `Mixed`, worked out per rule                              |
-| Read-only  | Yes for classic policies, which Kyverno 1.20 and later no longer executes        |
-| Ready      | The policy's Ready condition                                                     |
-| Rules      | Number of rules                                                                  |
-| Background | Whether background scanning is on                                                |
-| Severity   | The policy's severity annotation                                                 |
-| Message    | The policy's message                                                             |
+| Column     | Meaning                                                                   |
+| ---------- | ------------------------------------------------------------------------- |
+| Mode       | `Audit`, `Enforce`, or `Mixed`, worked out per rule                       |
+| Read-only  | Yes for classic policies, which Kyverno 1.20 and later no longer executes |
+| Ready      | The policy's Ready condition                                              |
+| Rules      | Number of rules                                                           |
+| Background | Whether background scanning is on                                         |
+| Severity   | The policy's severity annotation                                          |
+| Message    | The policy's message                                                      |
 
 Open a policy to see its summary (mode, readiness, rules, background scanning, severity, message), a **violations table** with the resource, rule, and message of each failing result, and the policy's YAML (read-only). The Policies page has one tab per policy kind the clusters serve, and a filter box.
 
@@ -78,18 +78,18 @@ Kubescape's runtime threat-detection alerts are not stored in the Kubernetes API
 
 ## Problem classes these feed
 
-| Class                    | Source                          | Default |
-| ------------------------ | ------------------------------- | ------- |
-| `policy.fail`            | Kyverno                         | On      |
-| `policy.error`           | Kyverno                         | On      |
-| `policy.not-ready`       | Kyverno                         | On      |
-| `policy.admission-denied`| Kyverno                         | On      |
-| `vuln.critical`          | Trivy, Kubescape                | On      |
-| `vuln.high`              | Trivy, Kubescape                | Off     |
-| `misconfig.critical`     | Trivy, Kubescape                | On      |
-| `misconfig.high`         | Trivy, Kubescape                | Off     |
-| `secret.exposed`         | Trivy                           | On      |
-| `rbac.high`              | Trivy                           | Off     |
+| Class                     | Source           | Default |
+| ------------------------- | ---------------- | ------- |
+| `policy.fail`             | Kyverno          | On      |
+| `policy.error`            | Kyverno          | On      |
+| `policy.not-ready`        | Kyverno          | On      |
+| `policy.admission-denied` | Kyverno          | On      |
+| `vuln.critical`           | Trivy, Kubescape | On      |
+| `vuln.high`               | Trivy, Kubescape | Off     |
+| `misconfig.critical`      | Trivy, Kubescape | On      |
+| `misconfig.high`          | Trivy, Kubescape | Off     |
+| `secret.exposed`          | Trivy            | On      |
+| `rbac.high`               | Trivy            | Off     |
 
 Policy failures are one problem per resource. Vulnerability problems are one per image, not per CVE, so 300 CVEs in one image is one row. See [Problems](/guide/problems) to turn classes on or off per group. For example, hide the vulnerability classes in `staging`.
 

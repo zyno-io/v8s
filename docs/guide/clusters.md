@@ -56,16 +56,16 @@ On a phone, group chips are the fast way to pick clusters. See [On a phone](/gui
 
 Each cluster shows its state next to its name in the selector and in the toolbar of multi-cluster views.
 
-| State            | What it means                                                                                               | What to do                                                       |
-| ---------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| not connected    | Not selected, or selected but not yet connected.                                                            | Press Connect.                                                   |
-| connecting       | v8s is loading the context and running its credential plugin.                                               | Wait. A browser sign-in may be open.                             |
-| sign-in required | The credential is missing or expired.                                                                       | Sign in again (run the plugin or `kubectl` once), then reconnect. |
-| syncing          | Connected; the first rows are arriving. The count shows rows loaded so far. Rows appear as they load.      | Nothing. You can use the view while it syncs.                    |
-| ready            | Live. Updates arrive within a fraction of a second.                                                         |                                                                  |
-| degraded         | Connected, but some resource types are forbidden or failing. The message says which, for example "no permission to list `ingresses`". | Ask for the RBAC, or ignore the affected checks.                 |
-| reconnecting     | The connection dropped. Last-known rows stay visible but greyed, marked "stale since" a time.               | Wait. v8s retries with backoff.                                  |
-| unreachable      | The API server cannot be reached.                                                                           | Check VPN, network, and the server address. See [Troubleshooting](/guide/troubleshooting). |
+| State            | What it means                                                                                                                         | What to do                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| not connected    | Not selected, or selected but not yet connected.                                                                                      | Press Connect.                                                                             |
+| connecting       | v8s is loading the context and running its credential plugin.                                                                         | Wait. A browser sign-in may be open.                                                       |
+| sign-in required | The credential is missing or expired.                                                                                                 | Sign in again (run the plugin or `kubectl` once), then reconnect.                          |
+| syncing          | Connected; the first rows are arriving. The count shows rows loaded so far. Rows appear as they load.                                 | Nothing. You can use the view while it syncs.                                              |
+| ready            | Live. Updates arrive within a fraction of a second.                                                                                   |                                                                                            |
+| degraded         | Connected, but some resource types are forbidden or failing. The message says which, for example "no permission to list `ingresses`". | Ask for the RBAC, or ignore the affected checks.                                           |
+| reconnecting     | The connection dropped. Last-known rows stay visible but greyed, marked "stale since" a time.                                         | Wait. v8s retries with backoff.                                                            |
+| unreachable      | The API server cannot be reached.                                                                                                     | Check VPN, network, and the server address. See [Troubleshooting](/guide/troubleshooting). |
 
 A cluster that fails does not block the others. Its rows leave the merged views until it recovers, and an unreachable or expired cluster is itself reported as a critical problem in the [Problems view](/guide/problems).
 

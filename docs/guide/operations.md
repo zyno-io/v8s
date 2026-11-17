@@ -6,15 +6,15 @@ This page covers the things you do to a running cluster: read logs, open shells,
 
 Open a pod's detail drawer and choose the **Logs** tab. The same tab exists on Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
 
-| Control        | What it does                                                                      |
-| -------------- | --------------------------------------------------------------------------------- |
-| Container      | Choose a container, or all pods and containers merged                             |
-| Follow         | Stream new lines as they arrive. Scrolling up pauses following                    |
-| Timestamps     | Show the line timestamps                                                          |
-| Wrap           | Wrap long lines                                                                   |
-| Previous       | Show the previous container instance (useful after a crash loop)                  |
-| Search         | Highlight matches and jump between them, with match case                          |
-| Download       | Save the full log to a file                                                       |
+| Control    | What it does                                                     |
+| ---------- | ---------------------------------------------------------------- |
+| Container  | Choose a container, or all pods and containers merged            |
+| Follow     | Stream new lines as they arrive. Scrolling up pauses following   |
+| Timestamps | Show the line timestamps                                         |
+| Wrap       | Wrap long lines                                                  |
+| Previous   | Show the previous container instance (useful after a crash loop) |
+| Search     | Highlight matches and jump between them, with match case         |
+| Download   | Save the full log to a file                                      |
 
 - **Start.** v8s loads the last 1,000 lines by default, then follows. Choose 1,000, 5,000, or 10,000 in **Tail lines**.
 - **Merged workload logs.** Open Logs on a Deployment (or another workload, or a selector) to see every pod's output merged by timestamp. Merging happens in the agent, so it stays smooth. Merged logs are best on a desktop screen.
@@ -64,29 +64,29 @@ Node shell needs to create pods and attach to them in `v8s-system`. Grant that t
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: v8s-node-shell
-  namespace: v8s-system
+    name: v8s-node-shell
+    namespace: v8s-system
 rules:
-  - apiGroups: ['']
-    resources: ['pods']
-    verbs: ['create', 'get', 'list', 'watch', 'delete']
-  - apiGroups: ['']
-    resources: ['pods/attach', 'pods/exec']
-    verbs: ['create']
+    - apiGroups: ['']
+      resources: ['pods']
+      verbs: ['create', 'get', 'list', 'watch', 'delete']
+    - apiGroups: ['']
+      resources: ['pods/attach', 'pods/exec']
+      verbs: ['create']
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: v8s-node-shell
-  namespace: v8s-system
+    name: v8s-node-shell
+    namespace: v8s-system
 subjects:
-  - kind: Group
-    name: platform-admins
-    apiGroup: rbac.authorization.k8s.io
+    - kind: Group
+      name: platform-admins
+      apiGroup: rbac.authorization.k8s.io
 roleRef:
-  kind: Role
-  name: v8s-node-shell
-  apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: v8s-node-shell
+    apiGroup: rbac.authorization.k8s.io
 ```
 
 `pods/exec` is only needed for a second concurrent session on the same node. Create `v8s-system` yourself first if you do not want the person using node shell to need `create` on namespaces:
@@ -122,11 +122,11 @@ On a Node, choose **Cordon** or **Uncordon** (a patch to `spec.unschedulable`). 
 
 1. Choose **Drain** on a node.
 2. Review the **pre-flight**. It shows, before anything is evicted:
-   - pods that will be evicted;
-   - pods blocked by a PodDisruptionBudget, with the PDB and its allowed disruptions;
-   - unmanaged pods that will be lost;
-   - pods using `emptyDir`;
-   - DaemonSet pods that will be skipped.
+    - pods that will be evicted;
+    - pods blocked by a PodDisruptionBudget, with the PDB and its allowed disruptions;
+    - unmanaged pods that will be lost;
+    - pods using `emptyDir`;
+    - DaemonSet pods that will be skipped.
 3. Set options if needed: ignore DaemonSets (on by default), delete `emptyDir` data, force (for pods without a controller), grace period, timeout, and, behind a second confirm, disable eviction so pods are deleted and PodDisruptionBudgets are not honoured.
 4. Confirm.
 

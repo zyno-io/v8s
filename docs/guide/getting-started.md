@@ -64,13 +64,13 @@ Then open:
 http://localhost:7931/#agent=ws://localhost:7931/ws&token=demo
 ```
 
-| Option           | Meaning                                                              | Default |
-| ---------------- | -------------------------------------------------------------------- | ------- |
-| `clusters=N`     | Number of fake clusters                                              | 3       |
-| `pods=N`         | Total pods across the clusters                                       | 50000   |
-| `churn=N`        | Pod events per second across the clusters                            | 200     |
-| `lograte=N`      | Synthetic log lines per second per pod                               | 20      |
-| `rbac=1`         | Makes the second cluster read-only and adds a linked-able admin context | off     |
+| Option       | Meaning                                                                 | Default |
+| ------------ | ----------------------------------------------------------------------- | ------- |
+| `clusters=N` | Number of fake clusters                                                 | 3       |
+| `pods=N`     | Total pods across the clusters                                          | 50000   |
+| `churn=N`    | Pod events per second across the clusters                               | 200     |
+| `lograte=N`  | Synthetic log lines per second per pod                                  | 20      |
+| `rbac=1`     | Makes the second cluster read-only and adds a linked-able admin context | off     |
 
 Fake mode keeps its settings in memory unless you pass `--settings <file>`. Use `rbac=1` to try [linked read and write contexts](/guide/clusters#linked-read-and-write-contexts).
 

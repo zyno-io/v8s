@@ -31,11 +31,11 @@ Nothing is watched on behalf of someone who is not looking. A user's watches sta
 
 Each cluster has one strategy for how v8s authenticates as the user.
 
-| Strategy           | When to use                                                                  | What v8s holds                          |
-| ------------------ | ---------------------------------------------------------------------------- | --------------------------------------- |
-| `oidc-passthrough` (default) | The API server or gateway trusts the same IdP. Covers Warpgate targets, clusters with `AuthenticationConfiguration` or `--oidc-*` flags, EKS with an OIDC provider, AKS with Entra | Nothing per cluster. Only the cluster app credential (below) |
-| `impersonation`    | A directly reached cluster cannot trust your IdP                             | A scoped ServiceAccount token with `impersonate` |
-| `kiosk`            | A read-only wallboard for everyone                                           | A read-only token. All mutations, shells, logs, drains, and Helm actions are disabled |
+| Strategy                     | When to use                                                                                                                                                                        | What v8s holds                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `oidc-passthrough` (default) | The API server or gateway trusts the same IdP. Covers Warpgate targets, clusters with `AuthenticationConfiguration` or `--oidc-*` flags, EKS with an OIDC provider, AKS with Entra | Nothing per cluster. Only the cluster app credential (below)                          |
+| `impersonation`              | A directly reached cluster cannot trust your IdP                                                                                                                                   | A scoped ServiceAccount token with `impersonate`                                      |
+| `kiosk`                      | A read-only wallboard for everyone                                                                                                                                                 | A read-only token. All mutations, shells, logs, drains, and Helm actions are disabled |
 
 Prefer `oidc-passthrough`. With it, **everything is per user**: lists, watches, problems, and writes all carry the user's own token, so Kubernetes RBAC and your gateway's records are accurate.
 
@@ -53,36 +53,36 @@ Secrets are never inline. Anywhere a secret is needed, write a reference with ex
 
 ```yaml
 clientSecret:
-  env: V8S_OIDC_CLIENT_SECRET   # an environment variable
+    env: V8S_OIDC_CLIENT_SECRET # an environment variable
 # or
 clientSecret:
-  file: /etc/v8s/oidc-secret    # a file
+    file: /etc/v8s/oidc-secret # a file
 ```
 
 Surrounding whitespace is trimmed, and an empty value is an error. OIDC client secrets, private keys, and the correlation key are read once at startup, so a bad reference stops the server before it serves anything. Impersonation and kiosk tokens are re-read from their file or variable at most every 30 seconds, so projected ServiceAccount tokens can rotate without a restart.
 
 ### Top level
 
-| Key              | Meaning                                                                                  | Default            |
-| ---------------- | ---------------------------------------------------------------------------------------- | ------------------ |
-| `listen`         | Address to listen on                                                                     | `:7931`            |
-| `publicUrl`      | The external origin, for example `https://v8s.example.com`. https required (http only for `localhost`, `127.0.0.1`, `::1`). No path or query. A default port and a trailing slash are normalized away | required |
-| `dataDir`        | Directory for the per-user settings files, the only state written to disk (see [Storage](#storage)) | `/var/lib/v8s` |
-| `session`        | Session limits, below                                                                    |                    |
-| `oidc`           | The login provider: v8s's own sign-in, below                                             | required           |
-| `clusterApp`     | The app registration whose ID token clusters receive, below. Required if any cluster uses `oidc-passthrough` | |
-| `clusters`       | The cluster records, below                                                               |                    |
-| `adminGroups`    | IdP groups that can see every cluster                                                    | none               |
-| `limits`         | Request limits, below                                                                    | as listed          |
-| `correlationKey` | Secret reference that keys the correlation id sent to clusters. Random per start if unset, so ids do not match across restarts | random |
+| Key              | Meaning                                                                                                                                                                                               | Default        |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `listen`         | Address to listen on                                                                                                                                                                                  | `:7931`        |
+| `publicUrl`      | The external origin, for example `https://v8s.example.com`. https required (http only for `localhost`, `127.0.0.1`, `::1`). No path or query. A default port and a trailing slash are normalized away | required       |
+| `dataDir`        | Directory for the per-user settings files, the only state written to disk (see [Storage](#storage))                                                                                                   | `/var/lib/v8s` |
+| `session`        | Session limits, below                                                                                                                                                                                 |                |
+| `oidc`           | The login provider: v8s's own sign-in, below                                                                                                                                                          | required       |
+| `clusterApp`     | The app registration whose ID token clusters receive, below. Required if any cluster uses `oidc-passthrough`                                                                                          |                |
+| `clusters`       | The cluster records, below                                                                                                                                                                            |                |
+| `adminGroups`    | IdP groups that can see every cluster                                                                                                                                                                 | none           |
+| `limits`         | Request limits, below                                                                                                                                                                                 | as listed      |
+| `correlationKey` | Secret reference that keys the correlation id sent to clusters. Random per start if unset, so ids do not match across restarts                                                                        | random         |
 
 ### `session`
 
-| Key           | Meaning                                         | Default |
-| ------------- | ----------------------------------------------- | ------- |
-| `lifetime`    | Absolute session length                         | `12h`   |
-| `idleTimeout` | Sign-out after this long with no open tab       | `30m`   |
-| `maxPerUser`  | Concurrent sessions per user                    | `5`     |
+| Key           | Meaning                                   | Default |
+| ------------- | ----------------------------------------- | ------- |
+| `lifetime`    | Absolute session length                   | `12h`   |
+| `idleTimeout` | Sign-out after this long with no open tab | `30m`   |
+| `maxPerUser`  | Concurrent sessions per user              | `5`     |
 
 `lifetime` and `idleTimeout` must each be at least `1m`. Sessions are held in memory, so a restart signs everyone out.
 
@@ -90,16 +90,16 @@ Surrounding whitespace is trimmed, and an empty value is an error. OIDC client s
 
 The login provider. Redirect URI to register: `<publicUrl>/auth/callback`.
 
-| Key             | Meaning                                                                                                   | Default                    |
-| --------------- | --------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `issuer`        | OIDC issuer URL. https required (http only for localhost)                                                 | required                   |
-| `clientId`      | Client ID of the login app                                                                                | required                   |
-| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`                                      |                            |
-| `privateKey`    | Secret reference to a PEM RSA private key (PKCS#1 or PKCS#8), for `private_key_jwt` client authentication | |
-| `certificate`   | Secret reference to the PEM certificate matching `privateKey`. Sent as the `x5t#S256` header, which Entra ID requires | none                   |
-| `scopes`        | Scopes to request                                                                                         | `[openid, profile, email]` |
-| `usernameClaim` | ID token claim used as the user name. Falls back to a verified `email`, then to the subject               | `preferred_username`       |
-| `groupsClaim`   | ID token claim that holds the user's groups                                                               | `groups`                   |
+| Key             | Meaning                                                                                                               | Default                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `issuer`        | OIDC issuer URL. https required (http only for localhost)                                                             | required                   |
+| `clientId`      | Client ID of the login app                                                                                            | required                   |
+| `clientSecret`  | Secret reference. Set exactly one of `clientSecret` and `privateKey`                                                  |                            |
+| `privateKey`    | Secret reference to a PEM RSA private key (PKCS#1 or PKCS#8), for `private_key_jwt` client authentication             |                            |
+| `certificate`   | Secret reference to the PEM certificate matching `privateKey`. Sent as the `x5t#S256` header, which Entra ID requires | none                       |
+| `scopes`        | Scopes to request                                                                                                     | `[openid, profile, email]` |
+| `usernameClaim` | ID token claim used as the user name. Falls back to a verified `email`, then to the subject                           | `preferred_username`       |
+| `groupsClaim`   | ID token claim that holds the user's groups                                                                           | `groups`                   |
 
 Pick a username claim that is unique and that users cannot edit. It becomes the impersonated user name on impersonation clusters.
 
@@ -107,14 +107,14 @@ Pick a username claim that is unique and that users cannot edit. It becomes the 
 
 The app registration whose ID token OIDC pass-through clusters receive. Redirect URI to register: `<publicUrl>/auth/cluster-callback` (not needed when it is the same app as `oidc`, see below).
 
-| Key            | Meaning                                                                                       | Default                          |
-| -------------- | --------------------------------------------------------------------------------------------- | -------------------------------- |
-| `clientId`     | Client ID of the cluster app                                                                  | required                         |
-| `issuer`       | Issuer of the cluster app                                                                     | the `oidc.issuer`                |
-| `clientSecret` | Secret reference. Set exactly one of `clientSecret` and `privateKey`                          |                                  |
-| `privateKey`   | Secret reference to a PEM RSA private key                                                     |                                  |
-| `certificate`  | Secret reference to the matching PEM certificate (`x5t#S256` header)                          | none                             |
-| `scopes`       | Scopes to request                                                                             | `[openid, offline_access]`       |
+| Key            | Meaning                                                              | Default                    |
+| -------------- | -------------------------------------------------------------------- | -------------------------- |
+| `clientId`     | Client ID of the cluster app                                         | required                   |
+| `issuer`       | Issuer of the cluster app                                            | the `oidc.issuer`          |
+| `clientSecret` | Secret reference. Set exactly one of `clientSecret` and `privateKey` |                            |
+| `privateKey`   | Secret reference to a PEM RSA private key                            |                            |
+| `certificate`  | Secret reference to the matching PEM certificate (`x5t#S256` header) | none                       |
+| `scopes`       | Scopes to request                                                    | `[openid, offline_access]` |
 
 After login, v8s runs a second authorization-code flow against this app, silently through the person's existing IdP session, and keeps the resulting ID token and refresh token in server memory. Tokens are refreshed in the background shortly before they expire.
 
@@ -124,39 +124,39 @@ After login, v8s runs a second authorization-code flow against this app, silentl
 
 A list of cluster records.
 
-| Key             | Meaning                                                                                                    | Default             |
-| --------------- | ---------------------------------------------------------------------------------------------------------- | ------------------- |
-| `id`            | Unique identifier: lowercase letters, digits, `.`, `_`, `-`, starting and ending alphanumeric, at most 64 characters | required      |
-| `name`          | Display name                                                                                               | the `id`            |
-| `server`        | API server URL, or a gateway such as Warpgate. https required (http only for localhost)                    | required            |
-| `caData`        | CA bundle, PEM or base64 PEM as in a kubeconfig. Set at most one of `caData` and `caFile`                  | system roots        |
-| `caFile`        | Path to a CA bundle file                                                                                   |                     |
-| `strategy`      | `oidc-passthrough`, `impersonation`, or `kiosk`                                                            | `oidc-passthrough`  |
-| `impersonation` | Credential of the `impersonation` strategy, below. Only valid with that strategy                           |                     |
-| `kiosk`         | Credential of the `kiosk` strategy, below. Only valid with that strategy                                   |                     |
-| `groups`        | IdP groups that may see this cluster. `'*'` means every signed-in user                                     | none                |
-| `displayGroups` | Selector groups the cluster is listed under                                                                | none                |
+| Key             | Meaning                                                                                                              | Default            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `id`            | Unique identifier: lowercase letters, digits, `.`, `_`, `-`, starting and ending alphanumeric, at most 64 characters | required           |
+| `name`          | Display name                                                                                                         | the `id`           |
+| `server`        | API server URL, or a gateway such as Warpgate. https required (http only for localhost)                              | required           |
+| `caData`        | CA bundle, PEM or base64 PEM as in a kubeconfig. Set at most one of `caData` and `caFile`                            | system roots       |
+| `caFile`        | Path to a CA bundle file                                                                                             |                    |
+| `strategy`      | `oidc-passthrough`, `impersonation`, or `kiosk`                                                                      | `oidc-passthrough` |
+| `impersonation` | Credential of the `impersonation` strategy, below. Only valid with that strategy                                     |                    |
+| `kiosk`         | Credential of the `kiosk` strategy, below. Only valid with that strategy                                             |                    |
+| `groups`        | IdP groups that may see this cluster. `'*'` means every signed-in user                                               | none               |
+| `displayGroups` | Selector groups the cluster is listed under                                                                          | none               |
 
 A cluster with an empty `groups` list is an error unless `adminGroups` is set, because nobody could see it. A user sees a cluster if they belong to one of its `groups`, or to an `adminGroups` group.
 
 ### `impersonation` and `kiosk`
 
-| Key                         | Meaning                                                                                             | Default            |
-| --------------------------- | --------------------------------------------------------------------------------------------------- | ------------------ |
-| `impersonation.token`       | Secret reference to the impersonator's bearer token. Required                                       |                    |
-| `impersonation.prefix`      | Mandatory prefix of the impersonated user name                                                      | `v8s:`             |
-| `impersonation.groupPrefix` | Prefix added to every forwarded group                                                               | the `prefix`       |
-| `impersonation.groups`      | Allowlist of IdP group names to forward, matched on the raw name. Empty means forward all           | all                |
-| `kiosk.token`               | Secret reference to a read-only bearer token. Required                                              |                    |
+| Key                         | Meaning                                                                                   | Default      |
+| --------------------------- | ----------------------------------------------------------------------------------------- | ------------ |
+| `impersonation.token`       | Secret reference to the impersonator's bearer token. Required                             |              |
+| `impersonation.prefix`      | Mandatory prefix of the impersonated user name                                            | `v8s:`       |
+| `impersonation.groupPrefix` | Prefix added to every forwarded group                                                     | the `prefix` |
+| `impersonation.groups`      | Allowlist of IdP group names to forward, matched on the raw name. Empty means forward all | all          |
+| `kiosk.token`               | Secret reference to a read-only bearer token. Required                                    |              |
 
 ### `limits`
 
-| Key            | Meaning                                         | Default |
-| -------------- | ----------------------------------------------- | ------- |
-| `readQps`      | Read requests per second, per user and cluster  | `20`    |
-| `readBurst`    | Read burst, per user and cluster                | `40`    |
-| `clusterQps`   | Ceiling per cluster across all users            | `100`   |
-| `clusterBurst` | Burst ceiling per cluster                       | `200`   |
+| Key            | Meaning                                        | Default |
+| -------------- | ---------------------------------------------- | ------- |
+| `readQps`      | Read requests per second, per user and cluster | `20`    |
+| `readBurst`    | Read burst, per user and cluster               | `40`    |
+| `clusterQps`   | Ceiling per cluster across all users           | `100`   |
+| `clusterBurst` | Burst ceiling per cluster                      | `200`   |
 
 ### Example: Entra ID, clusters and Warpgate trusting one app
 
@@ -168,40 +168,40 @@ publicUrl: https://v8s.example.com
 dataDir: /var/lib/v8s
 
 session:
-  lifetime: 12h
-  idleTimeout: 30m
+    lifetime: 12h
+    idleTimeout: 30m
 
 oidc:
-  issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
-  clientId: <cluster-app-client-id>      # the client ID your clusters and Warpgate trust
-  privateKey:
-    file: /etc/v8s/app.key               # PEM, RSA
-  certificate:
-    file: /etc/v8s/app.crt               # uploaded to the app registration
-  usernameClaim: preferred_username
-  groupsClaim: groups
+    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+    clientId: <cluster-app-client-id> # the client ID your clusters and Warpgate trust
+    privateKey:
+        file: /etc/v8s/app.key # PEM, RSA
+    certificate:
+        file: /etc/v8s/app.crt # uploaded to the app registration
+    usernameClaim: preferred_username
+    groupsClaim: groups
 
 clusterApp:
-  clientId: <cluster-app-client-id>      # same as oidc.clientId: login tokens are reused
-  privateKey:
-    file: /etc/v8s/app.key               # required by validation, not used in this mode
+    clientId: <cluster-app-client-id> # same as oidc.clientId: login tokens are reused
+    privateKey:
+        file: /etc/v8s/app.key # required by validation, not used in this mode
 
 adminGroups:
-  - <platform-admins-group-object-id>
+    - <platform-admins-group-object-id>
 
 clusters:
-  - id: prod-eu
-    name: Production EU
-    server: https://prod-eu.example.com
-    caFile: /etc/v8s/ca/prod-eu.crt
-    groups: [<sre-group-object-id>]
-    displayGroups: [production]
+    - id: prod-eu
+      name: Production EU
+      server: https://prod-eu.example.com
+      caFile: /etc/v8s/ca/prod-eu.crt
+      groups: [<sre-group-object-id>]
+      displayGroups: [production]
 
-  - id: prod-eu-gw              # a Warpgate target: just another OIDC endpoint
-    name: Production EU (via Warpgate)
-    server: https://warpgate.example.com:8888/prod-eu-operator
-    groups: [<sre-group-object-id>, <dev-group-object-id>]
-    displayGroups: [production]
+    - id: prod-eu-gw # a Warpgate target: just another OIDC endpoint
+      name: Production EU (via Warpgate)
+      server: https://warpgate.example.com:8888/prod-eu-operator
+      groups: [<sre-group-object-id>, <dev-group-object-id>]
+      displayGroups: [production]
 ```
 
 If you would rather keep a separate login app, give `clusterApp` its own `clientId`, and register `https://v8s.example.com/auth/cluster-callback` on it. v8s then signs people in to that app a second time, silently through their Entra session. Entra requires a confidential client for a web redirect, so give the cluster app a certificate (`privateKey` and `certificate`) or a `clientSecret`.
@@ -214,12 +214,12 @@ On the Kubernetes side, the API server needs to trust the cluster app. With stru
 apiVersion: apiserver.config.k8s.io/v1
 kind: AuthenticationConfiguration
 jwt:
-  - issuer:
-      url: https://login.microsoftonline.com/<tenant-id>/v2.0
-      audiences: [<cluster-app-client-id>]
-    claimMappings:
-      username: { claim: preferred_username, prefix: 'oidc:' }
-      groups: { claim: groups, prefix: 'oidc:' }
+    - issuer:
+          url: https://login.microsoftonline.com/<tenant-id>/v2.0
+          audiences: [<cluster-app-client-id>]
+      claimMappings:
+          username: { claim: preferred_username, prefix: 'oidc:' }
+          groups: { claim: groups, prefix: 'oidc:' }
 ```
 
 ### Shared audience
@@ -230,24 +230,24 @@ With ID tokens, every cluster and gateway that trusts the same client ID accepts
 
 ```yaml
 clusters:
-  - id: legacy
-    server: https://legacy.example.com:6443
-    caFile: /etc/v8s/ca/legacy.crt
-    strategy: impersonation
-    impersonation:
-      token:
-        file: /var/run/secrets/v8s/legacy-token   # a ServiceAccount token that can impersonate
-      prefix: 'v8s:'              # mandatory username prefix
-      groups: [sre, developers]   # forward only these IdP groups
-    groups: [<sre-group-object-id>]
+    - id: legacy
+      server: https://legacy.example.com:6443
+      caFile: /etc/v8s/ca/legacy.crt
+      strategy: impersonation
+      impersonation:
+          token:
+              file: /var/run/secrets/v8s/legacy-token # a ServiceAccount token that can impersonate
+          prefix: 'v8s:' # mandatory username prefix
+          groups: [sre, developers] # forward only these IdP groups
+      groups: [<sre-group-object-id>]
 
-  - id: wall
-    server: https://wall.example.com
-    strategy: kiosk
-    kiosk:
-      token:
-        env: V8S_WALL_TOKEN       # a read-only ServiceAccount token
-    groups: ['*']
+    - id: wall
+      server: https://wall.example.com
+      strategy: kiosk
+      kiosk:
+          token:
+              env: V8S_WALL_TOKEN # a read-only ServiceAccount token
+      groups: ['*']
 ```
 
 #### Impersonation rules
@@ -264,18 +264,18 @@ Kiosk clusters are tagged **shared identity** in the UI. They are read-only what
 
 ## Endpoints
 
-| Endpoint                          | Purpose                                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `GET /auth/login?return=/path`    | Starts the OIDC login (authorization code with PKCE, `state`, and `nonce`)                         |
-| `GET /auth/callback`              | Finishes the login, creates the session, and starts the cluster-app flow if there is a separate one |
-| `GET /auth/cluster-login?return=` | Re-runs only the cluster-app flow for clusters that need a new sign-in. Silent first, interactive if the provider needs the user. With the same app for login and clusters it redirects to `/auth/login` |
-| `GET /auth/cluster-callback`      | Finishes the cluster-app flow and stores its tokens in the session                                 |
-| `POST /auth/logout`               | Deletes the session and clears the cookie. Answers `204`. Must come from the app's own origin     |
-| `GET /api/me`                     | The signed-in user: `username`, `sub`, `groups`, `expiresAt`, `admin`, and `clusterAuth` (`ok` or `required`). `401` without a session |
-| `GET /healthz`                    | Liveness. Always `ok`                                                                              |
-| `GET /readyz`                     | Readiness. `503` while the identity provider is unreachable                                        |
-| `/ws`, `/stream`, `/stream/download` | The data connection, streams, and downloads, authenticated by the session cookie. Origin must equal `publicUrl` |
-| `/`                               | The embedded web app                                                                               |
+| Endpoint                             | Purpose                                                                                                                                                                                                  |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /auth/login?return=/path`       | Starts the OIDC login (authorization code with PKCE, `state`, and `nonce`)                                                                                                                               |
+| `GET /auth/callback`                 | Finishes the login, creates the session, and starts the cluster-app flow if there is a separate one                                                                                                      |
+| `GET /auth/cluster-login?return=`    | Re-runs only the cluster-app flow for clusters that need a new sign-in. Silent first, interactive if the provider needs the user. With the same app for login and clusters it redirects to `/auth/login` |
+| `GET /auth/cluster-callback`         | Finishes the cluster-app flow and stores its tokens in the session                                                                                                                                       |
+| `POST /auth/logout`                  | Deletes the session and clears the cookie. Answers `204`. Must come from the app's own origin                                                                                                            |
+| `GET /api/me`                        | The signed-in user: `username`, `sub`, `groups`, `expiresAt`, `admin`, and `clusterAuth` (`ok` or `required`). `401` without a session                                                                   |
+| `GET /healthz`                       | Liveness. Always `ok`                                                                                                                                                                                    |
+| `GET /readyz`                        | Readiness. `503` while the identity provider is unreachable                                                                                                                                              |
+| `/ws`, `/stream`, `/stream/download` | The data connection, streams, and downloads, authenticated by the session cookie. Origin must equal `publicUrl`                                                                                          |
+| `/`                                  | The embedded web app                                                                                                                                                                                     |
 
 ## Sign-in and sign-out
 
@@ -312,71 +312,71 @@ Create the Secrets the values refer to first, then fill in `values.yaml`. This o
 
 ```yaml
 config:
-  publicUrl: https://v8s.example.com
-  oidc:
-    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
-    clientId: <cluster-app-client-id>
-    clientSecret: null                    # drop the chart's default; this app uses a key
-    privateKey: { file: /etc/v8s/secrets/app/tls.key }
-    certificate: { file: /etc/v8s/secrets/app/tls.crt }
-  clusterApp:
-    clientId: <cluster-app-client-id>     # same as oidc.clientId: login tokens are reused
-    privateKey: { file: /etc/v8s/secrets/app/tls.key }
-  adminGroups: ['<platform-admins-group-object-id>']
-  clusters:
-    - id: prod-eu
-      name: Production EU
-      server: https://prod-eu.example.com
-      caFile: /etc/v8s/secrets/ca/prod-eu.crt
-      groups: ['<sre-group-object-id>']
-      displayGroups: [production]
+    publicUrl: https://v8s.example.com
+    oidc:
+        issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+        clientId: <cluster-app-client-id>
+        clientSecret: null # drop the chart's default; this app uses a key
+        privateKey: { file: /etc/v8s/secrets/app/tls.key }
+        certificate: { file: /etc/v8s/secrets/app/tls.crt }
+    clusterApp:
+        clientId: <cluster-app-client-id> # same as oidc.clientId: login tokens are reused
+        privateKey: { file: /etc/v8s/secrets/app/tls.key }
+    adminGroups: ['<platform-admins-group-object-id>']
+    clusters:
+        - id: prod-eu
+          name: Production EU
+          server: https://prod-eu.example.com
+          caFile: /etc/v8s/secrets/ca/prod-eu.crt
+          groups: ['<sre-group-object-id>']
+          displayGroups: [production]
 
 secretMounts:
-  - name: app
-    secretName: v8s-app-cert              # a kubernetes.io/tls Secret
-    mountPath: /etc/v8s/secrets/app
-  - name: ca
-    secretName: v8s-cluster-ca
-    mountPath: /etc/v8s/secrets/ca
+    - name: app
+      secretName: v8s-app-cert # a kubernetes.io/tls Secret
+      mountPath: /etc/v8s/secrets/app
+    - name: ca
+      secretName: v8s-cluster-ca
+      mountPath: /etc/v8s/secrets/ca
 
 ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
-    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
-  tls:
     enabled: true
-    secretName: v8s-tls
+    className: nginx
+    annotations:
+        nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+        nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+    tls:
+        enabled: true
+        secretName: v8s-tls
 ```
 
 `config` is rendered verbatim into the configuration file, so its keys are exactly those in [Configuration file](#configuration-file). The chart sets `listen` and `dataDir` itself. The other values, with their defaults from `values.yaml`:
 
-| Value                         | Meaning                                                                                       | Default                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------- |
-| `image.repository`            | Image repository                                                                              | `ghcr.io/zyno-io/v8s`         |
-| `image.tag`                   | Image tag                                                                                     | the chart `appVersion`        |
-| `image.pullPolicy`            | Pull policy                                                                                   | `IfNotPresent`                |
-| `imagePullSecrets`            | Pull secrets                                                                                  | `[]`                          |
-| `nameOverride`, `fullnameOverride` | Naming overrides                                                                         | empty                         |
-| `config.*`                    | The server configuration. `config.oidc.clientSecret` defaults to `{env: V8S_OIDC_CLIENT_SECRET}`; set it to `null` to use `privateKey` | see the file |
-| `secretEnv`                   | Environment variables sourced from existing Secrets, each `{name, secretName, key}`, for `env:` references | `[]`             |
-| `secretMounts`                | Existing Secrets mounted read-only, each `{name, secretName, mountPath}`, for `file:` references | `[]`                       |
-| `extraEnv`                    | Extra environment variables                                                                   | `[]`                          |
-| `persistence.enabled`         | Keep `dataDir` on a PersistentVolumeClaim. Without it, per-user settings are lost on restart  | `true`                        |
-| `persistence.existingClaim`   | Use this claim instead of creating one                                                        | empty                         |
-| `persistence.storageClass`    | Storage class                                                                                 | empty                         |
-| `persistence.accessMode`      | Access mode                                                                                   | `ReadWriteOnce`               |
-| `persistence.size`            | Volume size                                                                                   | `1Gi`                         |
-| `persistence.mountPath`       | Mount path, which becomes `dataDir`                                                           | `/var/lib/v8s`                |
-| `serviceAccount.create`, `.name`, `.annotations`, `.automountServiceAccountToken` | v8s needs no Kubernetes API access for itself, so the token is not mounted and no RBAC is created | create `true`, no automount |
-| `service.type`, `service.port`, `service.annotations` | The Service                                                                   | `ClusterIP`, `80`             |
-| `ingress.enabled`             | Create an Ingress                                                                             | `false`                       |
-| `ingress.className`, `.annotations`, `.host`, `.tls.enabled`, `.tls.secretName` | Ingress settings. `host` defaults to the host of `config.publicUrl`. Raise proxy read and send timeouts for WebSockets | TLS on |
-| `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName` | Pod scheduling and metadata | empty |
-| `podSecurityContext`          | Non-root user and group 65532, `fsGroup` 65532, `RuntimeDefault` seccomp                       | as listed                     |
-| `securityContext`             | No privilege escalation, read-only root filesystem, all capabilities dropped                  | as listed                     |
-| `resources`                   | Requests 100m CPU and 256Mi memory, limit 2Gi memory. Budget about 50 MB per 10k pods per active user and cluster | as listed        |
+| Value                                                                                                                      | Meaning                                                                                                                                | Default                     |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `image.repository`                                                                                                         | Image repository                                                                                                                       | `ghcr.io/zyno-io/v8s`       |
+| `image.tag`                                                                                                                | Image tag                                                                                                                              | the chart `appVersion`      |
+| `image.pullPolicy`                                                                                                         | Pull policy                                                                                                                            | `IfNotPresent`              |
+| `imagePullSecrets`                                                                                                         | Pull secrets                                                                                                                           | `[]`                        |
+| `nameOverride`, `fullnameOverride`                                                                                         | Naming overrides                                                                                                                       | empty                       |
+| `config.*`                                                                                                                 | The server configuration. `config.oidc.clientSecret` defaults to `{env: V8S_OIDC_CLIENT_SECRET}`; set it to `null` to use `privateKey` | see the file                |
+| `secretEnv`                                                                                                                | Environment variables sourced from existing Secrets, each `{name, secretName, key}`, for `env:` references                             | `[]`                        |
+| `secretMounts`                                                                                                             | Existing Secrets mounted read-only, each `{name, secretName, mountPath}`, for `file:` references                                       | `[]`                        |
+| `extraEnv`                                                                                                                 | Extra environment variables                                                                                                            | `[]`                        |
+| `persistence.enabled`                                                                                                      | Keep `dataDir` on a PersistentVolumeClaim. Without it, per-user settings are lost on restart                                           | `true`                      |
+| `persistence.existingClaim`                                                                                                | Use this claim instead of creating one                                                                                                 | empty                       |
+| `persistence.storageClass`                                                                                                 | Storage class                                                                                                                          | empty                       |
+| `persistence.accessMode`                                                                                                   | Access mode                                                                                                                            | `ReadWriteOnce`             |
+| `persistence.size`                                                                                                         | Volume size                                                                                                                            | `1Gi`                       |
+| `persistence.mountPath`                                                                                                    | Mount path, which becomes `dataDir`                                                                                                    | `/var/lib/v8s`              |
+| `serviceAccount.create`, `.name`, `.annotations`, `.automountServiceAccountToken`                                          | v8s needs no Kubernetes API access for itself, so the token is not mounted and no RBAC is created                                      | create `true`, no automount |
+| `service.type`, `service.port`, `service.annotations`                                                                      | The Service                                                                                                                            | `ClusterIP`, `80`           |
+| `ingress.enabled`                                                                                                          | Create an Ingress                                                                                                                      | `false`                     |
+| `ingress.className`, `.annotations`, `.host`, `.tls.enabled`, `.tls.secretName`                                            | Ingress settings. `host` defaults to the host of `config.publicUrl`. Raise proxy read and send timeouts for WebSockets                 | TLS on                      |
+| `podAnnotations`, `podLabels`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `priorityClassName` | Pod scheduling and metadata                                                                                                            | empty                       |
+| `podSecurityContext`                                                                                                       | Non-root user and group 65532, `fsGroup` 65532, `RuntimeDefault` seccomp                                                               | as listed                   |
+| `securityContext`                                                                                                          | No privilege escalation, read-only root filesystem, all capabilities dropped                                                           | as listed                   |
+| `resources`                                                                                                                | Requests 100m CPU and 256Mi memory, limit 2Gi memory. Budget about 50 MB per 10k pods per active user and cluster                      | as listed                   |
 
 The chart runs a single replica: sessions and per-user watches live in that process's memory. The probes are `/healthz` (liveness) and `/readyz` (readiness). Keep secrets in Kubernetes Secrets and reference them through `secretEnv` and `secretMounts`. The chart works well with Flux: put the HelmRelease in Git and the values in a ConfigMap or Secret.
 
@@ -389,26 +389,26 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: v8s, namespace: v8s }
 spec:
-  replicas: 1
-  selector: { matchLabels: { app: v8s } }
-  template:
-    metadata: { labels: { app: v8s } }
-    spec:
-      containers:
-        - name: v8s
-          image: ghcr.io/zyno-io/v8s:0.1.0
-          args: ['server', '--config', '/etc/v8s/config.yaml']
-          ports: [{ containerPort: 7931 }]
-          envFrom: [{ secretRef: { name: v8s-secrets } }]
-          readinessProbe: { httpGet: { path: /readyz, port: 7931 } }
-          livenessProbe: { httpGet: { path: /healthz, port: 7931 } }
-          securityContext: { readOnlyRootFilesystem: true, runAsNonRoot: true }
-          volumeMounts:
-            - { name: config, mountPath: /etc/v8s, readOnly: true }
-            - { name: data, mountPath: /var/lib/v8s }
-      volumes:
-        - { name: config, projected: { sources: [{ configMap: { name: v8s-config } }, { secret: { name: v8s-keys } }] } }
-        - { name: data, persistentVolumeClaim: { claimName: v8s-data } }
+    replicas: 1
+    selector: { matchLabels: { app: v8s } }
+    template:
+        metadata: { labels: { app: v8s } }
+        spec:
+            containers:
+                - name: v8s
+                  image: ghcr.io/zyno-io/v8s:0.1.0
+                  args: ['server', '--config', '/etc/v8s/config.yaml']
+                  ports: [{ containerPort: 7931 }]
+                  envFrom: [{ secretRef: { name: v8s-secrets } }]
+                  readinessProbe: { httpGet: { path: /readyz, port: 7931 } }
+                  livenessProbe: { httpGet: { path: /healthz, port: 7931 } }
+                  securityContext: { readOnlyRootFilesystem: true, runAsNonRoot: true }
+                  volumeMounts:
+                      - { name: config, mountPath: /etc/v8s, readOnly: true }
+                      - { name: data, mountPath: /var/lib/v8s }
+            volumes:
+                - { name: config, projected: { sources: [{ configMap: { name: v8s-config } }, { secret: { name: v8s-keys } }] } }
+                - { name: data, persistentVolumeClaim: { claimName: v8s-data } }
 ```
 
 Put it behind a TLS-terminating ingress at your `publicUrl`. v8s runs as a single replica; per-user watches live in that process's memory, with about 50 MB per active user per 10k pods per cluster.
