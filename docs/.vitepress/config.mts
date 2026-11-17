@@ -59,10 +59,32 @@ export default defineConfig({
                     { text: 'Install', link: '/guide/install' },
                     { text: 'Clusters', link: '/guide/clusters' },
                     { text: 'Navigation', link: '/guide/navigation' },
-                    { text: 'Problems', link: '/guide/problems' },
-                    { text: 'Flux, Helm, and integrations', link: '/guide/integrations' },
+                    { text: 'Viewing and changing resources', link: '/guide/resources' },
                     { text: 'Operations', link: '/guide/operations' },
+                    { text: 'Problems', link: '/guide/problems' }
+                ]
+            },
+            {
+                text: 'Integrations',
+                items: [
+                    { text: 'Flux', link: '/guide/flux' },
+                    { text: 'Helm', link: '/guide/helm' },
+                    { text: 'Security: Kyverno, Trivy, Kubescape', link: '/guide/security' },
+                    { text: 'Network: Hubble', link: '/guide/network' }
+                ]
+            },
+            {
+                text: 'Deploy and use anywhere',
+                items: [
                     { text: 'Hosted mode', link: '/guide/hosted' },
+                    { text: 'On a phone', link: '/guide/mobile' },
+                    { text: 'Why it is fast', link: '/guide/performance' }
+                ]
+            },
+            {
+                text: 'Help',
+                items: [
+                    { text: 'Troubleshooting', link: '/guide/troubleshooting' },
                     { text: 'FAQ', link: '/guide/faq' }
                 ]
             },

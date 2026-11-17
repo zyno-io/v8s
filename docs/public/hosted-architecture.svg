@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" role="img" aria-labelledby="t d" font-family="Inter, system-ui, sans-serif" font-size="13">
+  <title id="t">Hosted v8s architecture</title>
+  <desc id="d">Browsers connect to the v8s server with a session cookie. The server signs users in with an identity provider and forwards each user's own token to the Kubernetes API server directly, or to Warpgate, which forwards to the cluster.</desc>
+  <style>
+    .box { fill: none; stroke: #8b93a7; stroke-width: 1.5; }
+    .hot { fill: none; stroke: #6366f1; stroke-width: 2; }
+    .t { fill: #6b7280; }
+    .h { fill: #6b7280; font-weight: 600; }
+    .s { fill: #6b7280; font-size: 11px; }
+    .ln { stroke: #8b93a7; stroke-width: 1.5; fill: none; }
+    .dash { stroke: #8b93a7; stroke-width: 1.2; fill: none; stroke-dasharray: 5 4; }
+    .ar { fill: #8b93a7; }
+    @media (prefers-color-scheme: dark) { .t, .h, .s { fill: #aab1c4; } }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ar"/></marker>
+  </defs>
+
+  <rect class="box" x="10" y="20" width="130" height="64" rx="8"/>
+  <text class="h" x="75" y="46" text-anchor="middle">Browser</text>
+  <text class="s" x="75" y="64" text-anchor="middle">desktop or phone</text>
+
+  <rect class="hot" x="230" y="20" width="200" height="130" rx="10"/>
+  <text class="h" x="330" y="46" text-anchor="middle">v8s server</text>
+  <text class="s" x="330" y="68" text-anchor="middle">per-user watches and problems</text>
+  <text class="s" x="330" y="86" text-anchor="middle">tokens in memory only</text>
+  <text class="s" x="330" y="104" text-anchor="middle">per-user settings in dataDir</text>
+  <text class="s" x="330" y="122" text-anchor="middle">no long-term logs</text>
+
+  <rect class="box" x="230" y="230" width="200" height="64" rx="8"/>
+  <text class="h" x="330" y="256" text-anchor="middle">Identity provider</text>
+  <text class="s" x="330" y="274" text-anchor="middle">Entra ID, Keycloak, Okta, Dex ...</text>
+
+  <rect class="box" x="520" y="20" width="230" height="64" rx="8"/>
+  <text class="h" x="635" y="46" text-anchor="middle">Kubernetes API server</text>
+  <text class="s" x="635" y="64" text-anchor="middle">trusts the same IdP (oidc-passthrough)</text>
+
+  <rect class="box" x="520" y="116" width="110" height="64" rx="8"/>
+  <text class="h" x="575" y="142" text-anchor="middle">Warpgate</text>
+  <text class="s" x="575" y="160" text-anchor="middle">authorizes, records</text>
+
+  <rect class="box" x="520" y="226" width="230" height="64" rx="8"/>
+  <text class="h" x="635" y="252" text-anchor="middle">Cluster API server</text>
+  <text class="s" x="635" y="270" text-anchor="middle">target role identity</text>
+
+  <path class="ln" marker-end="url(#a)" d="M140 52 H228"/>
+  <text class="s" x="184" y="42" text-anchor="middle">session cookie</text>
+
+  <path class="dash" marker-end="url(#a)" d="M330 150 V228"/>
+  <text class="s" x="338" y="196">OIDC sign-in</text>
+
+  <path class="ln" marker-end="url(#a)" d="M430 52 H518"/>
+  <text class="s" x="474" y="42" text-anchor="middle">user's token</text>
+
+  <path class="ln" marker-end="url(#a)" d="M430 120 H470 V148 H518"/>
+  <path class="ln" marker-end="url(#a)" d="M575 180 V224"/>
+</svg>
