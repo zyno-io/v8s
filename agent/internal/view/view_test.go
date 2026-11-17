@@ -454,3 +454,25 @@ func TestBulkLoadAndDetach(t *testing.T) {
 		t.Fatalf("detach: total=%d", m.total)
 	}
 }
+
+// Regression: an older update that resolves late must not undo a newer one (generations are monotonic).
+func TestSubUpdateIgnoresLowerGen(t *testing.T) {
+	e := newEngine()
+	attach(e, "c1", pod(spec{uid: "1", ns: "a", name: "web-1"}), pod(spec{uid: "2", ns: "b", name: "web-2"}))
+	s, err := e.Subscribe(protocol.ViewQuery{GVR: PodsGVR}, 1, win(0, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(&protocol.ViewQuery{GVR: PodsGVR, Namespaces: []string{"a"}}, 5, nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.Gen() != 5 || s.Total() != 1 {
+		t.Fatalf("gen=%d total=%d", s.Gen(), s.Total())
+	}
+	if err := s.Update(&protocol.ViewQuery{GVR: PodsGVR}, 3, nil); err != nil { // stale: ignored
+		t.Fatal(err)
+	}
+	if s.Gen() != 5 || s.Total() != 1 {
+		t.Fatalf("stale update applied: gen=%d total=%d", s.Gen(), s.Total())
+	}
+}

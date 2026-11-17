@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 )
 
 // ColSrc says where a column's value comes from in a Row.
@@ -51,16 +52,26 @@ type Module struct {
 	DefaultSort                    []protocol.Sort // nil: statusTone severity, then name
 	ToneCol                        bool            // has a statusTone column
 	Table                          bool            // mode C
-	Tweak                          func(*metav1.ListOptions)
-	NewList                        func() runtime.Object
-	Each                           func(list runtime.Object, fn func(*Row))
-	ProjectObj                     func(obj runtime.Object) *Row
-	colIdx                         map[string]int
-	tableNames                     map[string]int // generic: table column name → cell index
-	tableTypes                     []string       // generic: per cell, columnDefinition type
-	toneCell                       int            // generic: cell index the tone heuristic reads (-1 none)
-	srcMap                         []int
-	tableCols                      []TableCol
+	// Optional marks a CRD-backed curated kind (Flux): known and curated, but only served where discovery says so.
+	Optional bool
+	// Virtual marks a kind with no API resource of its own (the Helm release view): served by every cluster.
+	Virtual bool
+	// NoWatchList forces a paginated LIST + watch (no streaming list) for kinds whose list is not a plain API list.
+	NoWatchList bool
+	// NewAPI builds the list/watch source on a real REST client (mode B and virtual kinds). Nil: typed or Table.
+	NewAPI func(c rest.Interface, group, version, resource string) API
+	// DecodeJSON decodes one object of a mode B kind from its JSON (list items and watch events).
+	DecodeJSON func(raw []byte) (runtime.Object, error)
+	Tweak      func(*metav1.ListOptions)
+	NewList    func() runtime.Object
+	Each       func(list runtime.Object, fn func(*Row))
+	ProjectObj func(obj runtime.Object) *Row
+	colIdx     map[string]int
+	tableNames map[string]int // generic: table column name → cell index
+	tableTypes []string       // generic: per cell, columnDefinition type
+	toneCell   int            // generic: cell index the tone heuristic reads (-1 none)
+	srcMap     []int
+	tableCols  []TableCol
 }
 
 // Columns returns the wire schema.
@@ -187,6 +198,37 @@ func WaitModule(ctx context.Context, gvr string) (*Module, error) {
 	}
 }
 
+// Resolver builds (and registers) the module of a CRD-backed kind from its discovered group, version and
+// kind, or returns nil when it is not one it knows. It lets a kind be read at whatever version the cluster
+// serves (docs/integrations.md: version negotiation).
+type Resolver func(group, version, resource, kind string, namespaced bool) *Module
+
+var resolvers []Resolver
+
+// AddResolver registers a Resolver (at init).
+func AddResolver(r Resolver) { reg.Lock(); resolvers = append(resolvers, r); reg.Unlock() }
+
+// ResolveDiscovered returns the module for a discovered resource, registering it when a resolver knows it.
+func ResolveDiscovered(group, version, resource, kind string, namespaced bool) *Module {
+	gvr := group + "/" + version + "/" + resource
+	if m := Lookup(gvr); m != nil {
+		return m
+	}
+	reg.RLock()
+	rs := append([]Resolver(nil), resolvers...)
+	reg.RUnlock()
+	for _, r := range rs {
+		if m := r(group, version, resource, kind, namespaced); m != nil {
+			if ex := Lookup(m.GVR); ex != nil {
+				return ex
+			}
+			Register(m)
+			return m
+		}
+	}
+	return nil
+}
+
 // CuratedModules returns the hand-written modules sorted by GVR.
 func CuratedModules() []*Module {
 	reg.RLock()
@@ -201,11 +243,25 @@ func CuratedModules() []*Module {
 	return out
 }
 
+// VirtualModules returns the modules that exist on every cluster without an API resource of their own.
+func VirtualModules() []*Module {
+	reg.RLock()
+	defer reg.RUnlock()
+	var out []*Module
+	for _, m := range reg.mods {
+		if m.Virtual {
+			out = append(out, m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].GVR < out[j].GVR })
+	return out
+}
+
 // Tier0Modules returns the modules watched for every selected cluster, pods first.
 func Tier0Modules() []*Module {
 	var out []*Module
 	for _, m := range CuratedModules() {
-		if m.Tier0 {
+		if m.Tier0 && !m.Optional {
 			out = append(out, m)
 		}
 	}

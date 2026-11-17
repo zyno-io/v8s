@@ -99,6 +99,8 @@ type Conn interface {
 type ClientConn struct {
 	dyn   dynamic.Interface
 	authz authv1.SelfSubjectAccessReviewInterface
+	cs    *kubernetes.Clientset
+	cfg   *rest.Config
 }
 
 func (c *ClientConn) Dynamic() dynamic.Interface                     { return c.dyn }
@@ -128,7 +130,7 @@ func NewConnFromConfig(cfg *rest.Config) (*ClientConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ClientConn{dyn: dyn, authz: cs.AuthorizationV1().SelfSubjectAccessReviews()}, nil
+	return &ClientConn{dyn: dyn, authz: cs.AuthorizationV1().SelfSubjectAccessReviews(), cs: cs, cfg: cfg}, nil
 }
 
 // WarningSink collects API server warning headers for the requests made with its context.

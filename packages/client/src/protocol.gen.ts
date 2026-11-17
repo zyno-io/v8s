@@ -64,6 +64,12 @@ export const KindClusterState: FrameKind = 7;
  */
 export const KindObject: FrameKind = 8;
 /**
+ * KindJob (agent → client). channel = 0. Payload: JobFrame (the job's full current state). Sent on every
+ * job change to every connected data socket; jobs.list returns the same states for a (re)connecting client.
+ * Not acknowledged.
+ */
+export const KindJob: FrameKind = 9;
+/**
  * Hello is sent by the agent right after the WebSocket upgrade.
  */
 export interface Hello {
@@ -90,6 +96,17 @@ export interface Hello {
  * 	"settings.get"       → Settings (no params)
  * 	"settings.set"       SettingsSetParams → Settings (the merged document)
  * 	"search"             SearchParams → SearchResult
+ * 	"stream.open"        StreamOpenParams → StreamOpenResult (see StreamSubprotocolPrefix)
+ * 	"portforward.list"   → PortForwardListResult (no params)
+ * 	"portforward.stop"   PortForwardStopParams → (empty)
+ * 	"jobs.start"         JobsStartParams → JobsStartResult
+ * 	"jobs.list"          → JobsListResult (no params)
+ * 	"jobs.cancel"        JobsCancelParams → (empty)
+ * 	"drain.preflight"    DrainPreflightParams → DrainPreflightResult
+ * 	"flux.inventory"     FluxInventoryParams → FluxInventoryResult
+ * 	"flux.graph"         FluxGraphParams → FluxGraphResult
+ * 	"helm.release"       HelmReleaseParams → HelmRelease
+ * 	"helm.diff"          HelmDiffParams → HelmDiffResult
  */
 export interface Request {
   method: string;
@@ -107,11 +124,19 @@ export interface ErrorBody {
    * Code is one of "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal" |
    * "conflict" (object.apply update lost a resourceVersion race; Live carries the current object) |
    * "write_unavailable" (the linked write context was rejected with 401/403; Message is the server's) |
-   * "invalid" (the API server rejected the object, e.g. validation or admission).
+   * "invalid" (the API server rejected the object, e.g. validation or admission) |
+   * "write_confirm" (the read context is denied, a write context is linked but autoSwitchWrite is off: ask the user, then retry with useWriteContext) |
+   * "link_mismatch" (the linked write context reaches a different cluster than the read context: kube-system uids differ) |
+   * "gitops_managed" (a Helm action on a Flux-managed release; Hint names the right Flux action, "force": true overrides).
    */
   code: string;
   message: string;
+  hint?: string;
   live?: ObjectPayload;
+  /**
+   * Applied lists the documents of a multi-document object.apply that succeeded before the one that failed.
+   */
+  applied?: ObjectRef[];
 }
 export interface Cluster {
   id: string; // stable local id (desktop: the kubeconfig context name)
@@ -281,7 +306,17 @@ export interface ObjectGetParams {
   namespace?: string;
   name: string;
   keepManagedFields?: boolean;
+  /**
+   * Reveal returns Secret values and the last-applied annotation; false (default) masks values with
+   * MaskedValue (keys are kept) and strips kubectl.kubernetes.io/last-applied-configuration.
+   */
+  reveal?: boolean;
 }
+/**
+ * MaskedValue replaces Secret data values in a payload fetched without Reveal. An update that still contains it
+ * keeps the live value of that key.
+ */
+export const MaskedValue = "__v8s_masked__";
 /**
  * ManagedBy summarizes one managedFields entry: which manager owns which field paths.
  */
@@ -318,6 +353,7 @@ export interface ObjectSubscribeParams {
   oid: number /* uint32 */; // chosen by the client, unique per socket; the KindObject channel
   ref: ObjectRef;
   keepManagedFields?: boolean;
+  reveal?: boolean; // as ObjectGetParams.Reveal
 }
 export interface ObjectUnsubscribeParams {
   oid: number /* uint32 */;
@@ -335,6 +371,10 @@ export interface ObjectDryRunParams {
   ref: ObjectRef;
   yaml: string;
   mode: string; // "update" | "create"
+  /**
+   * UseWriteContext runs the dry run through the linked write context (honoured only when a link exists).
+   */
+  useWriteContext?: boolean;
 }
 /**
  * FieldConflict: a changed field path that another field manager owns.
@@ -355,6 +395,12 @@ export interface ObjectApplyParams {
   yaml: string;
   mode: string; // "update" | "create"
   resourceVersion?: string; // update: the version the user opened
+  /**
+   * UseWriteContext (here and on object.delete / object.action / jobs.start / stream.open) runs the mutation
+   * through the linked write context; honoured only when a link exists. It is how the UI retries after a
+   * "write_confirm" error (autoSwitchWrite off).
+   */
+  useWriteContext?: boolean;
 }
 export interface ObjectApplyResult {
   resourceVersion: string;
@@ -365,16 +411,19 @@ export interface ObjectDeleteParams {
   requestId: string;
   ref: ObjectRef;
   propagation?: string; // "Background" (default) | "Foreground" | "Orphan"
+  useWriteContext?: boolean;
 }
 /**
  * ObjectActionParams: Action is "scale" {replicas}, "restart", "cordon", "uncordon", "suspend",
- * "resume", "trigger", "rollback" {revision}.
+ * "resume", "trigger", "rollback" {revision}, and the Flux actions "flux.suspend", "flux.resume",
+ * "flux.reconcile", "flux.reconcileWithSource", "flux.force" and "flux.reset" (docs/integrations.md).
  */
 export interface ObjectActionParams {
   requestId: string;
   ref: ObjectRef;
   action: string;
   params?: { [key: string]: unknown };
+  useWriteContext?: boolean;
 }
 /**
  * MutationResult answers object.delete and object.action.
@@ -383,6 +432,11 @@ export interface MutationResult {
   usedContext: string;
   resourceVersion?: string;
   name?: string; // action "trigger": the created Job
+  /**
+   * Token is the reconcile token a Flux action wrote to reconcile.fluxcd.io/requestedAt (and forceAt/resetAt).
+   * The object is handled once status.lastHandledReconcileAt equals it.
+   */
+  token?: string;
 }
 export interface AccessCheck {
   cluster: string;
@@ -396,7 +450,12 @@ export interface AccessCheckParams {
 }
 export interface AccessResult {
   allowed: boolean;
-  viaWrite: boolean; // allowed only through the linked write context
+  viaWrite: boolean; // allowed only through the linked write context, which is used automatically (autoSwitchWrite on)
+  /**
+   * NeedsConfirm: allowed only through the linked write context but autoSwitchWrite is off; the UI asks, then
+   * sends the mutation with useWriteContext.
+   */
+  needsConfirm?: boolean;
   reason: string;
 }
 export interface AccessCheckResult {
@@ -419,6 +478,30 @@ export interface Settings {
   columnLayouts: { [key: string]: unknown };
   problemPrefs: { [key: string]: unknown };
   acks: { [key: string]: unknown };
+  /**
+   * NodeShell configures node shell pods per cluster id; "*" is the default for every cluster.
+   */
+  nodeShell: { [key: string]: NodeShellSettings};
+  /**
+   * PortForwards are the saved forwards (restorable with one click: stream.open type "portforward").
+   */
+  portForwards: SavedForward[];
+}
+/**
+ * NodeShellSettings: Image must be pinned (a digest); empty fields use the defaults.
+ */
+export interface NodeShellSettings {
+  image?: string;
+  namespace?: string; // default "v8s-system"
+  priorityClass?: string; // default none
+}
+/**
+ * SavedForward is a remembered port-forward.
+ */
+export interface SavedForward {
+  name?: string;
+  ref: ObjectRef; // v1/pods or v1/services
+  port: number /* int */;
 }
 /**
  * SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
@@ -452,3 +535,415 @@ export const MaxInFlightBytes = 512 * 1024;
  * Flow control (agent side): at most MaxUnacked patch frames or MaxInFlightBytes in flight per socket.
  */
 export const MaxFrameBytes = 128 * 1024;
+/**
+ * A stream (logs, exec, debug, node shell) has its own WebSocket, `GET /stream`, so a chatty log never
+ * delays view patches or keystrokes. It is authenticated like /ws (Sec-WebSocket-Protocol `v8s.v1` and
+ * `token.<hex>`, Origin allowlist) and is opened with a single-use id obtained from stream.open: the
+ * client additionally offers `stream.<id>` as a subprotocol, so ids never appear in URLs. An id is valid
+ * for StreamIDTTLSeconds and for one connection.
+ */
+export const StreamSubprotocolPrefix = "stream.";
+/**
+ * A stream (logs, exec, debug, node shell) has its own WebSocket, `GET /stream`, so a chatty log never
+ * delays view patches or keystrokes. It is authenticated like /ws (Sec-WebSocket-Protocol `v8s.v1` and
+ * `token.<hex>`, Origin allowlist) and is opened with a single-use id obtained from stream.open: the
+ * client additionally offers `stream.<id>` as a subprotocol, so ids never appear in URLs. An id is valid
+ * for StreamIDTTLSeconds and for one connection.
+ */
+export const StreamIDTTLSeconds = 30;
+/**
+ * DefaultLogTailLines is used when StreamOpenParams.TailLines is unset.
+ */
+export const DefaultLogTailLines = 1000;
+/**
+ * InitialLogCredit is the credit (bytes) a log stream starts with; the client adds more with {"credit": n}.
+ */
+export const InitialLogCredit = 256 * 1024;
+/**
+ * LogBatchBytes and LogBatchMillis bound one logs frame: at most 64 KiB, flushed after at most 100 ms.
+ */
+export const LogBatchBytes = 64 * 1024;
+/**
+ * A stream (logs, exec, debug, node shell) has its own WebSocket, `GET /stream`, so a chatty log never
+ * delays view patches or keystrokes. It is authenticated like /ws (Sec-WebSocket-Protocol `v8s.v1` and
+ * `token.<hex>`, Origin allowlist) and is opened with a single-use id obtained from stream.open: the
+ * client additionally offers `stream.<id>` as a subprotocol, so ids never appear in URLs. An id is valid
+ * for StreamIDTTLSeconds and for one connection.
+ */
+export const LogBatchMillis = 100;
+/**
+ * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
+ * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
+ */
+export const StreamChanStdin: number /* uint8 */ = 0x00;
+/**
+ * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
+ * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
+ */
+export const StreamChanStdout: number /* uint8 */ = 0x01;
+/**
+ * Binary frame channel bytes of an exec / node shell / debug stream. Client → agent: [StreamChanStdin][bytes].
+ * Agent → client: [StreamChanStdout][bytes] or [StreamChanStderr][bytes] (a TTY merges stderr into stdout).
+ */
+export const StreamChanStderr: number /* uint8 */ = 0x02;
+/**
+ * StreamClientMsg is a client → agent text frame: {"credit": n} (logs: grants n more bytes) or
+ * {"resize": {"cols": c, "rows": r}} (exec, node shell, debug).
+ */
+export interface StreamClientMsg {
+  credit?: number /* int64 */;
+  resize?: StreamResize;
+}
+export interface StreamResize {
+  cols: number /* int */;
+  rows: number /* int */;
+}
+/**
+ * StreamServerMsg is an agent → client text frame. Ready is the first frame of an interactive stream;
+ * Exit ends exec / node shell / debug ({"exit": code, "error"?}); End ends a logs stream ({"end": true, "error"?}).
+ */
+export interface StreamServerMsg {
+  ready?: StreamReady;
+  exit?: number /* int */;
+  end?: boolean;
+  error?: string;
+}
+export interface StreamReady {
+  usedContext: string;
+  shell?: string; // exec: the shell that started
+  container?: string; // exec/debug: the container entered
+  pod?: string; // nodeshell: the pod
+  attached?: boolean; // nodeshell: first session (attach) vs nsenter exec
+}
+/**
+ * LogSelector selects the pods of a multi-pod log stream.
+ */
+export interface LogSelector {
+  cluster: string;
+  namespace: string;
+  labelSelector: string;
+}
+/**
+ * StreamOpenParams is the stream.open request. Type selects which fields apply:
+ *   - "logs": Ref (a pod; with Container) or Selector, or Ref of a workload (its pods are selected from its
+ *     spec.selector); Follow, TailLines (default 1000), SinceSeconds, Previous, Timestamps; Download opens a
+ *     one-shot HTTP download (result.DownloadURL) instead of a socket. Multi-pod lines are prefixed
+ *     "<pod>/<container>\t"; the agent merges them by timestamp.
+ *   - "exec": Ref (pod), Container, Command (default: shell discovery /bin/bash → /bin/sh → /busybox/sh), TTY (default true).
+ *   - "debug": Ref (pod), Target (container), Image.
+ *   - "nodeshell": Node (and Cluster).
+ *   - "portforward": Ref (a pod, or a service resolved to a ready backing pod), Port. The result carries
+ *     LocalPort and ForwardID instead of a stream id.
+ */
+export interface StreamOpenParams {
+  type: string;
+  cluster?: string; // nodeshell
+  ref?: ObjectRef;
+  selector?: LogSelector;
+  container?: string;
+  follow?: boolean;
+  tailLines?: number /* int64 */;
+  sinceSeconds?: number /* int64 */;
+  previous?: boolean;
+  timestamps?: boolean;
+  download?: boolean;
+  command?: string[];
+  tty?: boolean;
+  target?: string;
+  image?: string;
+  node?: string;
+  port?: number /* int */;
+  /**
+   * UseWriteContext as on ObjectApplyParams.
+   */
+  useWriteContext?: boolean;
+}
+export interface StreamOpenResult {
+  /**
+   * StreamID is the single-use id to offer as subprotocol "stream.<id>" on GET /stream.
+   */
+  streamId?: string;
+  /**
+   * DownloadURL (logs with Download): GET it once with the agent token as `Authorization: Bearer <token>`
+   * or `?token=`; the response is the whole log as one text/plain stream.
+   */
+  downloadUrl?: string;
+  /**
+   * UsedContext is the context the stream runs through (the linked write context when the read context was denied).
+   */
+  usedContext?: string;
+  /**
+   * LocalPort and ForwardID answer type "portforward".
+   */
+  localPort?: number /* int */;
+  forwardId?: string;
+}
+export interface PortForwardInfo {
+  id: string;
+  ref: ObjectRef;
+  port: number /* int */;
+  localPort: number /* int */;
+  pod: string;
+  state: string; // "running" | "reconnecting" | "stopped"
+  usedContext: string;
+  error?: string;
+}
+export interface PortForwardListResult {
+  forwards: PortForwardInfo[];
+}
+export interface PortForwardStopParams {
+  id: string;
+}
+export type JobState = string;
+export const JobRunning: JobState = "running";
+export const JobDone: JobState = "done";
+export const JobFailed: JobState = "failed";
+export const JobCancelled: JobState = "cancelled";
+/**
+ * Job types for jobs.start.
+ */
+export const JobDrain = "drain"; // params: DrainParams
+/**
+ * Job types for jobs.start.
+ */
+export const JobHelmRollback = "helm.rollback"; // params: HelmRollbackParams
+/**
+ * Job types for jobs.start.
+ */
+export const JobHelmUninstall = "helm.uninstall"; // params: HelmUninstallParams
+/**
+ * Job types for jobs.start.
+ */
+export const JobHelmRetry = "helm.retry"; // params: HelmRetryParams
+export interface JobProgress {
+  at: number /* int64 */; // unix ms
+  message: string; // human text
+  item?: string; // what it is about, e.g. "team-1/svc-3-abc"
+  state?: string; // item state: "evicting" | "waiting-pdb" | "evicted" | "error" | ...
+}
+/**
+ * JobFrame is the KindJob payload and the jobs.list entry: the job's whole state. Progress holds the last
+ * 200 entries (ProgressDropped counts older ones).
+ */
+export interface JobFrame {
+  jobId: string;
+  type: string;
+  state: JobState;
+  cluster?: string;
+  subject?: string; // node or release the job acts on
+  startedAt: number /* int64 */;
+  endedAt?: number /* int64 */;
+  progress: JobProgress[];
+  progressDropped?: number /* int */;
+  error?: ErrorBody;
+  usedContext?: string;
+}
+export interface JobsStartParams {
+  requestId: string;
+  type: string;
+  params: { [key: string]: unknown };
+  useWriteContext?: boolean;
+}
+export interface JobsStartResult {
+  jobId: string;
+}
+export interface JobsListResult {
+  jobs: JobFrame[];
+}
+export interface JobsCancelParams {
+  jobId: string;
+}
+/**
+ * DrainOptions mirror kubectl drain. IgnoreDaemonSets defaults to true. TimeoutSeconds 0 means 300.
+ * GracePeriodSeconds nil uses each pod's own. DisableEviction deletes pods instead of evicting them
+ * (PDBs are then not honoured): it is the explicit second confirmation.
+ */
+export interface DrainOptions {
+  ignoreDaemonSets?: boolean;
+  deleteEmptyDirData?: boolean;
+  force?: boolean; // also drain pods no controller manages
+  gracePeriodSeconds?: number /* int */;
+  timeoutSeconds?: number /* int */;
+  podSelector?: string;
+  disableEviction?: boolean;
+}
+/**
+ * DrainParams are the params of jobs.start type "drain".
+ */
+export interface DrainParams {
+  cluster: string;
+  node: string;
+  options: DrainOptions;
+}
+export type DrainPreflightParams = DrainParams;
+export interface DrainPDB {
+  name: string;
+  disruptionsAllowed: number /* int */;
+}
+export interface DrainPod {
+  namespace: string;
+  name: string;
+  owner?: string; // "Kind/name" of the controller
+  pdb?: DrainPDB;
+  emptyDir?: boolean;
+}
+/**
+ * DrainPreflightResult classifies the pods on the node. Evict pods will be evicted; Blocked pods are covered
+ * by a PDB with disruptionsAllowed 0 (the drain waits on them); Unmanaged pods have no controller and are
+ * lost for good (need force); DaemonSets are skipped; Mirror pods are skipped; Finished pods are deleted.
+ * EmptyDir lists, in addition, the pods whose emptyDir data is lost (needs deleteEmptyDirData).
+ */
+export interface DrainPreflightResult {
+  node: string;
+  cordoned: boolean;
+  usedContext: string;
+  evict: DrainPod[];
+  blocked: DrainPod[];
+  unmanaged: DrainPod[];
+  emptyDir: DrainPod[];
+  daemonSets: DrainPod[];
+  mirror: DrainPod[];
+  finished: DrainPod[];
+}
+export interface FluxInventoryParams {
+  ref: ObjectRef; // a Kustomization
+}
+/**
+ * FluxInventoryEntry is one status.inventory.entries item joined to the live object when its kind is watched.
+ */
+export interface FluxInventoryEntry {
+  id: string;
+  group: string;
+  version: string;
+  kind: string;
+  namespace?: string;
+  name: string;
+  gvr?: string;
+  /**
+   * Live is true when the object exists in a watched kind; Tone (ColTone values) and Status are then its health.
+   */
+  live: boolean;
+  tone: number /* int */;
+  status?: string;
+}
+export interface FluxInventoryResult {
+  entries: FluxInventoryEntry[];
+  revision?: string;
+}
+export interface FluxGraphParams {
+  cluster: string;
+}
+export interface FluxGraphNode {
+  id: string; // "<Kind>/<namespace>/<name>"
+  kind: string;
+  gvr: string;
+  namespace: string;
+  name: string;
+  tone: number /* int */;
+  suspended: boolean;
+}
+export interface FluxGraphEdge {
+  from: string; // node id
+  to: string; // node id
+  type: string; // "dependsOn" (From waits for To) | "sourceRef" (From reads To)
+}
+export interface FluxGraphResult {
+  nodes: FluxGraphNode[];
+  edges: FluxGraphEdge[];
+}
+/**
+ * HelmGVR is the virtual resource of the Helm release view (one row per release: its latest revision).
+ */
+export const HelmGVR = "helm.sh/v1/releases";
+export interface HelmReleaseParams {
+  cluster: string;
+  namespace: string;
+  name: string;
+  revision?: number /* int */; // 0 = latest
+}
+export interface HelmRevision {
+  revision: number /* int */;
+  status: string;
+  updated: number /* int64 */; // unix ms
+  chart?: string;
+  appVersion?: string;
+  description?: string;
+}
+export interface HelmHook {
+  name: string;
+  kind: string;
+  path?: string;
+  events: string[];
+  weight: number /* int */;
+}
+/**
+ * HelmRelease is one decoded release revision.
+ */
+export interface HelmRelease {
+  name: string;
+  namespace: string;
+  revision: number /* int */;
+  status: string;
+  chart: string;
+  chartVersion: string;
+  appVersion?: string;
+  description?: string;
+  updated: number /* int64 */;
+  values: string; // user-supplied values, YAML
+  computedValues: string; // chart defaults merged with Values, YAML
+  manifest: string;
+  notes?: string;
+  hooks: HelmHook[];
+  history: HelmRevision[];
+  managedBy?: GitOps; // Flux HelmRelease from the release labels
+}
+export interface HelmDiffParams {
+  ref: ObjectRef; // cluster, namespace, name (gvr is HelmGVR)
+  fromRevision: number /* int */;
+  toRevision: number /* int */;
+}
+/**
+ * HelmDiffResult holds unified diffs ("" when identical).
+ */
+export interface HelmDiffResult {
+  values: string;
+  manifest: string;
+}
+/**
+ * Helm action params (jobs.start). Force overrides the Flux guard ("gitops_managed"); ForceReplace is Helm's
+ * own --force. TimeoutSeconds 0 means 300.
+ */
+export interface HelmRollbackParams {
+  cluster: string;
+  namespace: string;
+  name: string;
+  revision: number /* int */;
+  wait?: boolean;
+  timeout?: number /* int */;
+  cleanupOnFail?: boolean;
+  forceReplace?: boolean;
+  force?: boolean;
+}
+export interface HelmUninstallParams {
+  cluster: string;
+  namespace: string;
+  name: string;
+  keepHistory?: boolean;
+  wait?: boolean;
+  timeout?: number /* int */;
+  cascade?: string; // "background" (default) | "foreground" | "orphan"
+  force?: boolean;
+}
+/**
+ * HelmRetryParams re-runs the last upgrade with the stored chart and values. A release stuck in pending-*
+ * needs MarkFailed first (it sets that revision to failed so Helm accepts a new operation).
+ */
+export interface HelmRetryParams {
+  cluster: string;
+  namespace: string;
+  name: string;
+  markFailed?: boolean;
+  wait?: boolean;
+  timeout?: number /* int */;
+  force?: boolean;
+}

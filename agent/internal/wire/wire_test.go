@@ -45,6 +45,7 @@ func startEnv(t *testing.T, cfg fake.Config, mut func(*Options)) *env {
 	svc := ops.New(ops.Config{Conn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Links: mgr.Links, Resolve: mgr.Resolve})
 	go eng.Run(ctx)
 	opt := Options{Manager: mgr, Engine: eng, Ops: svc, Settings: set, Token: testToken, Mode: "fake", AgentVersion: "test", Tick: 100 * time.Millisecond}
+	g2Services(ctx, &opt, src, mgr, svc, set)
 	if mut != nil {
 		mut(&opt)
 	}
@@ -55,6 +56,9 @@ func startEnv(t *testing.T, cfg fake.Config, mut func(*Options)) *env {
 	srv.SetPort(port)
 	t.Cleanup(func() {
 		ts.Close()
+		if opt.Streams != nil {
+			opt.Streams.Close()
+		}
 		cancel()
 		mgr.Close()
 	})
@@ -388,7 +392,7 @@ func TestEndToEndFake(t *testing.T) {
 	if k := byGVR["v1/pods"]; !k.Curated || k.ShortNames[0] != "po" || k.Version != "v1" {
 		t.Fatalf("bad pods kind: %+v", k)
 	}
-	if k := byGVR["kustomize.toolkit.fluxcd.io/v1/kustomizations"]; k.Curated || k.Group != "kustomize.toolkit.fluxcd.io" || len(kinds.Kinds) < 25 {
+	if k := byGVR["storage.k8s.io/v1/storageclasses"]; k.Curated || k.Group != "storage.k8s.io" || len(kinds.Kinds) < 25 {
 		t.Fatalf("bad generic kind: %+v (%d kinds)", k, len(kinds.Kinds))
 	}
 	if len(st.States) != 3 {

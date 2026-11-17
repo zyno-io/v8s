@@ -510,6 +510,9 @@ func (s *Sub) Update(q *protocol.ViewQuery, gen uint32, w *protocol.Window) erro
 	if s.closed {
 		return nil
 	}
+	if gen < s.gen { // a stale update (an older request resolved late) must not undo a newer one
+		return nil
+	}
 	s.gen = gen
 	if w != nil {
 		s.win = clampWindow(*w)

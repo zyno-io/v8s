@@ -11,8 +11,10 @@ import (
 	jsonpatch "gopkg.in/evanphx/json-patch.v4"
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
+	"github.com/zyno-io/v8s/agent/internal/helm"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	authzv1 "k8s.io/api/authorization/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -142,6 +144,7 @@ func (w *World) storeLocked(gvr string, o *unstructured.Unstructured, create boo
 		typ = watch.Added
 	}
 	w.emitLocked(typ, gvr, o.DeepCopy())
+	w.scheduleReconcileLocked(gvr, o)
 	return o.DeepCopy()
 }
 
@@ -199,6 +202,17 @@ func typedObject(o *unstructured.Unstructured) (runtime.Object, error) {
 
 func (a *kindAPI) table() bool { return a.d.cols != nil }
 
+// partial: a mode B kind (Flux) decoded by its module from the object's JSON.
+func (a *kindAPI) partial() bool { return a.mod != nil && a.mod.DecodeJSON != nil }
+
+func (a *kindAPI) decode(o *unstructured.Unstructured) (runtime.Object, error) {
+	b, err := json.Marshal(o.Object)
+	if err != nil {
+		return nil, err
+	}
+	return a.mod.DecodeJSON(b)
+}
+
 func (a *kindAPI) row(o *unstructured.Unstructured) ingest.TableRow {
 	r := ingest.TableRow{Cells: a.d.cells(o.Object), UID: string(o.GetUID()), Name: o.GetName(), Namespace: o.GetNamespace(), RV: o.GetResourceVersion(),
 		Deleting: o.GetDeletionTimestamp() != nil}
@@ -241,6 +255,17 @@ func (a *kindAPI) List(ctx context.Context, opts metav1.ListOptions) (runtime.Ob
 		}
 		return t, nil
 	}
+	if a.partial() {
+		pl := &ingest.PartialList{ListMeta: metav1.ListMeta{ResourceVersion: rv, Continue: cont}}
+		for _, o := range page {
+			d, err := a.decode(o)
+			if err != nil {
+				return nil, err
+			}
+			pl.Items = append(pl.Items, d)
+		}
+		return pl, nil
+	}
 	list := a.mod.NewList()
 	objs := make([]runtime.Object, 0, len(page))
 	for _, o := range page {
@@ -270,6 +295,15 @@ func (a *kindAPI) conv() func(typ watch.EventType, o *unstructured.Unstructured)
 			return []watch.Event{{Type: typ, Object: t}}
 		}
 	}
+	if a.partial() {
+		return func(typ watch.EventType, o *unstructured.Unstructured) []watch.Event {
+			d, err := a.decode(o)
+			if err != nil {
+				return nil
+			}
+			return []watch.Event{{Type: typ, Object: d}}
+		}
+	}
 	return func(typ watch.EventType, o *unstructured.Unstructured) []watch.Event {
 		to, err := typedObject(o)
 		if err != nil {
@@ -286,6 +320,13 @@ func (a *kindAPI) bookmark(rv uint64, initialEnd bool) watch.Event {
 			t.Annotations = map[string]string{metav1.InitialEventsAnnotationKey: "true"}
 		}
 		return watch.Event{Type: watch.Bookmark, Object: t}
+	}
+	if a.partial() {
+		m := &metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{ResourceVersion: strconv.FormatUint(rv, 10)}}
+		if initialEnd {
+			m.Annotations = map[string]string{metav1.InitialEventsAnnotationKey: "true"}
+		}
+		return watch.Event{Type: watch.Bookmark, Object: m}
 	}
 	obj, _ := scheme.Scheme.New(schema.GroupVersionKind{Group: a.d.group(), Version: a.d.version(), Kind: a.d.kind})
 	acc, _ := meta.Accessor(obj)
@@ -645,6 +686,7 @@ type Backend struct {
 	admin bool // the linked write context ("<cluster>-admin")
 	deny  bool // read context of a read-only cluster (rbac=1): mutations are denied
 	dyn   *dynClient
+	rate  int // synthetic log lines per second
 }
 
 var _ kube.Backend = (*Backend)(nil)
@@ -656,6 +698,9 @@ func (b *Backend) Authz() authv1.SelfSubjectAccessReviewInterface { return kubeA
 func (b *Backend) API(gvr string, m *ingest.Module) (ingest.API, error) {
 	if gvr == ingest.PodsGVR {
 		return ingest.PodAdapter{PodAPI: b.c}, nil
+	}
+	if gvr == protocol.HelmGVR {
+		return helm.NewReleaseAPI(helm.NewTypedMetaSource(b.Clientset())), nil
 	}
 	d := kindByGVR[gvr]
 	if d == nil {

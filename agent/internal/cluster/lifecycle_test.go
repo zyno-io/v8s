@@ -185,7 +185,7 @@ func TestKindsUnionAndSearch(t *testing.T) {
 	if dep == nil || !dep.Curated || !dep.Available || dep.Group != "apps" || dep.Version != "v1" || !slices.Equal(dep.Clusters, []string{"prod-eu", "prod-us"}) || dep.ShortNames[0] != "deploy" {
 		t.Fatalf("deployments kind: %+v", dep)
 	}
-	if ks == nil || ks.Curated || ks.ShortNames[0] != "ks" || !ks.Namespaced {
+	if ks == nil || !ks.Curated || ks.ShortNames[0] != "ks" || !ks.Namespaced {
 		t.Fatalf("kustomizations kind: %+v", ks)
 	}
 	_, _ = m.Select([]string{"prod-us"})

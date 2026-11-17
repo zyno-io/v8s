@@ -38,9 +38,18 @@ type watchEntry struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 	refs    int
+	errv    atomic.Value // listErr: the latest list/watch error, cleared by the next success
 	tier0   bool
 	lastUse time.Time
 	linger  *time.Timer
+}
+
+type listErr struct{ err error }
+
+func (w *watchEntry) setErr(err error) { w.errv.Store(listErr{err}) }
+func (w *watchEntry) lastErr() error {
+	v, _ := w.errv.Load().(listErr)
+	return v.err
 }
 
 type discState struct {
@@ -139,7 +148,10 @@ func (r *runner) serves(gvr string) (known, ok bool) {
 	d := r.disc.Load()
 	if d == nil {
 		m := ingest.Lookup(gvr)
-		return false, m != nil && m.Curated
+		return false, m != nil && (m.Virtual || (m.Curated && !m.Optional))
+	}
+	if m := ingest.Lookup(gvr); m != nil && m.Virtual {
+		return true, true
 	}
 	_, ok = d.byG[gvr]
 	return true, ok
@@ -159,6 +171,9 @@ func (r *runner) module(gvr string) (*ingest.Module, *ingest.GenericSpec, error)
 	if res == nil {
 		return nil, nil, apierrors.NewNotFound(schemaGR(gvr), gvr)
 	}
+	if m := ingest.ResolveDiscovered(res.Group, res.Version, res.Resource, res.Kind, res.Namespaced); m != nil {
+		return m, nil, nil
+	}
 	return nil, &ingest.GenericSpec{GVR: gvr, Kind: res.Kind, Namespaced: res.Namespaced, Short: res.ShortNames}, nil
 }
 
@@ -177,10 +192,12 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	w.cancel = cancel
 	hooks := ingest.Hooks{
 		OnRows: w.st.Provisional,
+		OnOK:   func() { w.setErr(nil) },
 		OnError: func(err error) {
 			if wctx.Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
 				return // a routine relist, not a cluster problem
 			}
+			w.setErr(err)
 			primary := gvr == ingest.PodsGVR
 			if !primary && !apierrors.IsUnauthorized(err) {
 				r.m.log.Debug("watch error", "cluster", r.id, "gvr", gvr, "err", err.Error())
@@ -205,6 +222,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			r.m.kickThrottled()
 		}
 		hooks.OnOK = func() {
+			w.setErr(nil)
 			if r.phase.Load() == protocol.PhaseConnecting {
 				r.setPhase(protocol.PhaseSyncing, "")
 			}
@@ -354,6 +372,29 @@ func (r *runner) startInvalidation() {
 	}
 }
 
+// startOptionalBaseline starts the always-on watches of CRD-backed kinds (Flux: docs/integrations.md
+// "Performance") for the versions the cluster serves, once discovery knows them.
+func (r *runner) startOptionalBaseline() {
+	d := r.disc.Load()
+	if d == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, res := range d.list {
+		if !res.Listable() {
+			continue
+		}
+		m := ingest.ResolveDiscovered(res.Group, res.Version, res.Resource, res.Kind, res.Namespaced)
+		if m == nil || !m.Optional || !m.Tier0 || r.watches[m.GVR] != nil {
+			continue
+		}
+		if _, err := r.startLocked(m.GVR, true); err != nil {
+			r.m.log.Debug("baseline watch failed", "cluster", r.id, "gvr", m.GVR, "err", err)
+		}
+	}
+}
+
 func (r *runner) attachAll() {
 	r.mu.Lock()
 	r.attached = true
@@ -383,6 +424,25 @@ func (r *runner) stop() {
 	}
 	r.watches = map[string]*watchEntry{}
 	r.mu.Unlock()
+}
+
+// ScanKind calls fn for every row of gvr in the cluster's store until fn returns false. It reports whether
+// the kind is currently watched (false: nothing was scanned).
+func (m *Manager) ScanKind(clusterID, gvr string, fn func(*ingest.Row) bool) bool {
+	m.mu.Lock()
+	r := m.runners[clusterID]
+	m.mu.Unlock()
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	w := r.watches[gvr]
+	r.mu.Unlock()
+	if w == nil {
+		return false
+	}
+	w.st.Scan(fn)
+	return true
 }
 
 // WatchInfo describes one running watch (diagnostics and tests).

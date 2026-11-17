@@ -4,17 +4,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/vmihailenco/msgpack/v5"
 	"github.com/zyno-io/v8s/agent/internal/cluster"
+	"github.com/zyno-io/v8s/agent/internal/helm"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/jobs"
 	"github.com/zyno-io/v8s/agent/internal/ops"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
@@ -39,6 +44,26 @@ type connSub struct {
 	clusters []string
 	last     time.Time
 	urgent   bool // client-initiated change: bypass the tick once
+
+	// Updates of one subscription are applied in request order: while one is resolving (a first-time generic
+	// kind can take up to 20 s) later ones queue behind it, and a later one that changes the query supersedes it.
+	busy  *asyncUpdate
+	queue []func()
+}
+
+// asyncUpdate is a view.update (or the first view.subscribe) whose kind is still resolving.
+type asyncUpdate struct{ superseded bool }
+
+// pendingSub is a view.subscribe still resolving its kind.
+type pendingSub struct {
+	cancelled bool
+	cancel    context.CancelFunc
+}
+
+// postItem is work for the connection goroutine; cleanup runs instead when it can never be delivered.
+type postItem struct {
+	f       func() error
+	cleanup func()
 }
 
 // objSub is a live object.subscribe.
@@ -51,9 +76,11 @@ type conn struct {
 	seq uint32
 
 	subs     map[uint32]*connSub
-	pendingQ map[uint32]bool // view.subscribe requests still resolving their kind
+	pendingQ map[uint32]*pendingSub // view.subscribe requests still resolving their kind
 	objs     map[uint32]*objSub
-	post     chan func() error // work to run on the connection goroutine (async responses, object frames)
+	post     chan postItem // work to run on the connection goroutine (async responses, object frames)
+	postMu   sync.Mutex
+	postDone bool // set once run has ended: nothing is delivered any more
 	unacked  map[uint32]int
 	inflight int
 
@@ -73,7 +100,7 @@ type conn struct {
 
 func newConn(s *Server, ws *websocket.Conn) *conn {
 	c := &conn{s: s, ws: ws, in: make(chan inMsg, 16), subs: map[uint32]*connSub{}, unacked: map[uint32]int{},
-		pendingQ: map[uint32]bool{}, objs: map[uint32]*objSub{}, post: make(chan func() error, 64)}
+		pendingQ: map[uint32]*pendingSub{}, objs: map[uint32]*objSub{}, post: make(chan postItem, 64)}
 	c.initCodec()
 	ws.SetReadLimit(1 << 20)
 	return c
@@ -102,6 +129,24 @@ func (c *conn) run(ctx context.Context) {
 		for _, o := range c.objs {
 			o.cancel()
 		}
+		for _, p := range c.pendingQ {
+			p.cancel()
+		}
+		// Nothing posted from now on is delivered; whatever is still queued must release what it owns
+		// (watch scopes opened for a view.subscribe/update that resolved after the last loop turn).
+		c.postMu.Lock()
+		c.postDone = true
+		c.postMu.Unlock()
+		for {
+			select {
+			case it := <-c.post:
+				if it.cleanup != nil {
+					it.cleanup()
+				}
+			default:
+				return
+			}
+		}
 	}()
 
 	go c.readLoop(ctx, cancel)
@@ -113,6 +158,15 @@ func (c *conn) run(ctx context.Context) {
 	defer stopEng()
 	clCh, stopCl := c.s.opt.Manager.Listen()
 	defer stopCl()
+	var jobCh <-chan struct{}
+	var jobSub *jobs.Subscription
+	if jm := c.s.opt.Jobs; jm != nil {
+		jm.ClientConnected()
+		defer jm.ClientDisconnected()
+		jobSub = jm.Subscribe()
+		defer jobSub.Close()
+		jobCh = jobSub.C
+	}
 
 	hello := protocol.Hello{Version: protocol.Version, AgentVer: c.s.opt.AgentVersion, Mode: c.s.opt.Mode}
 	if c.send(protocol.KindHello, 0, hello) != nil {
@@ -136,8 +190,8 @@ func (c *conn) run(ctx context.Context) {
 			if c.flushDirty() != nil {
 				return
 			}
-		case f := <-c.post:
-			if f() != nil {
+		case it := <-c.post:
+			if it.f() != nil {
 				return
 			}
 			if c.flushDirty() != nil {
@@ -146,6 +200,12 @@ func (c *conn) run(ctx context.Context) {
 		case <-engCh:
 			if c.flushDirty() != nil {
 				return
+			}
+		case <-jobCh:
+			for _, f := range jobSub.Drain() {
+				if c.send(protocol.KindJob, 0, f) != nil {
+					return
+				}
 			}
 		case <-clCh:
 			c.statesDue = true
@@ -436,11 +496,32 @@ func (c *conn) async(id uint32, fn func(ctx context.Context) (any, error)) {
 	}()
 }
 
-// postf queues work for the connection goroutine.
-func (c *conn) postf(f func() error) {
-	select {
-	case c.post <- f:
-	case <-c.ctx.Done():
+// postf queues work for the connection goroutine; it reports whether the work was queued (false: the
+// connection has ended and f will never run).
+func (c *conn) postf(f func() error) bool { return c.postfClean(f, nil) }
+
+// postfClean is postf with a cleanup that runs when the work is queued but the connection ends before it
+// ran. When it returns false the caller still owns whatever the work would have taken over.
+func (c *conn) postfClean(f func() error, cleanup func()) bool {
+	it := postItem{f: f, cleanup: cleanup}
+	for {
+		c.postMu.Lock()
+		if c.postDone {
+			c.postMu.Unlock()
+			return false
+		}
+		select {
+		case c.post <- it:
+			c.postMu.Unlock()
+			return true
+		default:
+		}
+		c.postMu.Unlock()
+		select {
+		case <-c.ctx.Done():
+			return false
+		case <-time.After(time.Millisecond):
+		}
 	}
 }
 
@@ -454,10 +535,22 @@ func errBody(err error) protocol.ErrorBody {
 	if errors.As(err, &oe) {
 		return oe.Body
 	}
+	var eb interface{ ErrorBody() protocol.ErrorBody }
+	if errors.As(err, &eb) {
+		return eb.ErrorBody()
+	}
+	var jf *jobs.Fail
+	if errors.As(err, &jf) {
+		return jf.Body
+	}
 	var bq *view.BadQueryError
 	switch {
 	case errors.As(err, &bq):
 		return protocol.ErrorBody{Code: "bad_request", Message: err.Error()}
+	case apierrors.IsForbidden(err):
+		return protocol.ErrorBody{Code: "forbidden", Message: err.Error()}
+	case apierrors.IsNotFound(err):
+		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
 	case errors.Is(err, cluster.ErrNotServed):
 		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
 	case errors.Is(err, context.DeadlineExceeded):
@@ -476,22 +569,30 @@ func queryGVR(q protocol.ViewQuery) string {
 }
 
 // resolve finds the module and opens the watch scope for a query. Known kinds resolve inline; a generic
-// kind waits (off the connection goroutine) for its first columnDefinitions. cb runs on the connection goroutine.
-func (c *conn) resolve(q protocol.ViewQuery, cb func(mod *ingest.Module, scope *cluster.Scope, err error)) {
+// kind waits (off the connection goroutine) for its first columnDefinitions. cb runs on the connection
+// goroutine and owns scope; when cb can never run, the scope is closed here.
+func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(mod *ingest.Module, scope *cluster.Scope, err error)) {
 	gvr, mgr := queryGVR(q), c.s.opt.Manager
 	if mod := ingest.Lookup(gvr); mod != nil {
 		cb(mod, mgr.OpenScope(gvr, q.Clusters), nil)
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(c.ctx, 20*time.Second)
+		rctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
-		mod, err := mgr.ResolveModule(ctx, gvr, q.Clusters)
+		mod, err := mgr.ResolveModule(rctx, gvr, q.Clusters)
 		var scope *cluster.Scope
 		if err == nil {
 			scope = mgr.OpenScope(gvr, q.Clusters)
 		}
-		c.postf(func() error { cb(mod, scope, err); return nil })
+		closeScope := func() {
+			if scope != nil {
+				scope.Close()
+			}
+		}
+		if !c.postfClean(func() error { cb(mod, scope, err); return nil }, closeScope) {
+			closeScope()
+		}
 	}()
 }
 
@@ -522,12 +623,20 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		if err := decodeParams(req, &p); err != nil {
 			return bad(err)
 		}
-		if _, dup := c.subs[p.QID]; dup || c.pendingQ[p.QID] || p.QID == 0 {
+		if _, dup := c.subs[p.QID]; dup || c.pendingQ[p.QID] != nil || p.QID == 0 {
 			return c.respondErr(id, "bad_request", "qid must be non-zero and unique")
 		}
-		c.pendingQ[p.QID] = true
-		c.resolve(p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+		rctx, rcancel := context.WithCancel(c.ctx)
+		ps := &pendingSub{cancel: rcancel}
+		c.pendingQ[p.QID] = ps
+		c.resolve(rctx, p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
 			delete(c.pendingQ, p.QID)
+			rcancel()
+			if err == nil && ps.cancelled { // unsubscribed while resolving
+				scope.Close()
+				_ = c.respondErr(id, "not_found", "unsubscribed")
+				return
+			}
 			if err != nil {
 				_ = c.respondBody(id, errBody(err))
 				return
@@ -551,42 +660,22 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		if cs == nil {
 			return c.respondErr(id, "not_found", "no such subscription")
 		}
-		if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters))) {
-			gvrChanged := queryGVR(*p.Query) != cs.gvr
-			c.resolve(*p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
-				if err != nil {
-					_ = c.respondBody(id, errBody(err))
-					return
-				}
-				if c.subs[p.QID] != cs {
-					scope.Close()
-					_ = c.respondErr(id, "not_found", "no such subscription")
-					return
-				}
-				if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
-					scope.Close()
-					_ = c.respondBody(id, errBody(err))
-					return
-				}
-				cs.scope.Close()
-				cs.scope, cs.gvr, cs.clusters, cs.urgent = scope, queryGVR(*p.Query), p.Query.Clusters, true
-				if gvrChanged { // the client needs the new schema
-					_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
-				} else {
-					_ = c.respond(id, nil)
-				}
-			})
+		if cs.busy != nil { // an older update is still resolving: stay in request order
+			if p.Query != nil {
+				cs.busy.superseded = true
+			}
+			cs.queue = append(cs.queue, func() { _ = c.applyUpdate(cs, id, p) })
 			return nil
 		}
-		if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
-			return c.respondBody(id, errBody(err))
-		}
-		cs.urgent = true
-		return c.respond(id, nil)
+		return c.applyUpdate(cs, id, p)
 	case "view.unsubscribe":
 		var p protocol.ViewUnsubscribeParams
 		if err := decodeParams(req, &p); err != nil {
 			return bad(err)
+		}
+		if ps := c.pendingQ[p.QID]; ps != nil { // still resolving: cancel it, it closes its own scope
+			ps.cancelled = true
+			ps.cancel()
 		}
 		if cs := c.subs[p.QID]; cs != nil {
 			cs.sub.Close()
@@ -594,6 +683,7 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 				cs.scope.Close()
 			}
 			delete(c.subs, p.QID)
+			cs.queue = nil
 		}
 		return c.respond(id, nil)
 
@@ -616,14 +706,18 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		c.objs[p.OID] = &objSub{cancel: cancel}
 		oid := p.OID
 		go func() {
-			_ = opt.Ops.Watch(ctx, p.Ref, p.KeepManagedFields, func(f protocol.ObjectFrame) {
+			emit := func(f protocol.ObjectFrame) {
 				c.postf(func() error {
 					if c.objs[oid] == nil {
 						return nil
 					}
 					return c.send(protocol.KindObject, oid, f)
 				})
-			})
+			}
+			if err := opt.Ops.Watch(ctx, p.Ref, p.KeepManagedFields, p.Reveal, emit); err != nil && ctx.Err() == nil {
+				// a failed start (not found, forbidden, ...) is reported on the object's channel, not swallowed
+				emit(protocol.ObjectFrame{Error: &protocol.ErrorBody{Code: errBody(err).Code, Message: errBody(err).Message}})
+			}
 		}()
 		return c.respond(id, nil)
 	case "object.unsubscribe":
@@ -673,6 +767,110 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 			return protocol.AccessCheckResult{Results: opt.Ops.Access(ctx, p.Checks)}, nil
 		})
 		return nil
+	case "stream.open":
+		var p protocol.StreamOpenParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Streams == nil {
+			return c.respondErr(id, "unavailable", "streams are not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Streams.Open(ctx, p) })
+		return nil
+	case "portforward.list":
+		if opt.Streams == nil {
+			return c.respond(id, protocol.PortForwardListResult{Forwards: []protocol.PortForwardInfo{}})
+		}
+		return c.respond(id, opt.Streams.ListForwards())
+	case "portforward.stop":
+		var p protocol.PortForwardStopParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Streams == nil {
+			return c.respondErr(id, "unavailable", "streams are not available")
+		}
+		if err := opt.Streams.StopForward(p.ID); err != nil {
+			return c.respondBody(id, errBody(err))
+		}
+		return c.respond(id, nil)
+	case "jobs.start":
+		var p protocol.JobsStartParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Jobs == nil {
+			return c.respondErr(id, "unavailable", "jobs are not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return c.startJob(ctx, p) })
+		return nil
+	case "jobs.list":
+		if opt.Jobs == nil {
+			return c.respond(id, protocol.JobsListResult{Jobs: []protocol.JobFrame{}})
+		}
+		return c.respond(id, protocol.JobsListResult{Jobs: opt.Jobs.List()})
+	case "jobs.cancel":
+		var p protocol.JobsCancelParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Jobs == nil {
+			return c.respondErr(id, "unavailable", "jobs are not available")
+		}
+		if err := opt.Jobs.Cancel(p.JobID); err != nil {
+			return c.respondErr(id, "not_found", err.Error())
+		}
+		return c.respond(id, nil)
+	case "drain.preflight":
+		var p protocol.DrainPreflightParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Drain == nil {
+			return c.respondErr(id, "unavailable", "drain is not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Drain.Preflight(ctx, p) })
+		return nil
+	case "flux.inventory":
+		var p protocol.FluxInventoryParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Flux == nil {
+			return c.respondErr(id, "unavailable", "flux is not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Flux.Inventory(ctx, p) })
+		return nil
+	case "flux.graph":
+		var p protocol.FluxGraphParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Flux == nil {
+			return c.respondErr(id, "unavailable", "flux is not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Flux.Graph(ctx, p) })
+		return nil
+	case "helm.release":
+		var p protocol.HelmReleaseParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Helm == nil {
+			return c.respondErr(id, "unavailable", "helm is not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Helm.Release(ctx, p) })
+		return nil
+	case "helm.diff":
+		var p protocol.HelmDiffParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		if opt.Helm == nil {
+			return c.respondErr(id, "unavailable", "helm is not available")
+		}
+		c.async(id, func(ctx context.Context) (any, error) { return opt.Helm.Diff(ctx, p) })
+		return nil
 	case "settings.get":
 		return c.respond(id, opt.Settings.Get())
 	case "settings.set":
@@ -699,8 +897,136 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 	return c.respondErr(id, "bad_request", "unknown method "+req.Method)
 }
 
+// applyUpdate applies one view.update to cs (no older update is resolving).
+func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) error {
+	if c.subs[p.QID] != cs {
+		return c.respondErr(id, "not_found", "no such subscription")
+	}
+	if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters))) {
+		gvrChanged := queryGVR(*p.Query) != cs.gvr
+		st := &asyncUpdate{}
+		cs.busy = st
+		finish := func() {
+			cs.busy = nil
+			for cs.busy == nil && len(cs.queue) > 0 {
+				next := cs.queue[0]
+				cs.queue = cs.queue[1:]
+				next()
+			}
+		}
+		c.resolve(c.ctx, *p.Query, func(mod *ingest.Module, scope *cluster.Scope, err error) {
+			defer finish()
+			if err != nil {
+				_ = c.respondBody(id, errBody(err))
+				return
+			}
+			if st.superseded || c.subs[p.QID] != cs { // a newer update replaced this one, or the view is gone
+				scope.Close()
+				if c.subs[p.QID] != cs {
+					_ = c.respondErr(id, "not_found", "no such subscription")
+				} else {
+					_ = c.respondErr(id, "conflict", "superseded by a newer view.update")
+				}
+				return
+			}
+			if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
+				scope.Close()
+				_ = c.respondBody(id, errBody(err))
+				return
+			}
+			cs.scope.Close()
+			cs.scope, cs.gvr, cs.clusters, cs.urgent = scope, queryGVR(*p.Query), p.Query.Clusters, true
+			if gvrChanged { // the client needs the new schema
+				_ = c.respond(id, protocol.ViewSubscribeResult{Columns: mod.Columns()})
+			} else {
+				_ = c.respond(id, nil)
+			}
+		})
+		return nil
+	}
+	if err := cs.sub.Update(p.Query, p.Gen, p.Window); err != nil {
+		return c.respondBody(id, errBody(err))
+	}
+	cs.urgent = true
+	return c.respond(id, nil)
+}
+
 func normClusters(in []string) []string {
 	out := slices.Clone(in)
 	slices.Sort(out)
 	return slices.Compact(out)
+}
+
+// decodeMap decodes a request's loosely typed params map into a typed struct (via JSON).
+func decodeMap(m map[string]any, v any) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, v)
+}
+
+// startJob validates and routes a job synchronously (so a denied, mislinked or Flux-managed target answers
+// the request itself) and starts it.
+func (c *conn) startJob(ctx context.Context, p protocol.JobsStartParams) (any, error) {
+	opt := c.s.opt
+	ctx = ops.WithUseWrite(ctx, p.UseWriteContext)
+	bad := func(err error) error { return ops.NewError("bad_request", "params: %s", err.Error()) }
+	var run jobs.Run
+	var cl, subject string
+	switch p.Type {
+	case protocol.JobDrain:
+		var dp protocol.DrainParams
+		if err := decodeMap(p.Params, &dp); err != nil {
+			return nil, bad(err)
+		}
+		if opt.Drain == nil {
+			return nil, ops.NewError("unavailable", "drain is not available")
+		}
+		r, prep, err := opt.Drain.Prepare(ctx, dp)
+		if err != nil {
+			return nil, err
+		}
+		run, cl, subject = r, prep.Cluster, prep.Subject
+	case protocol.JobHelmRollback, protocol.JobHelmUninstall, protocol.JobHelmRetry:
+		if opt.Helm == nil {
+			return nil, ops.NewError("unavailable", "helm is not available")
+		}
+		var err error
+		switch p.Type {
+		case protocol.JobHelmRollback:
+			var hp protocol.HelmRollbackParams
+			if err = decodeMap(p.Params, &hp); err != nil {
+				return nil, bad(err)
+			}
+			var prep *helm.Prepared
+			if run, prep, err = opt.Helm.PrepareRollback(ctx, hp); err == nil {
+				cl, subject = prep.Cluster, prep.Subject
+			}
+		case protocol.JobHelmUninstall:
+			var hp protocol.HelmUninstallParams
+			if err = decodeMap(p.Params, &hp); err != nil {
+				return nil, bad(err)
+			}
+			var prep *helm.Prepared
+			if run, prep, err = opt.Helm.PrepareUninstall(ctx, hp); err == nil {
+				cl, subject = prep.Cluster, prep.Subject
+			}
+		default:
+			var hp protocol.HelmRetryParams
+			if err = decodeMap(p.Params, &hp); err != nil {
+				return nil, bad(err)
+			}
+			var prep *helm.Prepared
+			if run, prep, err = opt.Helm.PrepareRetry(ctx, hp); err == nil {
+				cl, subject = prep.Cluster, prep.Subject
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, ops.NewError("bad_request", "unknown job type %q", p.Type)
+	}
+	return protocol.JobsStartResult{JobID: opt.Jobs.Start(p.RequestID, p.Type, cl, subject, run)}, nil
 }

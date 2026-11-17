@@ -323,6 +323,9 @@ func (m *Manager) Kinds() []protocol.Kind {
 		d := r.disc.Load()
 		if d == nil { // discovery pending: the curated kinds are known to be served
 			for _, mod := range ingest.CuratedModules() {
+				if mod.Optional {
+					continue
+				}
 				addKind(by, disco.Resource{Group: mod.Group, Version: mod.Version, Resource: mod.Resource, Kind: mod.Kind,
 					Namespaced: mod.Namespaced, ShortNames: mod.Short, Verbs: []string{"list", "watch"}}, r.id)
 			}
@@ -332,6 +335,10 @@ func (m *Manager) Kinds() []protocol.Kind {
 			if res.Listable() {
 				addKind(by, res, r.id)
 			}
+		}
+		for _, mod := range ingest.VirtualModules() {
+			addKind(by, disco.Resource{Group: mod.Group, Version: mod.Version, Resource: mod.Resource, Kind: mod.Kind,
+				Namespaced: mod.Namespaced, ShortNames: mod.Short, Verbs: []string{"list", "watch"}}, r.id)
 		}
 	}
 	out := make([]protocol.Kind, 0, len(by))
@@ -495,6 +502,7 @@ func (m *Manager) reconcileAll() {
 	for _, r := range m.selectedRunners() {
 		if r.disc.Load() != nil {
 			r.startInvalidation()
+			r.startOptionalBaseline()
 		}
 	}
 	for _, s := range scopes {
@@ -580,7 +588,61 @@ func (m *Manager) ResolveModule(ctx context.Context, gvr string, clusters []stri
 	}
 	s := m.OpenScope(gvr, clusters)
 	defer s.Close()
-	return ingest.WaitModule(ctx, gvr)
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type res struct {
+		mod *ingest.Module
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() { mod, err := ingest.WaitModule(wctx, gvr); ch <- res{mod, err} }()
+	t := time.NewTicker(50 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case r := <-ch:
+			return r.mod, r.err
+		case <-t.C:
+			// Every serving cluster in scope refused the list (forbidden) or does not have the kind (not found):
+			// waiting for a schema that cannot arrive would only hang the view.
+			if err := m.scopeFailure(gvr, clusters); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+// scopeFailure returns the list error when every cluster in scope that serves gvr has a watch for it that
+// failed with forbidden or not found, else nil.
+func (m *Manager) scopeFailure(gvr string, clusters []string) error {
+	var first error
+	n := 0
+	for _, r := range m.selectedRunners() {
+		if len(clusters) > 0 && !contains(clusters, r.id) {
+			continue
+		}
+		if _, ok := r.serves(gvr); !ok {
+			continue
+		}
+		n++
+		r.mu.Lock()
+		w := r.watches[gvr]
+		r.mu.Unlock()
+		if w == nil {
+			return nil
+		}
+		err := w.lastErr()
+		if err == nil || !(apierrors.IsForbidden(err) || apierrors.IsNotFound(err)) {
+			return nil
+		}
+		if first == nil {
+			first = err
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	return first
 }
 
 // Close stops every cluster.

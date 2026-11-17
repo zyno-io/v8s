@@ -59,14 +59,14 @@ func TestG1ViewsObjectsSettingsSearchOverWire(t *testing.T) {
 	}
 	c.waitTotal(1, 800)
 
-	// generic Table-mode view across both clusters (columns come from the server's columnDefinitions)
+	// Flux kinds are curated mode B modules; their view spans both clusters
 	decodeResult(t, c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 2, Gen: 1,
 		Query:  protocol.ViewQuery{GVR: "kustomize.toolkit.fluxcd.io/v1/kustomizations", Sort: []protocol.Sort{{Col: "statusTone"}}},
 		Window: protocol.Window{Limit: 50}}, nil), &sub)
-	if colKeys(sub.Columns) != "cluster,name,namespace,ready,status,statusTone,createdAt" {
+	if colKeys(sub.Columns) != "cluster,name,namespace,ready,suspended,revision,source,interval,lastReconcile,message,requestedAt,lastHandled,dependsOn,statusTone,createdAt" {
 		t.Fatalf("generic columns: %s", colKeys(sub.Columns))
 	}
-	c.waitTotal(2, 50)
+	c.waitTotal(2, 26)
 	if r := c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 3, Gen: 1, Query: protocol.ViewQuery{GVR: "nope.io/v1/nothing"}}, nil); r.Error == nil || r.Error.Code != "not_found" {
 		t.Fatalf("unserved kind: %+v", r.Error)
 	}

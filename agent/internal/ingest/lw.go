@@ -85,7 +85,7 @@ func (l *ListerWatcher) mod() *Module {
 // IsWatchListSemanticsUnSupported makes the reflector use a paginated LIST + watch for Table kinds
 // (a streaming list cannot deliver columnDefinitions for an empty kind).
 func (l *ListerWatcher) IsWatchListSemanticsUnSupported() bool {
-	return l.Generic != nil || (l.Mod != nil && l.Mod.Table)
+	return l.Generic != nil || (l.Mod != nil && (l.Mod.Table || l.Mod.NoWatchList))
 }
 
 // tableModule resolves the module and mapping for a table result carrying columns (idempotent).
