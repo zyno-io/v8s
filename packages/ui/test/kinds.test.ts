@@ -33,7 +33,9 @@ const kinds: Kind[] = [
     k('kustomize.toolkit.fluxcd.io/v1/kustomizations', 'Kustomization', 'kustomizations'),
     k('helm.toolkit.fluxcd.io/v2/helmreleases', 'HelmRelease', 'helmreleases'),
     k('coordination.k8s.io/v1/leases', 'Lease', 'leases'),
-    k('example.io/v1/hidden', 'Hidden', 'hidden', { available: false })
+    k('example.io/v1/hidden', 'Hidden', 'hidden', { available: false }),
+    k('example.io/v1/widgets', 'Widget', 'widgets'),
+    k('helm.sh/v1/releases', 'Release', 'releases')
 ];
 
 describe('sectionFor', () => {
@@ -44,7 +46,9 @@ describe('sectionFor', () => {
         expect(sectionFor(kinds[4])).toBe('network');
         expect(sectionFor(kinds[5])).toBe('storage');
         expect(sectionFor(kinds[6])).toBe('access');
-        expect(sectionFor(kinds[7])).toBe('crd');
+        expect(sectionFor(kinds[7])).toBe('flux');
+        expect(sectionFor(kinds[12])).toBe('helm');
+        expect(sectionFor(kinds[11])).toBe('crd');
         expect(sectionFor(kinds[9])).toBe('more');
     });
 });
@@ -60,12 +64,18 @@ describe('buildSidebar', () => {
     });
 
     it('orders sections and items', () => {
-        expect(m.sections.map(s => s.id)).toEqual(['cluster', 'workloads', 'network', 'config', 'storage', 'access', 'more']);
+        expect(m.sections.map(s => s.id)).toEqual(['cluster', 'workloads', 'network', 'config', 'storage', 'access', 'flux', 'helm', 'more']);
+        expect(m.sections.find(s => s.id === 'flux')!.items.map(i => i.label)).toEqual([
+            'Overview',
+            'Dependency graph',
+            'Kustomizations',
+            'Helmreleases'
+        ]);
         expect(m.sections.find(s => s.id === 'workloads')!.items.map(i => i.label)).toEqual(['Pods', 'Deployments']);
     });
 
     it('groups custom resources by API group and hides unavailable kinds', () => {
-        expect(m.crds.map(g => g.group)).toEqual(['helm.toolkit.fluxcd.io', 'kustomize.toolkit.fluxcd.io']);
+        expect(m.crds.map(g => g.group)).toEqual(['example.io']);
         expect(m.crds.flatMap(g => g.items.map(i => i.gvr))).not.toContain('example.io/v1/hidden');
     });
 });
@@ -74,5 +84,36 @@ describe('labels', () => {
     it('capitalises plurals', () => {
         expect(kindLabel(kinds[0])).toBe('Pods');
         expect(labelFromGvr('batch/v1/cronjobs')).toBe('Cronjobs');
+    });
+});
+
+describe('kind resolution', () => {
+    const core = k('v1/events', 'Event', 'events', { curated: true, shortNames: ['ev'] });
+    const ev = k('events.k8s.io/v1/events', 'Event', 'events', { shortNames: ['ev'] });
+    const list: Kind[] = [ev, core, k('v1/pods', 'Pod', 'pods')];
+
+    it('resolveKind prefers the group, then curated, then core', async () => {
+        const { resolveKind } = await import('../src/lib/kinds.ts');
+        expect(resolveKind(list, 'Event')?.gvr).toBe('v1/events');
+        expect(resolveKind(list, 'Event', 'events.k8s.io')?.gvr).toBe('events.k8s.io/v1/events');
+        expect(resolveKind([ev, k('v1/events', 'Event', 'events')], 'Event')?.gvr).toBe('v1/events');
+        expect(resolveKind(list, 'Nope')).toBeUndefined();
+    });
+
+    it('hides events.k8s.io events only while core events exist', async () => {
+        const { visibleKinds } = await import('../src/lib/kinds.ts');
+        expect(visibleKinds(list).map(x => x.gvr)).toEqual(['v1/events', 'v1/pods']);
+        expect(visibleKinds([ev]).map(x => x.gvr)).toEqual(['events.k8s.io/v1/events']);
+        expect(
+            buildSidebar(list, [])
+                .sections.flatMap(s => s.items)
+                .map(i => i.gvr)
+        ).not.toContain('events.k8s.io/v1/events');
+    });
+
+    it(':ev resolves to the core events', async () => {
+        const { findKind } = await import('../src/lib/command-parser.ts');
+        const hit = findKind('ev', list);
+        expect(hit && 'kind' in hit && hit.kind.gvr).toBe('v1/events');
     });
 });

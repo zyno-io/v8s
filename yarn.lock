@@ -2252,6 +2252,9 @@ __metadata:
     "@vitejs/plugin-vue": "npm:^6.0.11"
     "@vue/devtools-api": "npm:^8.2.1"
     "@vue/tsconfig": "npm:^0.9.1"
+    "@xterm/addon-fit": "npm:^0.11.0"
+    "@xterm/addon-webgl": "npm:^0.19.0"
+    "@xterm/xterm": "npm:^6.0.0"
     js-yaml: "npm:^5.5.0"
     npm-run-all: "npm:^4.1.5"
     pinia: "npm:^4.1.0"
@@ -2661,6 +2664,27 @@ __metadata:
   version: 0.9.12
   resolution: "@xmldom/xmldom@npm:0.9.12"
   checksum: 10c0/0a9ef38e203213717dde8d16c62743c26c37eb4195aeb4f286550a0aec2145c063a6c3633f253c29f75202f922d7c961d1acaad4dd93e5db1ef05c813354d178
+  languageName: node
+  linkType: hard
+
+"@xterm/addon-fit@npm:^0.11.0":
+  version: 0.11.0
+  resolution: "@xterm/addon-fit@npm:0.11.0"
+  checksum: 10c0/c0ce94f7e877d07e7197d15d041cc629ce2e853016400aadddc9810838ea8a26e836f87f325eba36df88c03feb72d9f13cd8c3bb41ee31e701f1058edb8553c3
+  languageName: node
+  linkType: hard
+
+"@xterm/addon-webgl@npm:^0.19.0":
+  version: 0.19.0
+  resolution: "@xterm/addon-webgl@npm:0.19.0"
+  checksum: 10c0/238f9af3745bc027c78a6ec6ed155721f82f2f0934bc65adffc0ae997c23ad053b18f04fceb121a38945d2fc31bf0e4baa01714c4c2916781bb27873d9d5cd8b
+  languageName: node
+  linkType: hard
+
+"@xterm/xterm@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "@xterm/xterm@npm:6.0.0"
+  checksum: 10c0/b99122553f323a65b708e5eba9903d4c5a1bcb59fe576d29d6e91a33002bccfd1b99403e1e839e1942f4952039db6d3d74ca9d65ed0399b4e9a0a5f35b8c12d9
   languageName: node
   linkType: hard
 

@@ -15,6 +15,8 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['j / k', 'move focus down / up'],
             ['Enter', 'open the focused row'],
             ['x', 'select the focused row'],
+            ['l', 'open logs of the focused pod or workload'],
+            ['s', 'open a shell in the focused pod'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['?', 'show this list']

@@ -78,6 +78,8 @@ export interface PlanOptions {
     gvr: string;
     showCluster: boolean;
     layout?: ColumnLayout;
+    /** Kind-specific extras (see table-decor.ts): virtual columns and default-hidden keys. */
+    decor?: { extraCols?: { key: string; label: string; width: number; mono?: boolean }[]; defaultHidden?: string[] } | null;
 }
 
 /**
@@ -98,7 +100,7 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
         all: []
     };
     if (!columns?.length) return empty;
-    const hidden = new Set(opts.layout?.hidden ?? []);
+    const hidden = new Set(opts.layout?.hidden ?? opts.decor?.defaultHidden ?? []);
     const widths = opts.layout?.widths ?? {};
     const isPods = opts.gvr === 'v1/pods';
 
@@ -162,6 +164,21 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
             sortable: true
         });
     }
+    const extra = (opts.decor?.extraCols ?? []).map((e, i) => ({ ...e, idx: -(i + 1) }));
+    for (const e of extra) {
+        if (hidden.has(e.key)) continue;
+        const user = widths[e.key];
+        cols.push({
+            key: e.key,
+            label: e.label,
+            idx: e.idx,
+            kind: e.mono ? 'mono' : 'text',
+            align: 'left',
+            width: user && user > 24 ? Math.round(user) : e.width,
+            grow: false,
+            sortable: false
+        });
+    }
     const all = columns
         .map((c, i) => ({
             key: c.key,
@@ -169,6 +186,7 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
             idx: i + 2,
             hideable: c.key !== 'name' && c.key !== 'statusTone' && c.type !== 'tone' && !(c.key === 'cluster')
         }))
-        .filter(c => !(isPods && c.key === 'containers'));
+        .filter(c => !(isPods && c.key === 'containers'))
+        .concat(extra.map(e => ({ key: e.key, label: e.label, idx: e.idx, hideable: true })));
     return { cols, toneIdx, nameIdx, nsIdx, clusterIdx, ageIdx, hasTime, grid: gridTemplate(cols), minWidth: minWidthOf(cols), all };
 }

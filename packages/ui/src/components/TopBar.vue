@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import JobsTray from '@/components/JobsTray.vue';
+import PortForwardsButton from '@/components/PortForwardsButton.vue';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -64,6 +66,8 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
             <span class="kbd">{{ isMac ? '⌘K' : 'Ctrl K' }}</span>
         </button>
         <div class="grow"></div>
+        <PortForwardsButton />
+        <JobsTray />
         <button class="btn ghost" type="button" :aria-label="themeLabel" :title="themeLabel" @click="ui.cycleTheme()">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <circle cx="8" cy="8" r="3" />

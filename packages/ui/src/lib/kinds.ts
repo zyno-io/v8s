@@ -1,10 +1,12 @@
 import type { Kind } from '@v8s/client';
 
-export type SectionId = 'cluster' | 'workloads' | 'network' | 'config' | 'storage' | 'access' | 'more';
+export type SectionId = 'cluster' | 'workloads' | 'network' | 'config' | 'storage' | 'access' | 'flux' | 'helm' | 'more';
 
 export interface SidebarItem {
     gvr: string;
     label: string;
+    /** A fixed route instead of a resource table (Flux overview, graph). */
+    to?: string;
 }
 
 export interface SidebarSection {
@@ -60,6 +62,9 @@ const STORAGE = [
     'storage.k8s.io/v1/csinodes'
 ];
 const ACCESS_EXTRA = ['v1/serviceaccounts'];
+const HELM_GVR = 'helm.sh/v1/releases';
+/** Flux kinds in sidebar order (matched on the plural). */
+const FLUX_ORDER = ['kustomizations', 'helmreleases', 'gitrepositories', 'ocirepositories', 'helmrepositories', 'helmcharts', 'buckets'];
 
 /** API groups whose kinds are built in; everything else is a custom resource. */
 const BUILTIN_GROUPS = new Set([
@@ -88,12 +93,45 @@ const BUILTIN_GROUPS = new Set([
     'internal.apiserver.k8s.io'
 ]);
 
+/**
+ * Picks one kind from several that share a name (`Event` is both `v1/events` and `events.k8s.io/v1/events`): the one in
+ * `preferGroup` first, then a curated kind, then the core group (empty group), then discovery order.
+ */
+export function preferKind<T extends Pick<Kind, 'group' | 'curated'>>(list: readonly T[], preferGroup?: string): T | undefined {
+    let best: T | undefined;
+    let bestScore = -1;
+    for (const k of list) {
+        const score = (preferGroup !== undefined && k.group === preferGroup ? 4 : 0) + (k.curated ? 2 : 0) + (k.group === '' ? 1 : 0);
+        if (score > bestScore) {
+            best = k;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+/** Resolves a Kind name (`Deployment`, `Event`) to one kind, preferring `preferGroup`, then curated, then core. */
+export function resolveKind(kinds: readonly Kind[], kindName: string, preferGroup?: string): Kind | undefined {
+    return preferKind(
+        kinds.filter(k => k.kind === kindName),
+        preferGroup
+    );
+}
+
+/** `events.k8s.io` duplicates the core Events: hidden from the sidebar, command bar and palette whenever `v1/events` is served. */
+export function visibleKinds(kinds: readonly Kind[]): Kind[] {
+    const core = kinds.some(k => k.gvr === 'v1/events');
+    return core ? kinds.filter(k => k.gvr !== 'events.k8s.io/v1/events') : [...kinds];
+}
+
 export function sectionFor(k: Pick<Kind, 'gvr' | 'group'>): SectionId | 'crd' {
     if (CLUSTER.includes(k.gvr)) return 'cluster';
     if (WORKLOADS.includes(k.gvr)) return 'workloads';
     if (NETWORK.includes(k.gvr)) return 'network';
     if (CONFIG.includes(k.gvr)) return 'config';
     if (STORAGE.includes(k.gvr)) return 'storage';
+    if (k.group.endsWith('.toolkit.fluxcd.io')) return 'flux';
+    if (k.gvr === HELM_GVR) return 'helm';
     if (k.group === 'rbac.authorization.k8s.io' || ACCESS_EXTRA.includes(k.gvr)) return 'access';
     return BUILTIN_GROUPS.has(k.group) ? 'more' : 'crd';
 }
@@ -105,6 +143,8 @@ const TITLES: Record<SectionId, string> = {
     config: 'Config',
     storage: 'Storage',
     access: 'Access',
+    flux: 'Flux',
+    helm: 'Helm',
     more: 'More'
 };
 
@@ -115,6 +155,8 @@ const ORDER: Record<SectionId, string[]> = {
     config: CONFIG,
     storage: STORAGE,
     access: ACCESS_EXTRA,
+    flux: [],
+    helm: [],
     more: []
 };
 
@@ -144,7 +186,7 @@ function byOrder(order: string[]) {
  * selected clusters can list are shown; a starred gvr that is not available is still listed so it can be unstarred.
  */
 export function buildSidebar(kinds: readonly Kind[], stars: readonly string[]): SidebarModel {
-    const avail = kinds.filter(k => k.available);
+    const avail = visibleKinds(kinds).filter(k => k.available);
     const byGvr = new Map(kinds.map(k => [k.gvr, k]));
     const starred = stars.map(gvr => {
         const k = byGvr.get(gvr);
@@ -169,7 +211,17 @@ export function buildSidebar(kinds: readonly Kind[], stars: readonly string[]): 
     for (const id of Object.keys(TITLES) as SectionId[]) {
         const list = buckets.get(id);
         if (!list?.length) continue;
-        sections.push({ id, title: TITLES[id], items: [...list].sort(byOrder(ORDER[id])).map(k => ({ gvr: k.gvr, label: kindLabel(k) })) });
+        const sorted =
+            id === 'flux'
+                ? [...list].sort(
+                      (a, b) =>
+                          ((FLUX_ORDER.indexOf(a.plural) + 100) % 100) - ((FLUX_ORDER.indexOf(b.plural) + 100) % 100) ||
+                          a.plural.localeCompare(b.plural)
+                  )
+                : [...list].sort(byOrder(ORDER[id]));
+        const items: SidebarItem[] = sorted.map(k => ({ gvr: k.gvr, label: kindLabel(k) }));
+        if (id === 'flux') items.unshift({ gvr: '', label: 'Overview', to: '/flux' }, { gvr: '', label: 'Dependency graph', to: '/flux/graph' });
+        sections.push({ id, title: TITLES[id], items });
     }
     const crds: CrdGroup[] = [...crdBuckets.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))

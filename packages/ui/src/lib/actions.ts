@@ -13,6 +13,10 @@ export interface ActionDef {
     param: ActionParam;
     /** Offered on the bulk bar for a multi-selection. */
     bulk: boolean;
+    /** Handled in the UI (a dialog, a dock) rather than by an `object.action` request. */
+    client?: 'drain' | 'nodeshell' | 'portforward';
+    /** No access check (the verb is on a subresource `access.check` cannot name). */
+    noCheck?: boolean;
 }
 
 const DEPLOYMENTS = 'apps/v1/deployments';
@@ -31,6 +35,9 @@ const A = {
     resume: { id: 'resume', label: 'Resume', verb: 'patch', param: null, bulk: true },
     trigger: { id: 'trigger', label: 'Trigger now', verb: 'create', checkGvr: 'batch/v1/jobs', param: null, bulk: false },
     rollback: { id: 'rollback', label: 'Roll back…', verb: 'patch', param: 'rollback', bulk: false },
+    drain: { id: 'drain', label: 'Drain…', verb: 'patch', param: null, bulk: false, client: 'drain' },
+    nodeshell: { id: 'nodeshell', label: 'Shell…', verb: 'create', checkGvr: 'v1/pods', param: null, bulk: false, client: 'nodeshell' },
+    portforward: { id: 'portforward', label: 'Port forward…', verb: 'create', param: null, bulk: false, client: 'portforward', noCheck: true },
     delete: { id: 'delete', label: 'Delete', verb: 'delete', danger: true, param: null, bulk: true }
 } satisfies Record<string, ActionDef>;
 
@@ -39,7 +46,9 @@ const BY_KIND: Record<string, ActionDef[]> = {
     [STATEFULSETS]: [A.scale, A.restart],
     [DAEMONSETS]: [A.restart],
     [REPLICASETS]: [A.scale],
-    [NODES]: [A.cordon, A.uncordon],
+    [NODES]: [A.cordon, A.uncordon, A.drain, A.nodeshell],
+    'v1/pods': [A.portforward],
+    'v1/services': [A.portforward],
     [CRONJOBS]: [A.suspend, A.resume, A.trigger]
 };
 
@@ -88,17 +97,37 @@ export interface ConfirmInput {
     /** Cluster id → group names. */
     groupsOf: (clusterId: string) => readonly string[];
     productionGroups: readonly string[];
+    /** Destructive action (delete) on a phone: never a single tap. */
+    destructive?: boolean;
+    phone?: boolean;
 }
 
-/** Single object: plain confirm. Bulk, cross-cluster, or production-group: type-to-confirm. */
+/** Single object: plain confirm. Bulk, cross-cluster, production-group, or a destructive action on a phone: type-to-confirm. */
 export function needsTypeToConfirm(i: ConfirmInput): boolean {
     if (i.count > 1 || i.clusters.length > 1) return true;
+    if (i.destructive && i.phone) return true;
     return i.clusters.some(c => i.groupsOf(c).some(g => i.productionGroups.includes(g)));
 }
 
 /** What the user must type: the object name for one, the count for several. */
 export function confirmPhrase(count: number, name: string): string {
     return count === 1 ? name : String(count);
+}
+
+/** Bulk or cross-cluster: always type-to-confirm, whatever the action. */
+export function isBulkOrCross(count: number, clusterCount: number): boolean {
+    return count > 1 || clusterCount > 1;
+}
+
+/** What a confirm names: the object (or the count) and the cluster names, spelled out. */
+export function targetSummary(targets: readonly { namespace?: string; name?: string }[], clusterNames: readonly string[]): string {
+    const where =
+        clusterNames.length > 1 ? ` across ${clusterNames.length} clusters (${clusterNames.join(', ')})` : ` on ${clusterNames[0] ?? 'the cluster'}`;
+    if (targets.length === 1) {
+        const t = targets[0];
+        return `${t.namespace ? t.namespace + '/' : ''}${t.name ?? ''}${where}`;
+    }
+    return `${targets.length} objects${where}`;
 }
 
 export function newRequestId(): string {

@@ -1,4 +1,4 @@
-import type { ClusterState, Column, ErrorBody, ObjectPayload, ViewQuery, Window } from './protocol.gen.ts';
+import type { ClusterState, Column, ErrorBody, JobFrame, ObjectPayload, StreamOpenParams, ViewQuery, Window } from './protocol.gen.ts';
 
 declare const rawPayload: unique symbol;
 
@@ -33,6 +33,52 @@ export type ObjectFrameWire = ObjectPayload & { deleted?: boolean; error?: Error
 
 export type { ClusterState, Column, ViewQuery, Window };
 
+// ---- log streams (owned by the Data Worker) ----
+
+/** One log line ready to paint: ANSI already stripped into `spans` (flat `[start, end, fg, bg, flags]` runs, see logs/ansi.ts). */
+export interface LogLineView {
+    /** Absolute line number (monotonic; survives the oldest lines being dropped). */
+    n: number;
+    text: string;
+    /** `<pod>/<container>` of a merged multi-pod line. */
+    src?: string;
+    /** RFC3339 timestamp prefix, split off the text. */
+    ts?: string;
+    spans?: number[];
+    /** 2 = warning, 3 = error, from structured `level=`/JSON lines only. */
+    level?: 2 | 3;
+    /** `[start, end, ...]` search hits inside `text`. */
+    hl?: number[];
+}
+
+export interface LogSearchState {
+    query: string;
+    /** Lines containing the query. */
+    count: number;
+    /** 1-based index of the current hit, 0 when none. */
+    current: number;
+    /** Absolute line to scroll to after a next/prev step. */
+    reveal?: number;
+}
+
+/** One batched post for a log stream: at most one per frame. */
+export interface LogUpdate {
+    t: 'log';
+    sid: number;
+    seq: number;
+    /** Lines ever appended (absolute index one past the newest). */
+    total: number;
+    /** Absolute index of the oldest line still held. */
+    first: number;
+    /** Absolute number of `lines[0]`. */
+    from: number;
+    /** The viewport, present when it changed or new lines fall inside it. */
+    lines?: LogLineView[];
+    search?: LogSearchState;
+    state: 'live' | 'ended' | 'error';
+    error?: string;
+}
+
 // ---- worker protocol (structured-clone messages) ----
 
 export type MainToWorker =
@@ -41,6 +87,13 @@ export type MainToWorker =
     | { t: 'subscribe'; qid: number; gen: number; query: ViewQuery; window: Window }
     | { t: 'update'; qid: number; gen: number; query?: ViewQuery; window?: Window }
     | { t: 'unsubscribe'; qid: number }
+    | { t: 'log.open'; sid: number; params: StreamOpenParams; capacity: number; multi: boolean }
+    | { t: 'log.view'; sid: number; first: number; count: number; follow: boolean }
+    | { t: 'log.search'; sid: number; q: string; matchCase: boolean }
+    | { t: 'log.step'; sid: number; dir: 1 | -1; from?: number }
+    | { t: 'log.pause'; sid: number; paused: boolean }
+    | { t: 'log.clear'; sid: number }
+    | { t: 'log.close'; sid: number }
     | { t: 'close' };
 
 export type WorkerToMain =
@@ -49,6 +102,10 @@ export type WorkerToMain =
     /** A KindObject frame for an `object.subscribe` oid (payload as in ObjectFrame; the embedded ObjectPayload is flattened). */
     | { t: 'object'; oid: number; frame: ObjectFrameWire }
     | { t: 'clusterStates'; states: ClusterState[] }
+    | { t: 'job'; frame: JobFrame }
+    | { t: 'log.opened'; sid: number; usedContext?: string }
+    | { t: 'log.error'; sid: number; error: ErrorBody }
+    | LogUpdate
     | { t: 'columns'; qid: number; columns: Column[] }
     /** Up to 500 rows; applied immediately without a version bump. */
     | { t: 'rows'; qid: number; gen: number; rows: Row[] }

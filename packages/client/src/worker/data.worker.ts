@@ -5,6 +5,7 @@ import { Subprotocol } from '../protocol.gen.ts';
 import { DataCore } from './core.ts';
 
 let ws: WebSocket | null = null;
+const streams = new Map<number, WebSocket>();
 
 const core = new DataCore({
     send: frame => ws?.send(frame as Uint8Array<ArrayBuffer>),
@@ -24,6 +25,28 @@ const core = new DataCore({
         sock.onerror = () => self.postMessage({ t: 'status', status: 'error', message: 'socket error' });
     },
     closeSocket: () => ws?.close(),
+    connectStream(sid, url, protocols) {
+        const sock = new WebSocket(url, protocols);
+        sock.binaryType = 'arraybuffer';
+        streams.set(sid, sock);
+        sock.onmessage = ev => {
+            if (typeof ev.data === 'string') core.handleStreamText(sid, ev.data);
+            else core.handleStreamBinary(sid, new Uint8Array(ev.data as ArrayBuffer));
+        };
+        sock.onclose = ev => {
+            streams.delete(sid);
+            core.handleStreamClosed(sid, ev.reason || '');
+        };
+        sock.onerror = () => {};
+    },
+    sendStream: (sid, text) => {
+        const s = streams.get(sid);
+        if (s && s.readyState === WebSocket.OPEN) s.send(text);
+    },
+    closeStream(sid) {
+        streams.get(sid)?.close();
+        streams.delete(sid);
+    },
     schedule: (fn, ms) => setTimeout(fn, ms),
     cancel: h => clearTimeout(h as ReturnType<typeof setTimeout>),
     now: () => performance.now()

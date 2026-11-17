@@ -2,9 +2,9 @@ import { Packr, Unpackr } from 'msgpackr';
 
 import type { FrameKind } from './protocol.gen.ts';
 
-import { KindAck, KindClusterState, KindDict, KindHello, KindObject, KindPatch, KindRequest, KindResponse } from './protocol.gen.ts';
+import { KindAck, KindClusterState, KindDict, KindHello, KindJob, KindObject, KindPatch, KindRequest, KindResponse } from './protocol.gen.ts';
 
-export { KindAck, KindClusterState, KindDict, KindHello, KindObject, KindPatch, KindRequest, KindResponse };
+export { KindAck, KindClusterState, KindDict, KindHello, KindJob, KindObject, KindPatch, KindRequest, KindResponse };
 
 export const HEADER_BYTES = 9;
 

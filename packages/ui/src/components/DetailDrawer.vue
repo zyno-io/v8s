@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ObjectPayload } from '@v8s/client';
+
 import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -9,14 +11,20 @@ import ObjectOverview from '@/components/ObjectOverview.vue';
 import { kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { closeDrawer, openObject } from '@/lib/drawer.ts';
-import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
+import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
-import { DRAWER_TABS, gvrFromRoute, parseDrawer } from '@/lib/route.ts';
+import { gvrFromRoute, HELM_RELEASES_GVR, parseDrawer, tabsFor } from '@/lib/route.ts';
 
 const YamlPane = defineAsyncComponent(() => import('@/components/YamlPane.vue'));
 const EventsPane = defineAsyncComponent(() => import('@/components/EventsPane.vue'));
 const RelatedPane = defineAsyncComponent(() => import('@/components/RelatedPane.vue'));
+const SecretPane = defineAsyncComponent(() => import('@/components/SecretPane.vue'));
+const LogsPane = defineAsyncComponent(() => import('@/components/LogsPane.vue'));
+const ShellPane = defineAsyncComponent(() => import('@/components/ShellPane.vue'));
+const FluxInventory = defineAsyncComponent(() => import('@/components/FluxInventory.vue'));
+const HelmReleaseFlux = defineAsyncComponent(() => import('@/components/HelmReleaseFlux.vue'));
+const HelmReleaseDrawer = defineAsyncComponent(() => import('@/components/HelmReleaseDrawer.vue'));
 
 const route = useRoute();
 const router = useRouter();
@@ -24,12 +32,23 @@ const router = useRouter();
 const drawer = computed(() => parseDrawer(gvrFromRoute(route.path, route.params), route.query));
 const target = computed(() => drawer.value?.ref ?? null);
 const tab = computed<DrawerTab>(() => drawer.value?.tab ?? 'overview');
-const { payload, parsed, deleted, error, loading, frames } = useObjectSession(target);
+const isSecret = computed(() => target.value?.gvr === 'v1/secrets');
+// A Secret is never subscribed on open: the agent would stream every value. Its YAML tab does a masked `object.get` on demand.
+const isHelm = computed(() => target.value?.gvr === HELM_RELEASES_GVR);
+// Helm releases are virtual (no object to subscribe to); their drawer loads through `helm.release`.
+const sessionTarget = computed(() => (isSecret.value || isHelm.value ? null : target.value));
+const tabs = computed(() => (target.value ? tabsFor(target.value.gvr) : []));
+const { payload, parsed, deleted, error, loading, frames } = useObjectSession(sessionTarget);
+const EMPTY_PAYLOAD: ObjectPayload = Object.freeze({ yaml: '', uid: '', resourceVersion: '', managedBy: [], owners: [] }) as ObjectPayload;
 
 const kind = computed(() => kinds.value.find(k => k.gvr === target.value?.gvr));
 const kindName = computed(() => (kind.value ? kind.value.kind : target.value ? labelFromGvr(target.value.gvr) : ''));
 const status = computed(() => (target.value ? objectStatus(target.value.gvr, parsed.value) : null));
-const replicas = computed(() => Number((parsed.value?.spec as Record<string, unknown> | undefined)?.replicas ?? 1));
+/** Undefined when unknown (not parsed yet, or too large to parse): the Scale dialog then asks instead of guessing. */
+const replicas = computed(() => {
+    const r = (parsed.value?.spec as Record<string, unknown> | undefined)?.replicas;
+    return typeof r === 'number' && Number.isFinite(r) ? r : undefined;
+});
 const revision = computed(() => revisionOf(parsed.value));
 const actionTargets = computed(() => (target.value ? [target.value] : []));
 
@@ -37,21 +56,23 @@ function setTab(t: DrawerTab) {
     if (target.value) void openObject(router, target.value, t, true);
 }
 function onTabKey(e: KeyboardEvent) {
-    const i = DRAWER_TABS.indexOf(tab.value);
+    const list = tabs.value;
+    const i = list.indexOf(tab.value);
     let n = i;
-    if (e.key === 'ArrowRight') n = (i + 1) % DRAWER_TABS.length;
-    else if (e.key === 'ArrowLeft') n = (i + DRAWER_TABS.length - 1) % DRAWER_TABS.length;
+    if (e.key === 'ArrowRight') n = (i + 1) % list.length;
+    else if (e.key === 'ArrowLeft') n = (i + list.length - 1) % list.length;
     else if (e.key === 'Home') n = 0;
-    else if (e.key === 'End') n = DRAWER_TABS.length - 1;
+    else if (e.key === 'End') n = list.length - 1;
     else return;
     e.preventDefault();
-    setTab(DRAWER_TABS[n]);
-    void nextTick(() => document.getElementById(`tab-${DRAWER_TABS[n]}`)?.focus());
+    setTab(list[n]);
+    void nextTick(() => document.getElementById(`tab-${list[n]}`)?.focus());
 }
 
+const SOURCE_GROUP: Record<string, string> = { Kustomization: 'kustomize.toolkit.fluxcd.io', HelmRelease: 'helm.toolkit.fluxcd.io' };
 function openSource(kindStr: string, name: string, ns: string | undefined) {
     if (!target.value) return;
-    const gvr = kinds.value.find(k => k.kind === kindStr)?.gvr;
+    const gvr = resolveKind(kinds.value, kindStr, SOURCE_GROUP[kindStr])?.gvr;
     if (gvr) void openObject(router, { cluster: target.value.cluster, gvr, namespace: ns, name });
 }
 
@@ -100,7 +121,16 @@ function resizeKey(e: KeyboardEvent) {
     else if (e.key === 'ArrowRight') width.value = Math.max(420, width.value - 24);
 }
 
-const TAB_LABEL: Record<DrawerTab, string> = { overview: 'Overview', yaml: 'YAML', events: 'Events', related: 'Related' };
+const TAB_LABEL: Record<DrawerTab, string> = {
+    overview: 'Overview',
+    logs: 'Logs',
+    shell: 'Shell',
+    inventory: 'Inventory',
+    release: 'Release',
+    yaml: 'YAML',
+    events: 'Events',
+    related: 'Related'
+};
 </script>
 
 <template>
@@ -127,7 +157,7 @@ const TAB_LABEL: Record<DrawerTab, string> = { overview: 'Overview', yaml: 'YAML
                 <span class="muted small">{{ kindName }}<template v-if="target.namespace"> · {{ target.namespace }}</template></span>
                 <div class="grow"></div>
                 <ActionBar
-                    v-if="payload && !deleted"
+                    v-if="(payload || isSecret) && !deleted && !isHelm"
                     :gvr="target.gvr"
                     :targets="actionTargets"
                     :kind-label="kindName"
@@ -154,9 +184,10 @@ const TAB_LABEL: Record<DrawerTab, string> = { overview: 'Overview', yaml: 'YAML
                 <span v-if="payload?.gitops" class="tag">managed by {{ GITOPS_LABEL[payload.gitops.kind] ?? payload.gitops.kind }}</span>
             </div>
         </header>
-        <div class="tabs" role="tablist" aria-label="Object sections" @keydown="onTabKey">
+        <HelmReleaseDrawer v-if="isHelm" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" class="helmwrap" />
+        <div v-if="!isHelm" class="tabs" role="tablist" aria-label="Object sections" @keydown="onTabKey">
             <button
-                v-for="t in DRAWER_TABS"
+                v-for="t in tabs"
                 :id="`tab-${t}`"
                 :key="t"
                 class="tab"
@@ -171,12 +202,46 @@ const TAB_LABEL: Record<DrawerTab, string> = { overview: 'Overview', yaml: 'YAML
                 {{ TAB_LABEL[t] }}
             </button>
         </div>
-        <div :id="`panel-${tab}`" class="panel" role="tabpanel" :aria-labelledby="`tab-${tab}`">
-            <p v-if="error && !payload" class="notice danger" role="alert">{{ error }}</p>
+        <div v-if="!isHelm" :id="`panel-${tab}`" class="panel" role="tabpanel" :aria-labelledby="`tab-${tab}`">
+            <template v-if="isSecret">
+                <div v-if="tab === 'overview'" class="notice" role="note" data-testid="secret-overview">
+                    <div>
+                        <b>Secret values are not loaded.</b> Nothing is fetched for a Secret until you ask. Open the YAML tab for the masked manifest;
+                        values stay hidden until you choose Reveal.
+                        <dl class="sgrid">
+                            <dt class="lbl">Cluster</dt>
+                            <dd>{{ target.cluster }}</dd>
+                            <dt v-if="target.namespace" class="lbl">Namespace</dt>
+                            <dd v-if="target.namespace">{{ target.namespace }}</dd>
+                            <dt class="lbl">Name</dt>
+                            <dd class="mono">{{ target.name }}</dd>
+                        </dl>
+                        <div class="srow"><button class="btn sm" type="button" @click="setTab('yaml')">Open YAML (masked)</button></div>
+                    </div>
+                </div>
+                <SecretPane v-else-if="tab === 'yaml'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
+                <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
+                <RelatedPane v-else :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :payload="EMPTY_PAYLOAD" />
+            </template>
+            <p v-else-if="error && !payload" class="notice danger" role="alert">{{ error }}</p>
             <p v-else-if="loading && !payload" class="muted" role="status">Loading…</p>
             <template v-else-if="payload">
                 <div v-if="deleted && tab !== 'yaml'" class="notice danger" role="alert"><b>This object was deleted on the server.</b></div>
                 <ObjectOverview v-if="tab === 'overview'" :target="target" :payload="payload" :parsed="parsed" @open-source="openSource" />
+                <LogsPane v-else-if="tab === 'logs'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :parsed="parsed" />
+                <ShellPane
+                    v-else-if="tab === 'shell'"
+                    :key="`${target.cluster}${target.namespace}${target.name}`"
+                    :target="target"
+                    :parsed="parsed"
+                />
+                <FluxInventory
+                    v-else-if="tab === 'inventory'"
+                    :key="`${target.cluster}${target.namespace}${target.name}`"
+                    :target="target"
+                    :refresh-key="frames"
+                />
+                <HelmReleaseFlux v-else-if="tab === 'release'" :target="target" :parsed="parsed" />
                 <YamlPane v-else-if="tab === 'yaml'" :target="target" :payload="payload" :deleted="deleted" :frames="frames" />
                 <EventsPane v-else-if="tab === 'events'" :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" />
                 <RelatedPane v-else :key="`${target.cluster}${target.namespace}${target.name}`" :target="target" :payload="payload" />
@@ -186,6 +251,18 @@ const TAB_LABEL: Record<DrawerTab, string> = { overview: 'Overview', yaml: 'YAML
 </template>
 
 <style scoped>
+.sgrid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    margin: 8px 0;
+}
+.sgrid dd {
+    margin: 0;
+}
+.srow {
+    margin-top: 6px;
+}
 .drawer {
     position: fixed;
     top: 46px;
@@ -278,6 +355,17 @@ h2 {
 }
 .panel > :deep(.ypane) {
     flex: 1 1 0;
+}
+.panel > :deep([data-testid='logs-pane']),
+.panel > :deep([data-testid='shell-pane']),
+.panel > :deep([data-testid='flux-inventory']) {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 320px;
+}
+.helmwrap {
+    flex: 1 1 0;
+    min-height: 0;
 }
 @media (max-width: 899.98px) {
     .drawer {

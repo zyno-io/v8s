@@ -2,12 +2,27 @@ import type { ShallowRef } from 'vue';
 
 import { markRaw, shallowRef } from 'vue';
 
-import type { ClustersListResult, ClusterStates, ErrorBody, KindsListResult, ObjectPayload, ObjectRef } from './protocol.gen.ts';
+import type {
+    ClustersListResult,
+    ClusterStates,
+    ErrorBody,
+    JobFrame,
+    JobsListResult,
+    KindsListResult,
+    ObjectPayload,
+    ObjectRef,
+    StreamOpenParams,
+    StreamOpenResult
+} from './protocol.gen.ts';
+import type { ShellHandle } from './shell.ts';
 import type {
     AgentEndpoint,
     ClusterState,
     Column,
     ConnectionStatus,
+    LogLineView,
+    LogSearchState,
+    LogUpdate,
     MainToWorker,
     ObjectFrameWire,
     Row,
@@ -15,6 +30,9 @@ import type {
     Window,
     WorkerToMain
 } from './types.ts';
+
+import { Subprotocol } from './protocol.gen.ts';
+import { createShell } from './shell.ts';
 
 export interface ViewHandle {
     readonly qid: number;
@@ -37,6 +55,42 @@ export interface ViewHandle {
     close(): void;
 }
 
+export interface LogOpenOptions extends Omit<StreamOpenParams, 'type'> {
+    /** Lines kept in the ring buffer: desktop 50k, phone 5k. */
+    capacity?: number;
+    /** The stream is merged from several pods/containers (lines carry a `<pod>/<container>\t` prefix). */
+    multi?: boolean;
+}
+
+/**
+ * A log stream owned by the Data Worker. Nothing here is a dataset: the ring buffer lives in the worker and the main thread only
+ * holds the counters and the lines of the viewport it asked for. Read `lineAt()` after touching `version.value`.
+ */
+export interface LogStreamHandle {
+    readonly sid: number;
+    readonly usedContext: string;
+    readonly state: ShallowRef<'live' | 'ended' | 'error'>;
+    readonly endError: ShallowRef<string>;
+    /** Lines ever appended (absolute index one past the newest). */
+    readonly total: ShallowRef<number>;
+    /** Absolute index of the oldest line still buffered; everything before was dropped. */
+    readonly first: ShallowRef<number>;
+    /** Bumped once per batched post (at most one per frame). */
+    readonly version: ShallowRef<number>;
+    readonly search: ShallowRef<LogSearchState>;
+    /** Set after a next/prev step: scroll to `line`. `seq` changes on every step even when the line repeats. */
+    readonly reveal: ShallowRef<{ line: number; seq: number } | null>;
+    lineAt(abs: number): LogLineView | undefined;
+    /** Tells the worker which lines to post: `[first, first + count)`, or the newest `count` when `follow`. */
+    setView(first: number, count: number, follow: boolean): void;
+    searchFor(q: string, matchCase?: boolean): void;
+    searchStep(dir: 1 | -1, fromLine?: number): void;
+    /** Withholds credit (TCP backpressure to the kubelet) while true, e.g. a hidden tab. */
+    setPaused(paused: boolean): void;
+    clear(): void;
+    close(): void;
+}
+
 /** A live single-object subscription (`object.subscribe`); frames arrive on `onFrame` until `close()`. */
 export interface ObjectSubscription {
     readonly oid: number;
@@ -56,6 +110,15 @@ export interface Agent {
     /** Subscribes to one object. The promise resolves once the agent accepted the subscription. */
     subscribeObject(ref: ObjectRef, onFrame: (frame: ObjectFrameWire) => void): Promise<ObjectSubscription>;
     subscribeView(query: ViewQuery, window: Window): ViewHandle;
+    /** Opens a log stream in the Data Worker. Rejects with RpcError (`write_confirm` etc.) when `stream.open` is refused. */
+    openStream(type: 'logs', params: LogOpenOptions): Promise<LogStreamHandle>;
+    /** Opens an interactive stream (exec, debug container, node shell) on its own socket, on the main thread. */
+    openStream(type: 'exec' | 'debug' | 'nodeshell', params: Omit<StreamOpenParams, 'type'>): Promise<ShellHandle>;
+    /** Streams the whole log to a file (File System Access API when available, else a browser download). */
+    downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string): Promise<void>;
+    /** Every job the agent knows (running first), updated by `Job` frames; reattaches after a reload through `jobs.list`. */
+    readonly jobs: ShallowRef<readonly JobFrame[]>;
+    refreshJobs(): Promise<void>;
     close(): void;
 }
 
@@ -79,7 +142,11 @@ export class RpcError extends Error {
         readonly code: string,
         message: string,
         /** `conflict` errors carry the live object. */
-        readonly live?: ObjectPayload
+        readonly live?: ObjectPayload,
+        /** Server hint for the user (e.g. which Flux action to use instead). */
+        readonly hint?: string,
+        /** Multi-document apply: documents that succeeded before the failing one. */
+        readonly applied?: ObjectRef[]
     ) {
         super(message);
     }
@@ -97,6 +164,15 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
     const calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
     const views = new Map<number, InternalView>();
     const objects = new Map<number, (frame: ObjectFrameWire) => void>();
+    const jobs = shallowRef<readonly JobFrame[]>([]);
+    const jobMap = new Map<string, JobFrame>();
+    let jobTimer: ReturnType<typeof setTimeout> | undefined;
+    const logs = new Map<number, InternalLog>();
+    const logOpens = new Map<
+        number,
+        { resolve: (h: LogStreamHandle) => void; reject: (e: Error) => void; make: (usedContext: string) => LogStreamHandle }
+    >();
+    let nextSid = 1;
     let nextRid = 1;
     let nextQid = 1;
     let nextOid = 1;
@@ -106,6 +182,20 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         query: ViewQuery;
         window: Window;
         ids: Uint32Array;
+    }
+
+    interface InternalLog {
+        handle: LogStreamHandle;
+        apply(m: LogUpdate): void;
+    }
+
+    // Job frames carry whole job states; republish the list at most every 50 ms.
+    function publishJobs() {
+        if (jobTimer) return;
+        jobTimer = setTimeout(() => {
+            jobTimer = undefined;
+            jobs.value = sortJobs([...jobMap.values()]);
+        }, 50);
     }
 
     let onOpen: (() => void) | null = null;
@@ -119,6 +209,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 statusMessage.value = m.message ?? '';
                 if (m.status === 'open') {
                     agentInfo.value = { version: m.agentVersion ?? '', mode: m.mode ?? '' };
+                    void agent.refreshJobs();
                     onOpen?.();
                 } else if (m.status === 'error' || m.status === 'closed') {
                     onFail?.(new Error(m.message ?? 'connection failed'));
@@ -130,7 +221,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 const c = calls.get(m.rid);
                 if (!c) break;
                 calls.delete(m.rid);
-                if (m.error) c.reject(new RpcError(m.error.code, m.error.message, m.error.live));
+                if (m.error) c.reject(new RpcError(m.error.code, m.error.message, m.error.live, m.error.hint, m.error.applied));
                 else c.resolve(m.result);
                 break;
             }
@@ -139,6 +230,23 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 break;
             case 'object':
                 objects.get(m.oid)?.(m.frame);
+                break;
+            case 'job':
+                jobMap.set(m.frame.jobId, m.frame);
+                publishJobs();
+                break;
+            case 'log.opened':
+                logOpens.get(m.sid)?.resolve(logOpens.get(m.sid)!.make(m.usedContext ?? ''));
+                logOpens.delete(m.sid);
+                break;
+            case 'log.error': {
+                const o = logOpens.get(m.sid);
+                logOpens.delete(m.sid);
+                o?.reject(new RpcError(m.error.code, m.error.message, m.error.live, m.error.hint, m.error.applied));
+                break;
+            }
+            case 'log':
+                logs.get(m.sid)?.apply(m);
                 break;
             case 'columns': {
                 const v = views.get(m.qid);
@@ -252,12 +360,134 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             post({ t: 'subscribe', qid, gen: handle.gen, query, window });
             return handle;
         },
+        jobs,
+        async refreshJobs() {
+            try {
+                const res = await call<JobsListResult>('jobs.list');
+                for (const j of res?.jobs ?? []) jobMap.set(j.jobId, j);
+                jobs.value = sortJobs([...jobMap.values()]);
+            } catch {
+                // jobs are optional: an older agent simply has none
+            }
+        },
+        openStream(type: string, params: LogOpenOptions | Omit<StreamOpenParams, 'type'>): Promise<never> {
+            if (type === 'logs') return openLogs(params as LogOpenOptions) as Promise<never>;
+            return openShell(type, params as Omit<StreamOpenParams, 'type'>) as Promise<never>;
+        },
+        async downloadLog(params, filename) {
+            await downloadLog(params, filename);
+        },
         close() {
             post({ t: 'close' });
             worker.terminate();
             status.value = 'closed';
         }
     };
+
+    function openLogs(params: LogOpenOptions): Promise<LogStreamHandle> {
+        const { capacity = 50_000, multi, ...rest } = params;
+        const isMulti = multi ?? !(rest.ref?.gvr === 'v1/pods' && !!rest.container);
+        const sid = nextSid++;
+        return new Promise<LogStreamHandle>((resolve, reject) => {
+            const make = (usedContext: string): LogStreamHandle => {
+                const state = shallowRef<'live' | 'ended' | 'error'>('live');
+                const endError = shallowRef('');
+                const total = shallowRef(0);
+                const first = shallowRef(0);
+                const version = shallowRef(0);
+                const search = shallowRef<LogSearchState>({ query: '', count: 0, current: 0 });
+                const reveal = shallowRef<{ line: number; seq: number } | null>(null);
+                let lines: readonly LogLineView[] = [];
+                let from = 0;
+                let revealSeq = 0;
+                let closed = false;
+                const handle: LogStreamHandle = markRaw({
+                    sid,
+                    usedContext,
+                    state,
+                    endError,
+                    total,
+                    first,
+                    version,
+                    search,
+                    reveal,
+                    lineAt(abs: number) {
+                        const i = abs - from;
+                        return i >= 0 && i < lines.length ? lines[i] : undefined;
+                    },
+                    setView: (f: number, count: number, follow: boolean) => post({ t: 'log.view', sid, first: f, count, follow }),
+                    searchFor: (q: string, matchCase = false) => post({ t: 'log.search', sid, q, matchCase }),
+                    searchStep: (dir: 1 | -1, fromLine?: number) => post({ t: 'log.step', sid, dir, from: fromLine }),
+                    setPaused: (paused: boolean) => post({ t: 'log.pause', sid, paused }),
+                    clear: () => post({ t: 'log.clear', sid }),
+                    close() {
+                        if (closed) return;
+                        closed = true;
+                        logs.delete(sid);
+                        post({ t: 'log.close', sid });
+                    }
+                });
+                logs.set(sid, {
+                    handle,
+                    apply(m) {
+                        if (m.lines) {
+                            lines = m.lines;
+                            from = m.from;
+                        }
+                        if (m.search) {
+                            search.value = m.search;
+                            if (m.search.reveal !== undefined) reveal.value = { line: m.search.reveal, seq: ++revealSeq };
+                        }
+                        if (state.value !== m.state) state.value = m.state;
+                        if (m.error && endError.value !== m.error) endError.value = m.error;
+                        if (total.value !== m.total) total.value = m.total;
+                        if (first.value !== m.first) first.value = m.first;
+                        version.value++;
+                    }
+                });
+                return handle;
+            };
+            logOpens.set(sid, { resolve, reject, make });
+            post({ t: 'log.open', sid, params: { ...rest, type: 'logs' }, capacity, multi: isMulti });
+        });
+    }
+
+    async function openShell(type: string, params: Omit<StreamOpenParams, 'type'>): Promise<ShellHandle> {
+        const res = await call<StreamOpenResult>('stream.open', { ...params, type });
+        if (!res?.streamId) throw new RpcError('internal', 'stream.open returned no stream id');
+        const sock = new WebSocket(streamUrlOf(opts.url), [Subprotocol, 'token.' + opts.token, 'stream.' + res.streamId]);
+        return createShell({ socket: sock as unknown as import('./shell.ts').SocketLike, usedContext: res.usedContext ?? '' });
+    }
+
+    async function downloadLog(params: Omit<StreamOpenParams, 'type' | 'download'>, filename: string): Promise<void> {
+        type Picker = (o: { suggestedName: string }) => Promise<{ createWritable(): Promise<WritableStream<Uint8Array>> }>;
+        const picker = (globalThis as unknown as { showSaveFilePicker?: Picker }).showSaveFilePicker;
+        let file: Awaited<ReturnType<Picker>> | null = null;
+        if (picker) {
+            try {
+                file = await picker({ suggestedName: filename });
+            } catch (e) {
+                if (e instanceof DOMException && e.name === 'AbortError') return;
+                file = null;
+            }
+        }
+        const res = await call<StreamOpenResult>('stream.open', { ...params, type: 'logs', download: true, follow: false });
+        if (!res?.downloadUrl) throw new RpcError('internal', 'stream.open returned no download url');
+        const origin = httpOrigin(opts.url);
+        const url = origin + res.downloadUrl;
+        if (file) {
+            const r = await fetch(url, { headers: { Authorization: 'Bearer ' + opts.token } });
+            if (!r.ok || !r.body) throw new RpcError('unavailable', `download failed (${r.status})`);
+            await r.body.pipeTo(await file.createWritable());
+            return;
+        }
+        const a = document.createElement('a');
+        a.href = url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(opts.token);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
 
     return new Promise<Agent>((resolve, reject) => {
         onOpen = () => resolve(agent);
@@ -267,4 +497,20 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         };
         post({ t: 'connect', url: opts.url, token: opts.token });
     });
+}
+
+/** Running first, then newest first. */
+export function sortJobs(list: JobFrame[]): JobFrame[] {
+    return list.sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running') || b.startedAt - a.startedAt);
+}
+
+/** `ws://host/ws` → `ws://host/stream`. */
+export function streamUrlOf(dataUrl: string): string {
+    return dataUrl.replace(/\/ws(\?|#|$)/, '/stream$1');
+}
+
+/** `ws://host:port/ws` → `http://host:port`. */
+export function httpOrigin(dataUrl: string): string {
+    const u = new URL(dataUrl);
+    return (u.protocol === 'wss:' ? 'https://' : 'http://') + u.host;
 }

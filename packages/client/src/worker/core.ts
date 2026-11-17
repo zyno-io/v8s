@@ -1,4 +1,4 @@
-import type { ClusterStates, DictAdd, Hello, Response, ViewPatch, ViewSubscribeResult } from '../protocol.gen.ts';
+import type { ClusterStates, DictAdd, Hello, JobFrame, Response, StreamOpenResult, ViewPatch, ViewSubscribeResult } from '../protocol.gen.ts';
 import type { Column, MainToWorker, ObjectFrameWire, Row, WorkerToMain } from '../types.ts';
 
 import {
@@ -9,12 +9,14 @@ import {
     KindClusterState,
     KindDict,
     KindHello,
+    KindJob,
     KindObject,
     KindPatch,
     KindRequest,
     KindResponse
 } from '../codec.ts';
-import { ColDict, Version } from '../protocol.gen.ts';
+import { LogSession } from '../logs/session.ts';
+import { ColDict, Subprotocol, Version } from '../protocol.gen.ts';
 
 /** Max rows per posted message: keeps one structured clone well under ~2 ms. */
 export const CHUNK_ROWS = 500;
@@ -29,6 +31,10 @@ export interface CoreIO {
     post(msg: WorkerToMain, transfer?: Transferable[]): void;
     connect(url: string, token: string): void;
     closeSocket(): void;
+    /** Opens the `/stream` socket of a log stream; frames come back through `handleStream*`. */
+    connectStream(sid: number, url: string, protocols: string[]): void;
+    sendStream(sid: number, text: string): void;
+    closeStream(sid: number): void;
     schedule(fn: () => void, ms: number): unknown;
     cancel(handle: unknown): void;
     now(): number;
@@ -51,7 +57,16 @@ interface View {
     lastFlush: number;
 }
 
-type Pending = { kind: 'passthrough'; rid: number } | { kind: 'subscribe'; qid: number } | { kind: 'ignore' };
+type Pending =
+    | { kind: 'passthrough'; rid: number }
+    | { kind: 'subscribe'; qid: number }
+    | { kind: 'logopen'; sid: number; capacity: number; multi: boolean }
+    | { kind: 'ignore' };
+
+/** `ws://host/ws?x` → `ws://host/stream?x`. */
+export function streamUrl(dataUrl: string): string {
+    return dataUrl.replace(/\/ws(\?|#|$)/, '/stream$1');
+}
 
 /**
  * The Data Worker's logic, free of `self`/WebSocket so it can be unit-tested with hand-built frames.
@@ -65,6 +80,9 @@ export class DataCore {
     private nextRid = INTERNAL_RID_BASE;
     private ready = false;
     private queued: MainToWorker[] = [];
+    private endpoint = { url: '', token: '' };
+    private logs = new Map<number, LogSession>();
+    private cancelledLogs = new Set<number>();
 
     constructor(private io: CoreIO) {}
 
@@ -72,6 +90,7 @@ export class DataCore {
 
     handleMain(msg: MainToWorker): void {
         if (msg.t === 'connect') {
+            this.endpoint = { url: msg.url, token: msg.token };
             this.io.post({ t: 'status', status: 'connecting' });
             this.io.connect(msg.url, msg.token);
             return;
@@ -109,6 +128,38 @@ export class DataCore {
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'ignore' });
                 this.sendRequest(rid, 'view.update', { qid: msg.qid, gen: msg.gen, query: msg.query, window: msg.window });
+                break;
+            }
+            case 'log.open': {
+                const rid = this.nextRid++;
+                this.pending.set(rid, { kind: 'logopen', sid: msg.sid, capacity: msg.capacity, multi: msg.multi });
+                this.sendRequest(rid, 'stream.open', { ...msg.params, type: 'logs' });
+                break;
+            }
+            case 'log.view':
+                this.logs.get(msg.sid)?.setView(msg.first, msg.count, msg.follow);
+                break;
+            case 'log.search':
+                this.logs.get(msg.sid)?.search(msg.q, msg.matchCase);
+                break;
+            case 'log.step':
+                this.logs.get(msg.sid)?.searchStep(msg.dir, msg.from);
+                break;
+            case 'log.pause':
+                this.logs.get(msg.sid)?.setPaused(msg.paused);
+                break;
+            case 'log.clear':
+                this.logs.get(msg.sid)?.clear();
+                break;
+            case 'log.close': {
+                const s = this.logs.get(msg.sid);
+                if (s) {
+                    s.dispose();
+                    this.logs.delete(msg.sid);
+                    this.io.closeStream(msg.sid);
+                } else {
+                    this.cancelledLogs.add(msg.sid);
+                }
                 break;
             }
             case 'unsubscribe': {
@@ -176,6 +227,9 @@ export class DataCore {
                 // Not acknowledged; object payloads are single objects, so they go to the main thread as they come.
                 this.io.post({ t: 'object', oid: f.channel, frame: f.payload as ObjectFrameWire });
                 break;
+            case KindJob:
+                this.io.post({ t: 'job', frame: f.payload as JobFrame });
+                break;
             case KindResponse:
                 this.handleResponse(f.channel, f.payload as Response);
                 break;
@@ -205,6 +259,32 @@ export class DataCore {
         this.pending.delete(rid);
         if (p.kind === 'passthrough') {
             this.io.post({ t: 'response', rid: p.rid, result: res.result, error: res.error });
+        } else if (p.kind === 'logopen') {
+            if (this.cancelledLogs.delete(p.sid)) return;
+            if (res.error || !res.result) {
+                this.io.post({ t: 'log.error', sid: p.sid, error: res.error ?? { code: 'internal', message: 'empty stream.open result' } });
+                return;
+            }
+            const r = res.result as StreamOpenResult;
+            if (!r.streamId) {
+                this.io.post({ t: 'log.error', sid: p.sid, error: { code: 'internal', message: 'stream.open returned no stream id' } });
+                return;
+            }
+            const sid = p.sid;
+            const session = new LogSession(
+                { sid, capacity: p.capacity, multi: p.multi },
+                {
+                    send: text => this.io.sendStream(sid, text),
+                    closeSocket: () => this.io.closeStream(sid),
+                    post: m => this.io.post(m),
+                    schedule: (fn, ms) => this.io.schedule(fn, ms),
+                    cancel: h => this.io.cancel(h),
+                    now: () => this.io.now()
+                }
+            );
+            this.logs.set(sid, session);
+            this.io.connectStream(sid, streamUrl(this.endpoint.url), [Subprotocol, 'token.' + this.endpoint.token, 'stream.' + r.streamId]);
+            this.io.post({ t: 'log.opened', sid, usedContext: r.usedContext });
         } else if (p.kind === 'subscribe') {
             const view = this.views.get(p.qid);
             if (!view) return;
@@ -316,6 +396,25 @@ export class DataCore {
             { t: 'commit', qid: v.qid, gen: v.gen, total: v.total, offset: v.offset, ids: ids ?? undefined, removed },
             ids ? [ids.buffer as ArrayBuffer] : undefined
         );
+    }
+
+    // ---- log stream sockets ----
+
+    handleStreamBinary(sid: number, bytes: Uint8Array): void {
+        this.logs.get(sid)?.onBinary(bytes);
+    }
+
+    handleStreamText(sid: number, text: string): void {
+        this.logs.get(sid)?.onText(text);
+    }
+
+    handleStreamClosed(sid: number, reason: string): void {
+        this.logs.get(sid)?.onClose(reason);
+    }
+
+    /** Test/diagnostic accessor. */
+    logSession(sid: number): LogSession | undefined {
+        return this.logs.get(sid);
     }
 
     /** Test/diagnostic accessor. */

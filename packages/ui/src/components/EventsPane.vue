@@ -10,14 +10,14 @@ const props = defineProps<{ target: ObjectRef }>();
 
 const kindName = computed(() => kinds.value.find(k => k.gvr === props.target.gvr)?.kind ?? '');
 
-// The events view's `object` column is "Kind/name"; a `contains` filter narrows it to this object, scoped to its namespace and cluster.
+// The events view's `object` column is "Kind/name"; an `eq` filter narrows it to this object, scoped to its namespace and cluster.
 const handle = getAgent().subscribeView(
     {
         clusters: [props.target.cluster],
         gvr: 'v1/events',
         namespaces: props.target.namespace ? [props.target.namespace] : [],
         text: '',
-        filters: [{ col: 'object', op: 'contains', value: `${kindName.value ? kindName.value + '/' : ''}${props.target.name}` }],
+        filters: [{ col: 'object', op: 'eq', value: `${kindName.value ? kindName.value + '/' : ''}${props.target.name}` }],
         sort: [{ col: 'lastSeen', desc: true }]
     },
     { offset: 0, limit: 50 }

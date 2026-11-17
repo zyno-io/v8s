@@ -122,11 +122,12 @@ function removeBookmark(i: number) {
                 </button>
             </div>
             <template v-if="s.id === 'cluster' || !collapsed.has(s.id)">
-                <div v-for="it in s.items" :key="it.gvr" class="navrow">
-                    <router-link class="nav" :class="{ active: activeGvr === it.gvr }" :to="gvrPath(it.gvr)"
+                <div v-for="it in s.items" :key="it.to ?? it.gvr" class="navrow">
+                    <router-link class="nav" :class="{ active: it.to ? route.path === it.to : activeGvr === it.gvr }" :to="it.to ?? gvrPath(it.gvr)"
                         >{{ it.label }}<span class="n">{{ countFor(it.gvr) }}</span></router-link
                     >
                     <button
+                        v-if="!it.to"
                         class="star"
                         :class="{ on: settings.isStarred(it.gvr) }"
                         type="button"

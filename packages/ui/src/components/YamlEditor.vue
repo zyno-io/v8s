@@ -76,6 +76,7 @@ function setValue(text: string) {
     if (!view) return;
     base = text;
     view.setState(make(text));
+    emit('dirty', false);
 }
 
 watch(

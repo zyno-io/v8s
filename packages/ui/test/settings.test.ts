@@ -99,3 +99,18 @@ describe('settings helpers', () => {
         expect([...dismissedLinks(s)].sort()).toEqual(['a|a-admin', 'b|b-admin']);
     });
 });
+
+describe('bookmarks', () => {
+    it('drops anything that is not an in-app path', () => {
+        const s = normalizeSettings({
+            bookmarks: [
+                { name: 'ok', url: '/pods?c=a' },
+                { name: 'abs', url: 'https://evil.example/' },
+                { name: 'proto', url: '//evil.example/' },
+                { name: 'js', url: 'javascript:alert(1)' },
+                { name: 'none' } as never
+            ]
+        });
+        expect(s.bookmarks.map(b => b.name)).toEqual(['ok']);
+    });
+});

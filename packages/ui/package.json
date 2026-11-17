@@ -11,7 +11,7 @@
         "preview": "vite preview",
         "typecheck": "vue-tsc --noEmit -p tsconfig.json",
         "test": "vitest run",
-        "test:perf": "yarn build-only && node perf/run.ts",
+        "test:perf": "yarn build-only && node perf/run.ts && node perf/logflood.ts",
         "test:e2e": "yarn build-only && node e2e/run.ts"
     },
     "dependencies": {
@@ -24,6 +24,9 @@
         "@lezer/highlight": "^1.2.5",
         "@tanstack/vue-virtual": "^3.13.12",
         "@v8s/client": "workspace:*",
+        "@xterm/addon-fit": "^0.11.0",
+        "@xterm/addon-webgl": "^0.19.0",
+        "@xterm/xterm": "^6.0.0",
         "js-yaml": "^5.5.0",
         "pinia": "^4.1.0",
         "vue": "^3.5.45",

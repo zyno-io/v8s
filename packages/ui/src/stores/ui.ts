@@ -21,17 +21,29 @@ export interface ConfirmDialog {
     /** The user must type this exactly before the button enables. */
     phrase?: string;
     note?: string;
+    /** "Runs as <write context>": which context will perform the action; shown in the dialog body. */
+    runAs?: string;
     run: () => Promise<void> | void;
+    /** Called when the dialog is dismissed without running (Cancel, Esc, backdrop, replaced). */
+    onCancel?: () => void;
 }
 
-export interface ScaleDialog {
+/** Extras every dialog kind can carry (production / bulk confirmation). */
+interface DialogExtras {
+    phrase?: string;
+    note?: string;
+    runAs?: string;
+}
+
+export interface ScaleDialog extends DialogExtras {
     type: 'scale';
     targets: ObjectRef[];
-    current: number;
+    /** Current replica count; null when unknown (the field starts empty and is required). */
+    current: number | null;
     run: (replicas: number) => Promise<void> | void;
 }
 
-export interface RollbackDialog {
+export interface RollbackDialog extends DialogExtras {
     type: 'rollback';
     target: ObjectRef;
     current: number;

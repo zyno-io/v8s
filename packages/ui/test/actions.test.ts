@@ -6,7 +6,7 @@ describe('actionsFor', () => {
     it('offers kind-specific actions and always Delete last', () => {
         expect(actionsFor('apps/v1/deployments').map(a => a.id)).toEqual(['scale', 'restart', 'rollback', 'delete']);
         expect(actionsFor('apps/v1/daemonsets').map(a => a.id)).toEqual(['restart', 'delete']);
-        expect(actionsFor('v1/nodes').map(a => a.id)).toEqual(['cordon', 'uncordon', 'delete']);
+        expect(actionsFor('v1/nodes').map(a => a.id)).toEqual(['cordon', 'uncordon', 'drain', 'nodeshell', 'delete']);
         expect(actionsFor('batch/v1/cronjobs').map(a => a.id)).toEqual(['suspend', 'resume', 'trigger', 'delete']);
         expect(actionsFor('v1/configmaps').map(a => a.id)).toEqual(['delete']);
     });
@@ -101,5 +101,28 @@ describe('newRequestId', () => {
         const a = newRequestId();
         expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
         expect(newRequestId()).not.toBe(a);
+    });
+});
+
+describe('confirm helpers', () => {
+    const base = { count: 1, clusters: ['a'], groupsOf: () => [], productionGroups: ['prod'] };
+
+    it('a destructive action on a phone is always type-to-confirm', () => {
+        expect(needsTypeToConfirm({ ...base, destructive: true })).toBe(false);
+        expect(needsTypeToConfirm({ ...base, destructive: true, phone: true })).toBe(true);
+        expect(needsTypeToConfirm({ ...base, phone: true })).toBe(false);
+    });
+
+    it('bulk or cross-cluster detection', async () => {
+        const { isBulkOrCross } = await import('../src/lib/actions.ts');
+        expect(isBulkOrCross(1, 1)).toBe(false);
+        expect(isBulkOrCross(2, 1)).toBe(true);
+        expect(isBulkOrCross(1, 2)).toBe(true);
+    });
+
+    it('targetSummary spells out the count and cluster names', async () => {
+        const { targetSummary } = await import('../src/lib/actions.ts');
+        expect(targetSummary([{ namespace: 'ns', name: 'web' }], ['Prod'])).toBe('ns/web on Prod');
+        expect(targetSummary([{ name: 'n1' }, { name: 'n2' }, { name: 'n3' }], ['A', 'B'])).toBe('3 objects across 2 clusters (A, B)');
     });
 });

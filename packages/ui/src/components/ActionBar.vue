@@ -6,8 +6,14 @@ import { computed, ref, watch } from 'vue';
 import type { ActionDef } from '@/lib/actions.ts';
 
 import { checkAccess } from '@/lib/access.ts';
-import { accessCheckFor, actionsFor, actionState, confirmPhrase, needsTypeToConfirm } from '@/lib/actions.ts';
-import { runAction, runDelete } from '@/lib/mutations.ts';
+import { accessCheckFor, actionsFor, actionState, confirmPhrase, isBulkOrCross, needsTypeToConfirm, targetSummary } from '@/lib/actions.ts';
+import { fluxActionDefs, runFluxAction } from '@/lib/flux-actions.ts';
+import { isFluxGvr } from '@/lib/flux.ts';
+import { drainRequest } from '@/lib/jobs.ts';
+import { runAction, runAs, runDelete } from '@/lib/mutations.ts';
+import { nodeShellAvailable, openNodeShell } from '@/lib/node-shell.ts';
+import { portForwardAvailable, portForwardRequest } from '@/lib/portforward.ts';
+import { isPhone } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -27,7 +33,15 @@ const ui = useUiStore();
 const clusters = useClustersStore();
 const settings = useSettingsStore();
 
-const actions = computed(() => actionsFor(props.gvr).filter(a => props.targets.length === 1 || a.bulk));
+const actions = computed(() => {
+    const base = isFluxGvr(props.gvr) ? [...fluxActionDefs(props.gvr), ...actionsFor(props.gvr)] : actionsFor(props.gvr);
+    return base.filter(a => {
+        if (props.targets.length !== 1 && !a.bulk) return false;
+        if (a.client === 'nodeshell') return nodeShellAvailable();
+        if (a.client === 'portforward') return portForwardAvailable();
+        return true;
+    });
+});
 
 // Access: one check per action and distinct (cluster, namespace[, name]); a bulk selection checks at namespace level.
 const results = ref<Map<string, AccessResult[]>>(new Map());
@@ -45,6 +59,7 @@ async function refreshAccess() {
     const out = new Map<string, AccessResult[]>();
     try {
         for (const a of actions.value) {
+            if (a.noCheck) continue;
             out.set(a.id, await checkAccess(refs.map(r => accessCheckFor(a, r))));
             if (my !== seq) return;
         }
@@ -79,25 +94,57 @@ function tip(a: ActionDef): string {
 const viaWrite = (a: ActionDef) => stateOf(a).viaWrite;
 
 const open = ref(false);
-
+/** In flight: a direct action (no dialog) must not fire twice from a double click. */
+const busy = ref(false);
 const names = (n: number) => `${n} ${props.kindLabel.toLowerCase()}`;
 
 function finish(action: string, ok: boolean) {
     emit('done', action, ok);
 }
 
+const nameOf = (c: string) => clusters.nameById.get(c) ?? c;
+
 function go(a: ActionDef) {
     open.value = false;
+    if (busy.value) return;
     const targets = props.targets;
     const first = targets[0];
     if (!first) return;
     const clusterIds = [...new Set(targets.map(x => x.cluster))];
-    const prod = clusterIds.some(c => clusters.isProduction(c));
+    const clusterNames = clusterIds.map(nameOf);
+    const prodNames = clusterIds.filter(c => clusters.isProduction(c)).map(nameOf);
+    const summary = targetSummary(targets, clusterNames);
+    const runsAs = [...new Set(clusterIds.map(c => runAs(c, viaWrite(a))))].join('; ');
+    const note = prodNames.length ? `Production group: ${prodNames.join(', ')}.` : undefined;
+    const confirmInput = {
+        count: targets.length,
+        clusters: clusterIds,
+        groupsOf: clusters.groupsOf,
+        productionGroups: settings.productionGroups
+    };
+    if (a.client === 'drain') {
+        drainRequest.value = { cluster: first.cluster, node: first.name ?? '' };
+        return;
+    }
+    if (a.client === 'nodeshell') {
+        void openNodeShell(first.cluster, first.name ?? '');
+        return;
+    }
+    if (a.client === 'portforward') {
+        portForwardRequest.value = first;
+        return;
+    }
+    const phraseFor = (typed: boolean) => (typed ? confirmPhrase(targets.length, first.name ?? '') : undefined);
+
     if (a.id === 'scale') {
         ui.dialog = {
             type: 'scale',
             targets,
-            current: props.currentReplicas ?? 1,
+            // Unknown replicas stay empty and required: never pre-fill a guess.
+            current: props.currentReplicas ?? null,
+            phrase: phraseFor(needsTypeToConfirm(confirmInput)),
+            note,
+            runAs: runsAs,
             run: async n => finish(a.id, await runAction(targets, 'scale', 'Scaled', { replicas: n }))
         };
         return;
@@ -107,51 +154,49 @@ function go(a: ActionDef) {
             type: 'rollback',
             target: first,
             current: props.currentRevision ?? 0,
+            phrase: phraseFor(needsTypeToConfirm(confirmInput)),
+            note,
+            runAs: runsAs,
             run: async rev => finish(a.id, await runAction(targets, 'rollback', 'Rolled back', { revision: rev }))
         };
         return;
     }
     if (a.id === 'delete') {
-        const typed = needsTypeToConfirm({
-            count: targets.length,
-            clusters: clusterIds,
-            groupsOf: clusters.groupsOf,
-            productionGroups: settings.productionGroups
-        });
-        const where =
-            clusterIds.length > 1
-                ? ` across ${clusterIds.length} clusters (${clusterIds.map(c => clusters.nameById.get(c) ?? c).join(', ')})`
-                : ` on ${clusters.nameById.get(first.cluster) ?? first.cluster}`;
+        const typed = needsTypeToConfirm({ ...confirmInput, destructive: true, phone: isPhone.value });
         ui.dialog = {
             type: 'confirm',
             title: targets.length === 1 ? `Delete ${props.kindLabel.toLowerCase()} ${first.name}?` : `Delete ${names(targets.length)}?`,
-            body:
-                targets.length === 1
-                    ? `${first.namespace ? first.namespace + '/' : ''}${first.name}${where}. This cannot be undone.`
-                    : `${targets.length} objects${where}. This cannot be undone.`,
+            body: `${summary}. This cannot be undone.`,
             confirmLabel: 'Delete',
             danger: true,
-            phrase: typed ? confirmPhrase(targets.length, first.name ?? '') : undefined,
-            note: prod ? 'This cluster is in a production group.' : undefined,
+            phrase: phraseFor(typed),
+            note,
+            runAs: runsAs,
             run: async () => finish(a.id, await runDelete(targets))
         };
         return;
     }
-    const doIt = async () => finish(a.id, await runAction(targets, a.id, pastTense(a), undefined));
-    if (targets.length > 1 || prod) {
+    const doIt = async () =>
+        finish(a.id, a.id.startsWith('flux.') ? await runFluxAction(targets, a.id) : await runAction(targets, a.id, pastTense(a), undefined));
+    // Bulk and cross-cluster (cordon included): type the count. A single object in a production group: plain confirm naming the cluster.
+    const typed = isBulkOrCross(targets.length, clusterIds.length);
+    if (typed || note) {
         ui.dialog = {
             type: 'confirm',
             title: `${a.label.replace('…', '')} ${targets.length === 1 ? first.name : names(targets.length)}?`,
-            body: prod ? 'This cluster is in a production group.' : `${targets.length} objects will be affected.`,
+            body: `${summary}.`,
             confirmLabel: a.label.replace('…', ''),
             danger: false,
+            phrase: phraseFor(typed),
+            note,
+            runAs: runsAs,
             run: doIt
         };
         return;
     }
-    void doIt();
+    busy.value = true;
+    void doIt().finally(() => (busy.value = false));
 }
-
 function pastTense(a: ActionDef): string {
     return (
         (
@@ -176,7 +221,7 @@ function pastTense(a: ActionDef): string {
             class="btn sm"
             :class="{ danger: a.danger }"
             type="button"
-            :disabled="stateOf(a).disabled"
+            :disabled="stateOf(a).disabled || busy"
             :title="tip(a)"
             :data-action="a.id"
             @click="go(a)"
@@ -201,7 +246,7 @@ function pastTense(a: ActionDef): string {
                     :class="{ danger: a.danger }"
                     type="button"
                     role="menuitem"
-                    :disabled="stateOf(a).disabled"
+                    :disabled="stateOf(a).disabled || busy"
                     :title="tip(a)"
                     :data-action="a.id"
                     @click="go(a)"

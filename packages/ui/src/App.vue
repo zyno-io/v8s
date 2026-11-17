@@ -5,6 +5,9 @@ import { useRoute } from 'vue-router';
 import ClusterSelector from './components/ClusterSelector.vue';
 import CommandBar from './components/CommandBar.vue';
 import DialogHost from './components/DialogHost.vue';
+import DrainHost from './components/DrainHost.vue';
+import NodeShellHost from './components/NodeShellHost.vue';
+import PortForwardHost from './components/PortForwardHost.vue';
 import ShortcutsOverlay from './components/ShortcutsOverlay.vue';
 import SideNav from './components/SideNav.vue';
 import Toaster from './components/Toaster.vue';
@@ -74,6 +77,9 @@ onBeforeUnmount(() => uninstall?.());
         <SearchPalette v-if="ui.paletteOpen" />
         <CreateDialog v-if="ui.createOpen" />
         <DialogHost />
+        <DrainHost />
+        <PortForwardHost />
+        <NodeShellHost />
         <Toaster />
     </div>
     <div v-else class="splash" role="status">

@@ -10,7 +10,7 @@ import { startStack } from '../perf/stack.ts';
  * scale through an action, create a ConfigMap, star a kind, and run `:deploy payments` in the command bar.
  * Run with `yarn workspace @v8s/ui test:e2e` (builds the UI first).
  */
-const FAKE = 'clusters=2,pods=2000,churn=0';
+const FAKE = 'clusters=2,pods=2000,churn=0,lograte=200';
 
 let current = '';
 async function step<T>(name: string, fn: () => Promise<T>): Promise<T> {
@@ -219,6 +219,127 @@ async function main() {
             await opt.waitFor({ timeout: 10000 });
             await input.press('Enter');
             await page.getByTestId('drawer').waitFor();
+        });
+
+        // ---- T2: logs, shell, drain, Flux, Helm ----
+        const openFromTable = async (command: string, urlPart: string, name: string | RegExp, filter?: string) => {
+            await page.keyboard.press(':');
+            await page.getByLabel('Command', { exact: true }).fill(command);
+            await page.getByLabel('Command', { exact: true }).press('Enter');
+            await page.waitForURL(url => url.pathname.includes(urlPart));
+            if (filter) await page.locator('#pods-filter').fill(filter);
+            const row = page.locator('.scroller .row:not(.sk)').filter({ hasText: name }).first();
+            await row.waitFor({ timeout: 30000 });
+            await row.locator('.name').click();
+            await page.getByTestId('drawer').waitFor();
+        };
+
+        await step('logs: open, follow, search next/prev', async () => {
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            const first = page.locator('.scroller .row:not(.sk)').first();
+            await first.locator('.name').click();
+            await page.getByTestId('drawer').waitFor();
+            await page.getByRole('tab', { name: 'Logs' }).click();
+            await page.getByTestId('logs-pane').waitFor();
+            await page.locator('.lrow').first().waitFor({ timeout: 20000 });
+            // follow keeps the newest line in view: seq grows
+            const seqOf = () =>
+                page.evaluate(() => {
+                    const rows = [...document.querySelectorAll('.lrow')];
+                    for (let i = rows.length - 1; i >= 0; i--) {
+                        const m = /seq=(\d+)/.exec(rows[i].textContent ?? '');
+                        if (m) return Number(m[1]);
+                    }
+                    return 0;
+                });
+            const a = await seqOf();
+            await page.waitForFunction(
+                n => [...document.querySelectorAll('.lrow')].some(r => Number(/seq=(\d+)/.exec(r.textContent ?? '')?.[1] ?? 0) > n),
+                a,
+                {
+                    timeout: 10000
+                }
+            );
+            await page.getByTestId('logs-search').fill('handled GET');
+            await page
+                .waitForFunction(
+                    () => /\d+\s*\/\s*\d+|\d+ match/i.test(document.querySelector('[data-testid=logs-count]')?.textContent ?? ''),
+                    null,
+                    { timeout: 10000 }
+                )
+                .catch(async () => {
+                    await page.getByTestId('logs-next').click();
+                });
+            await page.getByTestId('logs-next').click();
+            await page.getByTestId('logs-prev').click();
+            await page.locator('.lrow mark').first().waitFor({ timeout: 10000 });
+        });
+
+        await step('shell: connect and run echo hi', async () => {
+            await page.getByRole('tab', { name: 'Shell' }).click();
+            await page.getByTestId('shell-connect').click();
+            const term = page.getByTestId('terminal');
+            await term.waitFor({ timeout: 20000 });
+            const text = () => term.evaluate(el => (el as unknown as { v8sText?: string }).v8sText ?? '');
+            await page.waitForFunction(
+                () => /echo shell/.test((document.querySelector('[data-testid=terminal]') as unknown as { v8sText?: string })?.v8sText ?? ''),
+                null,
+                { timeout: 20000 }
+            );
+            await term.click();
+            await page.keyboard.type('echo hi');
+            await page.keyboard.press('Enter');
+            await page.waitForFunction(
+                () => /echo: echo hi/.test((document.querySelector('[data-testid=terminal]') as unknown as { v8sText?: string })?.v8sText ?? ''),
+                null,
+                { timeout: 10000 }
+            );
+            assert.match(await text(), /echo: echo hi/);
+        });
+
+        await step('drain: pre-flight on node-3 shows the PDB block', async () => {
+            await page.getByTestId('drawer-close').click();
+            await openFromTable('nodes', '/r/v1/nodes', /prod-us\s*node-3(?!\d)/, 'node-3');
+            await page.getByTestId('actions-menu').click();
+            await page.getByRole('menuitem', { name: /Drain/ }).click();
+            const dlg = page.getByTestId('drain-dialog');
+            await dlg.waitFor();
+            const blocked = dlg.getByTestId('drain-section-blocked');
+            await blocked.waitFor({ timeout: 15000 });
+            assert.match(await blocked.innerText(), /PodDisruptionBudget|PDB/i);
+            await dlg
+                .getByRole('button', { name: /Cancel|Close/ })
+                .first()
+                .click();
+            await dlg.waitFor({ state: 'detached' });
+        });
+
+        await step('flux: reconcile shows Reconciling… then settles', async () => {
+            await page
+                .getByTestId('drawer-close')
+                .click()
+                .catch(() => {});
+            await openFromTable('ks', 'kustomizations', /./);
+            await page.getByTestId('actions-menu').click();
+            await page.locator('[data-action="flux.reconcile"]').click();
+            await page.locator('.scroller').getByText('Reconciling…').first().waitFor({ timeout: 10000 });
+            await page.waitForFunction(() => !document.querySelector('.scroller')?.textContent?.includes('Reconciling…'), null, { timeout: 20000 });
+        });
+
+        await step('helm: rollback runs as a job to completion', async () => {
+            await page
+                .getByTestId('drawer-close')
+                .click()
+                .catch(() => {});
+            await openFromTable('releases', 'helm.sh/v1/releases', 'podinfo');
+            await page.getByTestId('helm-drawer').waitFor();
+            await page.getByTestId('helm-action-rollback').click();
+            const dlg = page.getByTestId('helm-action-dialog');
+            await dlg.waitFor();
+            await dlg.getByTestId('helm-start').click();
+            await page.getByTestId('helm-job').waitFor({ timeout: 15000 });
+            await page.getByTestId('helm-job').getByText(/done/i).first().waitFor({ timeout: 30000 });
         });
 
         assert.deepEqual(errors, [], 'no console or page errors');
