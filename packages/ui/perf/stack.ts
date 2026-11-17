@@ -57,10 +57,13 @@ async function waitHttp(url: string, timeoutMs = 20000): Promise<void> {
 /** Builds and starts the fake-mode Go agent and `vite preview` of the built UI. The caller must have run `vite build`. */
 export async function startStack(fake: string, token = 'perf'): Promise<Stack> {
     const previewPort = await freePort();
-    const bin = join(tmpdir(), 'v8s-perf', 'v8s');
-    mkdirSync(dirname(bin), { recursive: true });
-    // Build first so the process we start (and kill) is the agent itself, not `go run`'s wrapper.
-    await run('go', ['build', '-o', bin, './cmd/v8s'], agentDir);
+    // `V8S_AGENT_BIN` points at a prebuilt agent (e.g. one with a newer fake); otherwise build ./cmd/v8s.
+    const bin = process.env.V8S_AGENT_BIN || join(tmpdir(), 'v8s-perf', 'v8s');
+    if (!process.env.V8S_AGENT_BIN) {
+        mkdirSync(dirname(bin), { recursive: true });
+        // Build first so the process we start (and kill) is the agent itself, not `go run`'s wrapper.
+        await run('go', ['build', '-o', bin, './cmd/v8s'], agentDir);
+    }
 
     const procs: ChildProcess[] = [];
     const viteBin = join(dirname(createRequire(import.meta.url).resolve('vite/package.json')), 'bin/vite.js');

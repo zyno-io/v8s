@@ -2,10 +2,12 @@
 import { computed, nextTick, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { getPodsAll, kinds } from '@/lib/agent.ts';
+import { getPodsAll, getProblemsAll, kinds } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
 import { buildSidebar } from '@/lib/kinds.ts';
 import { gvrPath, PODS_GVR } from '@/lib/route.ts';
+import { isPhone } from '@/lib/viewport.ts';
+import { useIntegrationsStore } from '@/stores/integrations.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -14,6 +16,17 @@ const route = useRoute();
 const router = useRouter();
 const ui = useUiStore();
 const podsAll = getPodsAll();
+const problemsAll = getProblemsAll();
+const integrations = useIntegrationsStore();
+const problemCount = computed(() => problemsAll.total.value);
+// Trivy report kinds that get a generic table under Security (config audit, exposed secrets, RBAC/infra assessments).
+const TRIVY_REPORTS: [string, string][] = [
+    ['aquasecurity.github.io/v1alpha1/configauditreports', 'Config audits'],
+    ['aquasecurity.github.io/v1alpha1/exposedsecretreports', 'Exposed secrets'],
+    ['aquasecurity.github.io/v1alpha1/rbacassessmentreports', 'RBAC assessments'],
+    ['aquasecurity.github.io/v1alpha1/infraassessmentreports', 'Infra assessments']
+];
+const trivyReports = computed(() => TRIVY_REPORTS.filter(([gvr]) => kinds.value.some(k => k.gvr === gvr)));
 
 // Counts only where a subscription already exists (pods); opening watches just for sidebar numbers is a non-goal.
 const podCount = computed(() => (podsAll.total.value ? formatCount(podsAll.total.value) : ''));
@@ -100,8 +113,25 @@ function removeBookmark(i: number) {
         <p v-if="!model.starred.length" class="hint">Star a type from its table header.</p>
 
         <div class="navsec">Cluster</div>
-        <router-link class="nav" to="/overview">Overview<span class="n soon">soon</span></router-link>
-        <router-link class="nav" to="/problems">Problems<span class="n soon">soon</span></router-link>
+        <router-link class="nav" to="/overview">Overview</router-link>
+        <router-link class="nav" to="/problems" data-testid="nav-problems"
+            >Problems<span v-if="problemCount" class="tag danger pbadge" data-testid="nav-problems-count">{{
+                formatCount(problemCount)
+            }}</span></router-link
+        >
+
+        <template v-if="integrations.detected.security">
+            <div class="navsec">Security</div>
+            <router-link class="nav" to="/security">Vulnerabilities</router-link>
+            <router-link v-if="integrations.detected.kyverno" class="nav" to="/security/policies">Policies</router-link>
+            <router-link v-for="[gvr, label] in trivyReports" :key="gvr" class="nav" :to="gvrPath(gvr)">{{ label }}</router-link>
+        </template>
+        <template v-if="integrations.hubble">
+            <div class="navsec">Network flows</div>
+            <router-link class="nav" to="/network/drops">Drops</router-link>
+            <router-link v-if="!isPhone" class="nav" to="/network/map">Service map</router-link>
+            <router-link class="nav" to="/network/status">Hubble status</router-link>
+        </template>
 
         <template v-for="s in model.sections" :key="s.id">
             <div v-if="s.id !== 'cluster'" class="navsec">
@@ -367,5 +397,8 @@ function removeBookmark(i: number) {
     display: flex;
     gap: 6px;
     padding: 2px 6px 6px;
+}
+.pbadge {
+    margin-left: auto;
 }
 </style>

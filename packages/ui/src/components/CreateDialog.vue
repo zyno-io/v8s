@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router';
 
 import { newRequestId } from '@/lib/actions.ts';
 import { getNamespacesView, kinds } from '@/lib/agent.ts';
+import { takePrefill } from '@/lib/create-prefill.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { callMutating, errorText, isCancelled, newWriteDecision } from '@/lib/mutations.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
@@ -25,14 +26,15 @@ const router = useRouter();
 const el = ref<HTMLDialogElement | null>(null);
 const editor = ref<{ getValue(): string; setValue(t: string): void; focus(): void } | null>(null);
 
+const prefill = takePrefill();
 const BLANK = '';
 const initialType = templateFor(table.currentGvr) ? table.currentGvr : BLANK;
-const type = ref<string>(initialType);
-const cluster = ref(clusters.activeIds[0] ?? '');
+const type = ref<string>(prefill ? BLANK : initialType);
+const cluster = ref(prefill?.cluster && clusters.activeIds.includes(prefill.cluster) ? prefill.cluster : (clusters.activeIds[0] ?? ''));
 const namespace = ref(table.currentGvr ? (table.of(table.currentGvr).namespaces[0] ?? 'default') : 'default');
 const nsOptions = computed(() => namespaceNames(getNamespacesView()));
 const tpl = computed(() => templateFor(type.value));
-const initial = ref(tpl.value ? tpl.value.yaml(namespace.value) : '# Paste one or more manifests, or pick a template above.\n');
+const initial = ref(prefill?.yaml ?? (tpl.value ? tpl.value.yaml(namespace.value) : '# Paste one or more manifests, or pick a template above.\n'));
 
 const busy = ref(false);
 const dry = ref<ObjectDryRunResult | null>(null);

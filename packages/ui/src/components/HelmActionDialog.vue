@@ -4,6 +4,7 @@ import type { HelmRelease, JobFrame, ObjectRef, RpcError } from '@v8s/client';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import HoldButton from '@/components/HoldButton.vue';
 import JobProgress from '@/components/JobProgress.vue';
 import { checkAccess } from '@/lib/access.ts';
 import { newRequestId } from '@/lib/actions.ts';
@@ -12,6 +13,7 @@ import { openObject } from '@/lib/drawer.ts';
 import { isPending, latestRevisionOptions } from '@/lib/helm.ts';
 import { cancelJob, isActive, startJob } from '@/lib/jobs.ts';
 import { callMutating, errorText, runAs } from '@/lib/mutations.ts';
+import { isPhone } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -50,6 +52,8 @@ const viaWrite = ref(false);
 const runsAs = computed(() => runAs(props.target.cluster, viaWrite.value));
 const ns = computed(() => props.target.namespace ?? props.release.namespace);
 const flux = computed(() => props.release.managedBy);
+// A phone rolls back by holding the button (uninstall and production already ask for typed names).
+const holdStart = computed(() => isPhone.value && props.action === 'rollback' && !production.value);
 const title = computed(() => ({ rollback: 'Roll back', uninstall: 'Uninstall', retry: 'Retry' })[props.action]);
 const job = computed<JobFrame | undefined>(() => getAgent().jobs.value.find(j => j.jobId === jobId.value));
 const finished = computed(() => !!job.value && !isActive(job.value));
@@ -165,7 +169,7 @@ onMounted(async () => {
         @cancel.prevent="emit('close')"
         @click.self="emit('close')"
     >
-        <form method="dialog" @submit.prevent="phase === 'form' && canStart && start()">
+        <form method="dialog" @submit.prevent="phase === 'form' && canStart && !holdStart && start()">
             <h2 id="helm-dlg-title">{{ title }} {{ release.name }}</h2>
             <p class="muted small">
                 <span class="mono">{{ ns }}</span> on {{ clusters.nameById.get(target.cluster) ?? target.cluster }} · revision
@@ -253,7 +257,9 @@ onMounted(async () => {
                 <p v-if="err" class="err" role="alert">{{ err }}</p>
                 <div class="foot">
                     <button class="btn" type="button" @click="emit('close')">Cancel</button>
+                    <HoldButton v-if="holdStart" label="Roll back" :danger="false" :disabled="!canStart" @confirm="start()" />
                     <button
+                        v-else
                         class="btn"
                         :class="action === 'uninstall' ? 'danger' : 'primary'"
                         type="submit"

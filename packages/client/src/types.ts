@@ -1,4 +1,15 @@
-import type { ClusterState, Column, ErrorBody, JobFrame, ObjectPayload, StreamOpenParams, ViewQuery, Window } from './protocol.gen.ts';
+import type {
+    ClusterState,
+    Column,
+    ErrorBody,
+    Flow,
+    FlowRate,
+    JobFrame,
+    ObjectPayload,
+    StreamOpenParams,
+    ViewQuery,
+    Window
+} from './protocol.gen.ts';
 
 declare const rawPayload: unique symbol;
 
@@ -23,6 +34,7 @@ export const ROW_CELLS = 2;
 
 export interface AgentEndpoint {
     url: string;
+    /** The agent token (desktop, serve, fake). Empty in hosted mode, where the session cookie authenticates the socket. */
     token: string;
 }
 
@@ -79,6 +91,27 @@ export interface LogUpdate {
     error?: string;
 }
 
+// ---- flow streams (owned by the Data Worker) ----
+
+/** One batched post for a flows stream: at most one per frame. */
+export interface FlowUpdate {
+    t: 'flow';
+    sid: number;
+    seq: number;
+    /** Flows ever received (absolute index one past the newest). */
+    total: number;
+    /** Absolute index of the oldest flow still held. */
+    first: number;
+    /** Absolute index of `flows[0]`. */
+    from: number;
+    /** The viewport, present when it changed or new flows fall inside it. */
+    flows?: Flow[];
+    /** Latest sampling report from the agent, present when it changed. */
+    rate?: FlowRate;
+    state: 'live' | 'ended' | 'error';
+    error?: string;
+}
+
 // ---- worker protocol (structured-clone messages) ----
 
 export type MainToWorker =
@@ -94,6 +127,11 @@ export type MainToWorker =
     | { t: 'log.pause'; sid: number; paused: boolean }
     | { t: 'log.clear'; sid: number }
     | { t: 'log.close'; sid: number }
+    | { t: 'flow.open'; sid: number; params: StreamOpenParams; capacity: number }
+    | { t: 'flow.view'; sid: number; first: number; count: number; follow: boolean }
+    | { t: 'flow.pause'; sid: number; paused: boolean }
+    | { t: 'flow.clear'; sid: number }
+    | { t: 'flow.close'; sid: number }
     | { t: 'close' };
 
 export type WorkerToMain =
@@ -106,6 +144,9 @@ export type WorkerToMain =
     | { t: 'log.opened'; sid: number; usedContext?: string }
     | { t: 'log.error'; sid: number; error: ErrorBody }
     | LogUpdate
+    | FlowUpdate
+    | { t: 'flow.opened'; sid: number; usedContext?: string }
+    | { t: 'flow.error'; sid: number; error: ErrorBody }
     | { t: 'columns'; qid: number; columns: Column[] }
     /** Up to 500 rows; applied immediately without a version bump. */
     | { t: 'rows'; qid: number; gen: number; rows: Row[] }

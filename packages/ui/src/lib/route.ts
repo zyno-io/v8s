@@ -1,6 +1,8 @@
 import type { ObjectRef } from '@v8s/client';
 import type { LocationQuery, RouteLocationRaw } from 'vue-router';
 
+import { FLOWS_GVRS, SECURITY_GVRS } from './integrations.ts';
+
 export const PODS_GVR = 'v1/pods';
 
 /** `/pods` for pods, `/r/<gvr>` for everything else. */
@@ -17,8 +19,20 @@ export function gvrFromRoute(path: string, params: Record<string, unknown>): str
     return null;
 }
 
-export type DrawerTab = 'overview' | 'logs' | 'shell' | 'inventory' | 'release' | 'yaml' | 'events' | 'related';
-export const DRAWER_TABS: DrawerTab[] = ['overview', 'logs', 'shell', 'inventory', 'release', 'yaml', 'events', 'related'];
+export type DrawerTab = 'overview' | 'report' | 'logs' | 'shell' | 'inventory' | 'release' | 'security' | 'flows' | 'yaml' | 'events' | 'related';
+export const DRAWER_TABS: DrawerTab[] = [
+    'overview',
+    'report',
+    'logs',
+    'shell',
+    'inventory',
+    'release',
+    'security',
+    'flows',
+    'yaml',
+    'events',
+    'related'
+];
 
 const LOG_GVRS = new Set([
     'v1/pods',
@@ -32,13 +46,25 @@ const LOG_GVRS = new Set([
 
 export const HELM_RELEASES_GVR = 'helm.sh/v1/releases';
 
+/** Which optional tabs apply: Security needs a scanner or Kyverno, Flows needs Hubble. `undefined` means "all that fit the kind" (URL validation). */
+export interface TabCaps {
+    security: boolean;
+    flows: boolean;
+}
+
+/** Scanner and policy report kinds whose body `security.reportDetail` can render (Trivy reports, PolicyReport / OpenReports). */
+export const isReportGvr = (gvr: string): boolean => /^(aquasecurity\.github\.io|wgpolicyk8s\.io|openreports\.io)\//.test(gvr);
+
 /** The tabs a kind's drawer offers, in order: Logs and Shell for pods, Logs for workloads, Inventory for Kustomizations, Release for Flux HelmReleases. */
-export function tabsFor(gvr: string): DrawerTab[] {
+export function tabsFor(gvr: string, caps?: TabCaps): DrawerTab[] {
     const out: DrawerTab[] = ['overview'];
+    if (isReportGvr(gvr)) out.push('report');
     if (LOG_GVRS.has(gvr)) out.push('logs');
     if (gvr === PODS_GVR) out.push('shell');
     if (/^kustomize\.toolkit\.fluxcd\.io\/[^/]+\/kustomizations$/.test(gvr)) out.push('inventory');
     if (/^helm\.toolkit\.fluxcd\.io\/[^/]+\/helmreleases$/.test(gvr)) out.push('release');
+    if (SECURITY_GVRS.has(gvr) && (!caps || caps.security)) out.push('security');
+    if (FLOWS_GVRS.has(gvr) && (!caps || caps.flows)) out.push('flows');
     out.push('yaml', 'events', 'related');
     return out;
 }

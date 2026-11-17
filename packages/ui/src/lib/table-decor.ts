@@ -5,6 +5,7 @@ import type { ColPlan } from './columns.ts';
 
 import { fluxDecor } from './flux-decor.ts';
 import { helmDecor } from './helm-decor.ts';
+import { securityDecor } from './security-decor.ts';
 
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'release' | 'neutral';
 
@@ -46,5 +47,5 @@ export interface TableDecor {
 
 /** Decor for a resource kind, or null. */
 export function decorFor(gvr: string): TableDecor | null {
-    return fluxDecor(gvr) ?? helmDecor(gvr);
+    return fluxDecor(gvr) ?? helmDecor(gvr) ?? securityDecor(gvr);
 }

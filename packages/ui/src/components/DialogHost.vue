@@ -3,6 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import type { DialogState } from '@/stores/ui.ts';
 
+import HoldButton from '@/components/HoldButton.vue';
+import { isPhone } from '@/lib/viewport.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const ui = useUiStore();
@@ -14,6 +16,13 @@ const err = ref('');
 let returnFocus: HTMLElement | null = null;
 
 const d = computed(() => ui.dialog);
+// Phones never run a destructive action on a single tap: hold to confirm (a typed phrase already is a deliberate step).
+// Scale and rollback always hold on a phone; a confirm holds when it is destructive or asks to (`hold`).
+const holdMode = computed(() => {
+    const v = d.value;
+    if (!isPhone.value || !v || v.phrase) return false;
+    return v.type !== 'confirm' || v.danger || !!v.hold;
+});
 
 // Each confirm dialog is cancelled at most once; a dialog that ran, or was already cancelled, is never cancelled again.
 const settled = new WeakSet<DialogState>();
@@ -59,9 +68,11 @@ const canRun = computed(() => {
     return raw !== '' && Number.isInteger(n) && n >= 0;
 });
 
-async function run() {
+async function run(fromHold = false) {
     const v = d.value;
     if (!v || !canRun.value) return;
+    // Enter in a field must not submit a dialog that needs the hold.
+    if (holdMode.value && !fromHold) return;
     busy.value = true;
     try {
         if (v.type === 'confirm') await v.run();
@@ -76,7 +87,7 @@ async function run() {
 
 <template>
     <dialog ref="el" class="dlg floating" aria-labelledby="dlg-title" @cancel.prevent="close()" @click.self="close()">
-        <form v-if="d" method="dialog" @submit.prevent="run">
+        <form v-if="d" method="dialog" @submit.prevent="run()">
             <template v-if="d.type === 'confirm'">
                 <h2 id="dlg-title">{{ d.title }}</h2>
                 <p>{{ d.body }}</p>
@@ -107,7 +118,14 @@ async function run() {
             <p v-if="err" class="err" role="alert">{{ err }}</p>
             <div class="foot">
                 <button class="btn" type="button" @click="close()">Cancel</button>
-                <button class="btn" :class="d.type === 'confirm' && d.danger ? 'danger' : 'primary'" type="submit" :disabled="!canRun">
+                <HoldButton
+                    v-if="holdMode"
+                    :label="d.type === 'confirm' ? d.confirmLabel : d.type === 'scale' ? 'Scale' : 'Roll back'"
+                    :danger="d.type === 'confirm' && d.danger"
+                    :disabled="!canRun"
+                    @confirm="run(true)"
+                />
+                <button v-else class="btn" :class="d.type === 'confirm' && d.danger ? 'danger' : 'primary'" type="submit" :disabled="!canRun">
                     {{ busy ? 'Working…' : d.type === 'confirm' ? d.confirmLabel : d.type === 'scale' ? 'Scale' : 'Roll back' }}
                 </button>
             </div>

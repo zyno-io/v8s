@@ -3,6 +3,7 @@ import type { ObjectRef, PortForwardInfo, PortForwardListResult, SavedForward } 
 import { shallowRef } from 'vue';
 
 import { getAgent } from '@/lib/agent.ts';
+import { isPhone } from '@/lib/viewport.ts';
 import { withWriteConfirm } from '@/lib/write-confirm.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 
@@ -26,6 +27,7 @@ export interface StartResult {
 
 /** Port forwarding needs a local listener: desktop app and `v8s serve` only. */
 export function portForwardAvailable(): boolean {
+    if (isPhone.value) return false; // a local port is meaningless on a phone
     try {
         const mode = getAgent().agentInfo.value?.mode;
         return mode === 'desktop' || mode === 'serve' || mode === 'fake';

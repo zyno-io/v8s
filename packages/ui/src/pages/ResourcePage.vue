@@ -79,6 +79,8 @@ const sortLabel = computed(() =>
 
 // ---- selection → bulk bar; focused row → drawer actions elsewhere ----
 const selected = computed<ObjectRef[]>(() => [...state.selected.values()]);
+// Bulk actions across clusters are desktop-only: too easy to fat-finger on a phone.
+const crossCluster = computed(() => isPhone.value && new Set(selected.value.map(r => r.cluster)).size > 1);
 watch(
     () => [state.text, state.namespaces, state.tones, state.sort],
     () => table.resetInteraction(props.gvr)
@@ -202,7 +204,10 @@ function star() {
             />
             <div v-if="selected.length" class="bulk" role="toolbar" aria-label="Bulk actions">
                 <span class="selcount">{{ selected.length }} selected</span>
-                <ActionBar :gvr="gvr" :targets="selected" :kind-label="title" variant="bar" @done="table.clearSelection(gvr)" />
+                <span v-if="crossCluster" class="muted legend" data-testid="bulk-desktop-only"
+                    >Bulk actions across clusters need a larger screen.</span
+                >
+                <ActionBar v-else :gvr="gvr" :targets="selected" :kind-label="title" variant="bar" @done="table.clearSelection(gvr)" />
                 <div class="grow"></div>
                 <button class="btn sm ghost" type="button" @click="table.clearSelection(gvr)">Clear</button>
                 <span class="muted legend">
@@ -338,8 +343,10 @@ h1 {
         width: 100%;
         height: 40px;
     }
-    .sortlabel,
-    .legend {
+    .sortlabel {
+        display: none;
+    }
+    .legend:not([data-testid]) {
         display: none;
     }
     .chip {

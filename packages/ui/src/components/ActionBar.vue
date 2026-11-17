@@ -180,13 +180,16 @@ function go(a: ActionDef) {
         finish(a.id, a.id.startsWith('flux.') ? await runFluxAction(targets, a.id) : await runAction(targets, a.id, pastTense(a), undefined));
     // Bulk and cross-cluster (cordon included): type the count. A single object in a production group: plain confirm naming the cluster.
     const typed = isBulkOrCross(targets.length, clusterIds.length);
-    if (typed || note) {
+    // On a phone restart and trigger are never a single tap: hold to confirm.
+    const hold = isPhone.value && (a.id === 'restart' || a.id === 'trigger');
+    if (typed || note || hold) {
         ui.dialog = {
             type: 'confirm',
             title: `${a.label.replace('…', '')} ${targets.length === 1 ? first.name : names(targets.length)}?`,
             body: `${summary}.`,
             confirmLabel: a.label.replace('…', ''),
             danger: false,
+            hold,
             phrase: phraseFor(typed),
             note,
             runAs: runsAs,
