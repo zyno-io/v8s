@@ -374,7 +374,7 @@ export interface ObjectActionParams {
   requestId: string;
   ref: ObjectRef;
   action: string;
-  params?: Record<string;
+  params?: { [key: string]: unknown };
 }
 /**
  * MutationResult answers object.delete and object.action.
@@ -416,15 +416,15 @@ export interface Settings {
   stars: string[]; // gvrs
   bookmarks: Bookmark[];
   selection: string[];
-  columnLayouts: Record<string;
-  problemPrefs: Record<string;
-  acks: Record<string;
+  columnLayouts: { [key: string]: unknown };
+  problemPrefs: { [key: string]: unknown };
+  acks: { [key: string]: unknown };
 }
 /**
  * SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
  */
 export interface SettingsSetParams {
-  patch: Record<string;
+  patch: { [key: string]: unknown };
 }
 export interface SearchParams {
   text: string;

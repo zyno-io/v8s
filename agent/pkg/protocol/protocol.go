@@ -383,7 +383,7 @@ type ObjectActionParams struct {
 	RequestID string         `msgpack:"requestId" json:"requestId"`
 	Ref       ObjectRef      `msgpack:"ref" json:"ref"`
 	Action    string         `msgpack:"action" json:"action"`
-	Params    map[string]any `msgpack:"params,omitempty" json:"params,omitempty" tstype:"Record<string, unknown>"`
+	Params    map[string]any `msgpack:"params,omitempty" json:"params,omitempty" tstype:"{ [key: string]: unknown }"`
 }
 
 // MutationResult answers object.delete and object.action.
@@ -432,14 +432,14 @@ type Settings struct {
 	Stars           []string            `msgpack:"stars" json:"stars"` // gvrs
 	Bookmarks       []Bookmark          `msgpack:"bookmarks" json:"bookmarks"`
 	Selection       []string            `msgpack:"selection" json:"selection"`
-	ColumnLayouts   map[string]any      `msgpack:"columnLayouts" json:"columnLayouts" tstype:"Record<string, unknown>"`
-	ProblemPrefs    map[string]any      `msgpack:"problemPrefs" json:"problemPrefs" tstype:"Record<string, unknown>"`
-	Acks            map[string]any      `msgpack:"acks" json:"acks" tstype:"Record<string, unknown>"`
+	ColumnLayouts   map[string]any      `msgpack:"columnLayouts" json:"columnLayouts" tstype:"{ [key: string]: unknown }"`
+	ProblemPrefs    map[string]any      `msgpack:"problemPrefs" json:"problemPrefs" tstype:"{ [key: string]: unknown }"`
+	Acks            map[string]any      `msgpack:"acks" json:"acks" tstype:"{ [key: string]: unknown }"`
 }
 
 // SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
 type SettingsSetParams struct {
-	Patch map[string]any `msgpack:"patch" json:"patch" tstype:"Record<string, unknown>"`
+	Patch map[string]any `msgpack:"patch" json:"patch" tstype:"{ [key: string]: unknown }"`
 }
 
 type SearchParams struct {

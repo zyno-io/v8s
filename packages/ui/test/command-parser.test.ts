@@ -7,10 +7,10 @@ import { matchScore, rank } from '../src/lib/fuzzy.ts';
 
 const ctx: CommandContext = {
     kinds: [
-        { gvr: 'v1/pods', kind: 'Pod', plural: 'pods', shortNames: ['po'], namespaced: true, available: true },
-        { gvr: 'apps/v1/deployments', kind: 'Deployment', plural: 'deployments', shortNames: ['deploy'], namespaced: true, available: false },
-        { gvr: 'v1/nodes', kind: 'Node', plural: 'nodes', shortNames: ['no'], namespaced: false, available: false },
-        { gvr: 'v1/services', kind: 'Service', plural: 'services', shortNames: ['svc'], namespaced: true, available: false }
+        { gvr: 'v1/pods', kind: 'Pod', plural: 'pods', shortNames: ['po'], namespaced: true, available: true, group: '', version: 'v1', curated: true, clusters: [] },
+        { gvr: 'apps/v1/deployments', kind: 'Deployment', plural: 'deployments', shortNames: ['deploy'], namespaced: true, available: false, group: '', version: 'v1', curated: true, clusters: [] },
+        { gvr: 'v1/nodes', kind: 'Node', plural: 'nodes', shortNames: ['no'], namespaced: false, available: false, group: '', version: 'v1', curated: true, clusters: [] },
+        { gvr: 'v1/services', kind: 'Service', plural: 'services', shortNames: ['svc'], namespaced: true, available: false, group: '', version: 'v1', curated: true, clusters: [] }
     ],
     namespaces: ['payments', 'search', 'kube-system'],
     clusters: [
@@ -74,7 +74,7 @@ describe('parseCommand', () => {
                 ...ctx,
                 kinds: [
                     ...ctx.kinds,
-                    { gvr: 'v1/pv', kind: 'PersistentVolume', plural: 'persistentvolumes', shortNames: ['pv'], namespaced: false, available: false }
+                    { gvr: 'v1/pv', kind: 'PersistentVolume', plural: 'persistentvolumes', shortNames: ['pv'], namespaced: false, available: false, group: '', version: 'v1', curated: true, clusters: [] }
                 ]
             }.kinds
         );
@@ -90,7 +90,7 @@ describe('parseCommand', () => {
     });
 
     it('rejects a namespace on cluster-scoped kinds', () => {
-        const nodes = { ...ctx, kinds: ctx.kinds.map(k => (k.plural === 'nodes' ? { ...k, available: true } : k)) };
+        const nodes = { ...ctx, kinds: ctx.kinds.map(k => (k.plural === 'nodes' ? { ...k, available: true, group: '', version: 'v1', curated: true, clusters: [] } : k)) };
         expect(parseCommand('nodes x', nodes).type).toBe('error');
         expect(parseCommand('nodes', nodes)).toMatchObject({ type: 'open-kind', gvr: 'v1/nodes' });
     });
