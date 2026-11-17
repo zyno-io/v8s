@@ -23,6 +23,9 @@ type CertFacts struct {
 // ExpiryWindow is how far ahead cert.expiring warns.
 const ExpiryWindow = 14 * 24 * time.Hour
 
+// UrgentWindow is how close to expiry cert.expiring rises from warning to error.
+const UrgentWindow = 3 * 24 * time.Hour
+
 func parseT(s string) int64 {
 	if s == "" {
 		return 0
@@ -89,12 +92,18 @@ func evalCert(c *problems.Ctx, k problems.Key, r *ingest.Row) []problems.Draft {
 		left := time.UnixMilli(f.NotAfter).Sub(now)
 		title := fmt.Sprintf("Certificate %s expires in %s", sub.Name, days(left))
 		sev := problems.SevWarning
-		if left <= 0 {
-			title, sev = fmt.Sprintf("Certificate %s expired %s ago", sub.Name, days(-left)), problems.SevError
+		if left <= UrgentWindow {
+			sev = problems.SevError
 		}
-		// begins when the window opens; a deadline wakes the key then
-		out = append(out, problems.Draft{Subject: sub, Disc: "expiring", Severity: sev, Title: title, Message: "notAfter " + time.UnixMilli(f.NotAfter).UTC().Format(time.RFC3339),
-			Since: f.NotAfter - ExpiryWindow.Milliseconds(), Grace: time.Nanosecond})
+		if left <= 0 {
+			title = fmt.Sprintf("Certificate %s expired %s ago", sub.Name, days(-left))
+		}
+		// begins when the window opens (a deadline wakes the key then); it is evaluated again where the severity
+		// or the wording changes: urgent, the last day, expiry
+		na := time.UnixMilli(f.NotAfter)
+		out = append(out, problems.Draft{Subject: sub, Disc: "expiring", Severity: sev, Title: title, Message: "notAfter " + na.UTC().Format(time.RFC3339),
+			Since: f.NotAfter - ExpiryWindow.Milliseconds(), Grace: time.Nanosecond,
+			Wake: []time.Time{na.Add(-UrgentWindow), na.Add(-24 * time.Hour), na}})
 	}
 	return out
 }

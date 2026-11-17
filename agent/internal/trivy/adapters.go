@@ -97,12 +97,21 @@ func registerHandlers() {
 	})
 }
 
+// rescanResources are the report kinds the operator regenerates, so deleting one is a rescan. Anything else in the
+// group (ClusterComplianceReport is user configuration) is not regenerated and must never be deleted here.
+var rescanResources = map[string]bool{
+	"vulnerabilityreports": true, "configauditreports": true, "exposedsecretreports": true, "rbacassessmentreports": true,
+	"infraassessmentreports": true, "sbomreports": true,
+	"clustervulnerabilityreports": true, "clusterconfigauditreports": true, "clusterexposedsecretreports": true,
+	"clusterrbacassessmentreports": true, "clusterinfraassessmentreports": true, "clustersbomreports": true,
+}
+
 // Rescan deletes a report so the operator recreates it on its next reconcile ("Delete report to trigger a rescan").
 func Rescan(ctx context.Context, cfg *security.Config, p protocol.TrivyRescanParams) (*protocol.SecurityActionResult, error) {
 	ref := p.Ref
 	res := security.ResourceOf(ref.GVR)
-	if security.GroupOf(ref.GVR) != Group || len(res) < 7 || res[len(res)-7:] != "reports" || ref.Name == "" || ref.Cluster == "" {
-		return nil, ops.NewError("bad_request", "ref must be a Trivy Operator report (%s)", Group)
+	if security.GroupOf(ref.GVR) != Group || !rescanResources[res] || ref.Name == "" || ref.Cluster == "" {
+		return nil, ops.NewError("bad_request", "ref must be a Trivy Operator scan report (%s), not %s", Group, res)
 	}
 	ctx = ops.WithUseWrite(ctx, p.UseWriteContext)
 	routed, err := cfg.Route(ctx, ref.Cluster, "delete", ref.GVR, "", ref.Namespace, ref.Name)

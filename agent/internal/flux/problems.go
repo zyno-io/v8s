@@ -231,7 +231,7 @@ func evalControllerDown(c *problems.Ctx, k problems.Key, r *ingest.Row) []proble
 	if k.NS != "flux-system" || !fluxControllers[k.Name] {
 		return nil
 	}
-	if r.Cell(2).N > 0 {
+	if r.Cell(2).N > 0 || strings.HasSuffix(r.StrCell(0), "/0") { // available, or deliberately scaled to zero
 		return nil
 	}
 	sub := c.SubjectOf(k.GR, r)

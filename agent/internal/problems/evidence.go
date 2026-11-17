@@ -31,7 +31,7 @@ func (h *Hub) Evidence(ctx context.Context, id string) (protocol.ProblemsEvidenc
 		// objects whose live state and events explain the problem: the subject, else the rolled-up pods
 		type target struct{ gvr, kind, ns, name string }
 		var targets []target
-		if p.Subject.Kind == "Pod" || p.Subject.GVR != "" && p.Subject.Kind != "Deployment" && p.Subject.Kind != "StatefulSet" && p.Subject.Kind != "DaemonSet" && p.Subject.Kind != "Job" {
+		if p.Subject.Kind == "Pod" || p.Subject.GVR != "" && p.Subject.Kind != "Deployment" && p.Subject.Kind != "StatefulSet" && p.Subject.Kind != "DaemonSet" && p.Subject.Kind != "Job" && p.Subject.Kind != "CronJob" {
 			targets = append(targets, target{p.Subject.GVR, p.Subject.Kind, p.Subject.NS, p.Subject.Name})
 		} else {
 			if p.Subject.GVR != "" {

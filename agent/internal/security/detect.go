@@ -228,7 +228,7 @@ func configClass(class string, def bool, sev problems.Severity, title string, ad
 func init() {
 	vulnClass("vuln.critical", true, problems.SevError, "Images with critical vulnerabilities", func(v *VulnInfo) int { return v.Critical })
 	vulnClass("vuln.high", false, problems.SevWarning, "Images with high vulnerabilities", func(v *VulnInfo) int { return v.High })
-	configClass("misconfig.critical", false, problems.SevError, "Critical misconfigurations", func() map[string]ConfigAdapter { return ad.config },
+	configClass("misconfig.critical", true, problems.SevError, "Critical misconfigurations", func() map[string]ConfigAdapter { return ad.config },
 		func(v *ConfigInfo) int { return v.Critical }, "critical misconfigurations")
 	configClass("misconfig.high", false, problems.SevWarning, "High misconfigurations", func() map[string]ConfigAdapter { return ad.config },
 		func(v *ConfigInfo) int { return v.High }, "high misconfigurations")

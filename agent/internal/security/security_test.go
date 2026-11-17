@@ -2,11 +2,16 @@ package security
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestAggregateImagesAcrossWorkloadsAndClusters(t *testing.T) {
@@ -89,3 +94,89 @@ func TestNormalizeWorkloadStripsReplicaSetHash(t *testing.T) {
 }
 
 var _ = ingest.ToneDanger
+
+var gvrSeq atomic.Int32
+
+// uniqueGVR keeps providers registered by repeated runs (-count) apart: the registry is process-wide.
+func uniqueGVR(kind string) string { return fmt.Sprintf("test.io/v1/%s%d", kind, gvrSeq.Add(1)) }
+
+func detailTestService(t *testing.T, gvr string, fetch func(ctx context.Context, ref protocol.ObjectRef) (*unstructured.Unstructured, error)) *Service {
+	t.Helper()
+	RegisterDetail(DetailProvider{
+		Match: func(g string) bool { return g == gvr },
+		Fetch: func(ctx context.Context, _ *Config, ref protocol.ObjectRef) (*unstructured.Unstructured, error) {
+			return fetch(ctx, ref)
+		},
+		Build: func(o *unstructured.Unstructured) (*protocol.ReportDetail, error) {
+			return &protocol.ReportDetail{Kind: "vulnerabilities", Total: 3, Vulns: make([]protocol.VulnFinding, 3), ResourceVersion: o.GetResourceVersion()}, nil
+		}})
+	return New(Config{})
+}
+
+// Concurrent requests for the same report share one fetch.
+func TestReportDetailDedupesConcurrentFetches(t *testing.T) {
+	gvr := uniqueGVR("dedupereports")
+	var fetches atomic.Int32
+	release := make(chan struct{})
+	s := detailTestService(t, gvr, func(ctx context.Context, ref protocol.ObjectRef) (*unstructured.Unstructured, error) {
+		fetches.Add(1)
+		<-release
+		return &unstructured.Unstructured{Object: map[string]any{"metadata": map[string]any{"name": ref.Name, "resourceVersion": "5"}}}, nil
+	})
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := s.ReportDetail(context.Background(), protocol.ReportDetailParams{Ref: protocol.ObjectRef{Cluster: "c", GVR: gvr, Namespace: "n", Name: "r"}}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if n := fetches.Load(); n != 1 {
+		t.Fatalf("%d fetches of one report", n)
+	}
+}
+
+// At most maxDetailFetches distinct reports of one cluster are fetched at a time.
+func TestReportDetailBoundsFetchesPerCluster(t *testing.T) {
+	gvr := uniqueGVR("boundedreports")
+	var cur, peak atomic.Int32
+	s := detailTestService(t, gvr, func(ctx context.Context, ref protocol.ObjectRef) (*unstructured.Unstructured, error) {
+		n := cur.Add(1)
+		defer cur.Add(-1)
+		for {
+			p := peak.Load()
+			if n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		return &unstructured.Unstructured{Object: map[string]any{"metadata": map[string]any{"name": ref.Name, "resourceVersion": "5"}}}, nil
+	})
+	var wg sync.WaitGroup
+	for i := range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ref := protocol.ObjectRef{Cluster: "c", GVR: gvr, Namespace: "n", Name: fmt.Sprintf("r%d", i)}
+			if _, err := s.ReportDetail(context.Background(), protocol.ReportDetailParams{Ref: ref}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if p := peak.Load(); p > maxDetailFetches || p < 2 {
+		t.Fatalf("peak concurrency %d, want 2..%d", p, maxDetailFetches)
+	}
+}
+
+func TestChunkCapsLimit(t *testing.T) {
+	d := &protocol.ReportDetail{Kind: "vulnerabilities", Total: 5000, Vulns: make([]protocol.VulnFinding, 5000)}
+	if c := chunk(d, 0, 1_000_000); len(c.Vulns) != maxChunk {
+		t.Fatalf("limit not capped: %d rows", len(c.Vulns))
+	}
+}

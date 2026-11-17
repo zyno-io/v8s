@@ -170,10 +170,31 @@ func RegisterHandler(method string, f HandlerFactory) {
 type Service struct {
 	cfg   Config
 	cache *detailCache
+
+	mu     sync.Mutex
+	flight map[string]*detailCall   // report key → the fetch in flight
+	sems   map[string]chan struct{} // cluster → slots of concurrent report fetches
+}
+
+// Report fetches are bounded per cluster (a few huge reports must not saturate an API server) and concurrent
+// requests for the same report share one fetch.
+const (
+	maxDetailFetches = 4
+	maxChunk         = 1000 // the largest page security.reportDetail returns whatever limit asks for
+)
+
+type detailCall struct {
+	done chan struct{}
+	d    *protocol.ReportDetail
+	err  error
+	// leaderGone: the request that led the fetch was cancelled, so err says nothing about the report.
+	leaderGone bool
 }
 
 // New builds the Service.
-func New(cfg Config) *Service { return &Service{cfg: cfg, cache: newDetailCache(16)} }
+func New(cfg Config) *Service {
+	return &Service{cfg: cfg, cache: newDetailCache(16), flight: map[string]*detailCall{}, sems: map[string]chan struct{}{}}
+}
 
 // Handlers returns every request handler: security.images, security.reportDetail and whatever the scanner
 // packages registered (kyverno.setMode, kyverno.exceptionTemplate, trivy.rescan, kubescape.scanNow).
@@ -247,29 +268,83 @@ func (s *Service) ReportDetail(ctx context.Context, p protocol.ReportDetailParam
 	}
 	key := strings.Join([]string{ref.Cluster, ref.GVR, ref.Namespace, ref.Name}, "\x00")
 	rv := s.rowRV(ref)
-	full := s.cache.get(key, rv, s.cfg.now())
-	if full == nil {
-		var obj *unstructured.Unstructured
-		var err error
-		if prov.Fetch != nil {
-			obj, err = prov.Fetch(ctx, &s.cfg, ref)
-		} else {
-			obj, err = s.get(ctx, ref)
-		}
-		if err != nil {
-			return nil, ops.MapError(err, false)
-		}
-		d, err := prov.Build(obj)
-		if err != nil {
-			return nil, ops.NewError("internal", "decode report: %s", err.Error())
-		}
-		if d.ResourceVersion == "" {
-			d.ResourceVersion = obj.GetResourceVersion()
-		}
-		full = d
-		s.cache.put(key, rv, full, s.cfg.now())
+	full, err := s.detail(ctx, key, rv, ref, prov)
+	if err != nil {
+		return nil, err
 	}
 	return chunk(full, p.Offset, p.Limit), nil
+}
+
+// detail returns the decoded report: from the cache, from a fetch another request already has in flight, or from
+// a fetch of its own (at most maxDetailFetches per cluster at a time).
+func (s *Service) detail(ctx context.Context, key, rv string, ref protocol.ObjectRef, prov *DetailProvider) (*protocol.ReportDetail, error) {
+	for {
+		if d := s.cache.get(key, rv, s.cfg.now()); d != nil {
+			return d, nil
+		}
+		s.mu.Lock()
+		call := s.flight[key]
+		if call == nil {
+			call = &detailCall{done: make(chan struct{})}
+			s.flight[key] = call
+			s.mu.Unlock()
+			call.d, call.err = s.fetchDetail(ctx, key, rv, ref, prov)
+			call.leaderGone = call.err != nil && ctx.Err() != nil
+			s.mu.Lock()
+			delete(s.flight, key)
+			s.mu.Unlock()
+			close(call.done)
+			return call.d, call.err
+		}
+		s.mu.Unlock()
+		select {
+		case <-call.done:
+			if call.err == nil {
+				return call.d, nil
+			}
+			if call.leaderGone && ctx.Err() == nil {
+				continue // the request that led the fetch was cancelled, not this one: fetch again
+			}
+			return nil, call.err
+		case <-ctx.Done():
+			return nil, ops.MapError(ctx.Err(), false)
+		}
+	}
+}
+
+func (s *Service) fetchDetail(ctx context.Context, key, rv string, ref protocol.ObjectRef, prov *DetailProvider) (*protocol.ReportDetail, error) {
+	s.mu.Lock()
+	sem := s.sems[ref.Cluster]
+	if sem == nil {
+		sem = make(chan struct{}, maxDetailFetches)
+		s.sems[ref.Cluster] = sem
+	}
+	s.mu.Unlock()
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return nil, ops.MapError(ctx.Err(), false)
+	}
+	var obj *unstructured.Unstructured
+	var err error
+	if prov.Fetch != nil {
+		obj, err = prov.Fetch(ctx, &s.cfg, ref)
+	} else {
+		obj, err = s.get(ctx, ref)
+	}
+	if err != nil {
+		return nil, ops.MapError(err, false)
+	}
+	d, err := prov.Build(obj)
+	if err != nil {
+		return nil, ops.NewError("internal", "decode report: %s", err.Error())
+	}
+	if d.ResourceVersion == "" {
+		d.ResourceVersion = obj.GetResourceVersion()
+	}
+	s.cache.put(key, rv, d, s.cfg.now())
+	return d, nil
 }
 
 func (s *Service) get(ctx context.Context, ref protocol.ObjectRef) (*unstructured.Unstructured, error) {
@@ -296,6 +371,7 @@ func chunk(d *protocol.ReportDetail, off, limit int) *protocol.ReportDetail {
 	if limit <= 0 {
 		limit = defaultChunk
 	}
+	limit = min(limit, maxChunk)
 	if off < 0 {
 		off = 0
 	}

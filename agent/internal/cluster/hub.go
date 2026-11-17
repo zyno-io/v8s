@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,17 +99,22 @@ func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
 		if r.pe != nil {
 			r.pe.SetPhase(p, msg)
 			if p == protocol.PhaseReady {
-				r.gcOnce.Do(func() {
-					time.AfterFunc(30*time.Second, func() {
-						if r.ctx.Err() == nil && r.m.problems != nil {
-							r.m.problems.GCAcks(r.id)
-						}
-					})
-				})
+				r.gcOnce.Do(func() { r.scheduleAckGC(30 * time.Second) })
 			}
 		}
 		r.m.kick()
 	}
+}
+
+// scheduleAckGC drops long-unseen acknowledgements of the cluster after d, then every few hours.
+func (r *runner) scheduleAckGC(d time.Duration) {
+	time.AfterFunc(d, func() {
+		if r.ctx.Err() != nil || r.m.problems == nil {
+			return
+		}
+		r.m.problems.GCAcks(r.id)
+		r.scheduleAckGC(6 * time.Hour)
+	})
 }
 
 // ---- discovery ---------------------------------------------------------------------------
@@ -215,12 +221,22 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	w.cancel = cancel
 	hooks := ingest.Hooks{
 		OnRows: w.st.Provisional,
-		OnOK:   func() { w.setErr(nil) },
+		OnOK: func() {
+			w.setErr(nil)
+			if r.pe != nil {
+				r.pe.SetUnavailable(problems.GR(gvr), "")
+			}
+		},
 		OnError: func(err error) {
 			if wctx.Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
 				return // a routine relist, not a cluster problem
 			}
 			w.setErr(err)
+			if r.pe != nil && r.pe.Interested(gvr) {
+				if reason := unavailableReason(gvr, err); reason != "" {
+					r.pe.SetUnavailable(problems.GR(gvr), reason)
+				}
+			}
 			primary := gvr == ingest.PodsGVR
 			if !primary && !apierrors.IsUnauthorized(err) {
 				r.m.log.Debug("watch error", "cluster", r.id, "gvr", gvr, "err", err.Error())
@@ -291,6 +307,29 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	return w, nil
 }
 
+// unavailableReason explains a watch error that makes a kind unreadable for the problems engine ("" for
+// transient errors): no permission, or its (aggregated) API is down.
+func unavailableReason(gvr string, err error) string {
+	res := gvr[strings.LastIndexByte(gvr, '/')+1:]
+	switch {
+	case apierrors.IsForbidden(err):
+		return "no permission to list " + res
+	case apierrors.IsServiceUnavailable(err):
+		return "the API serving " + res + " is unavailable"
+	}
+	return ""
+}
+
+// promoteLocked makes a watch that was started on demand part of the baseline: it no longer lingers out or
+// gets evicted. Caller holds r.mu.
+func (r *runner) promoteLocked(w *watchEntry) {
+	w.tier0 = true
+	if w.linger != nil {
+		w.linger.Stop()
+		w.linger = nil
+	}
+}
+
 // makeRoomLocked evicts the least recently used lingering watch when the budget is reached.
 func (r *runner) makeRoomLocked() error {
 	if len(r.watches) < r.m.Budget {
@@ -319,6 +358,7 @@ func (r *runner) stopLocked(w *watchEntry) {
 	r.m.eng.DetachKind(r.id, w.gvr)
 	if r.pe != nil {
 		r.pe.Detach(w.gvr)
+		r.pe.SetUnavailable(problems.GR(w.gvr), "")
 	}
 	w.cancel()
 	go func() {
@@ -415,7 +455,11 @@ func (r *runner) startOptionalBaseline() {
 			continue
 		}
 		m := ingest.ResolveDiscovered(res.Group, res.Version, res.Resource, res.Kind, res.Namespaced)
-		if m == nil || !m.Optional || r.watches[m.GVR] != nil || !(m.Tier0 || r.gated(m)) {
+		if m == nil || !m.Optional || !(m.Tier0 || r.gated(m)) {
+			continue
+		}
+		if w := r.watches[m.GVR]; w != nil { // an on-demand watch (a user opened the kind) becomes baseline
+			r.promoteLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {
@@ -435,7 +479,11 @@ func (r *runner) startGatedBaseline() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, m := range ingest.CuratedModules() {
-		if m.Optional || m.Tier0 || m.GateClass == "" || r.watches[m.GVR] != nil || !r.gated(m) {
+		if m.Optional || m.Tier0 || m.GateClass == "" || !r.gated(m) {
+			continue
+		}
+		if w := r.watches[m.GVR]; w != nil {
+			r.promoteLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {

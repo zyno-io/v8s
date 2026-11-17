@@ -80,6 +80,10 @@ type client struct {
 	frames chan frame
 	dict   map[uint32]string
 	nextID uint32
+	// ready is the number of clusters in the latest cluster.state frame received by any call to next. Cluster
+	// state is pushed on change only, so a test that waits for readiness after other calls have already consumed
+	// the frame (they will under a slow race build) must look at what it has seen, not wait for another frame.
+	ready int
 }
 
 func (e *env) dial(t *testing.T, header http.Header, protos ...string) (*client, *http.Response, error) {
@@ -119,6 +123,18 @@ func (c *client) next(timeout time.Duration) (frame, bool) {
 	case f, ok := <-c.frames:
 		if ok && f.size > protocol.MaxFrameBytes {
 			c.t.Fatalf("frame of %d bytes exceeds %d", f.size, protocol.MaxFrameBytes)
+		}
+		if ok && f.kind == protocol.KindClusterState {
+			var st protocol.ClusterStates
+			if err := msgpack.Unmarshal(f.payload, &st); err != nil {
+				c.t.Fatal(err)
+			}
+			c.ready = 0
+			for _, s := range st.States {
+				if s.Phase == protocol.PhaseReady {
+					c.ready++
+				}
+			}
 		}
 		if ok && f.kind == protocol.KindDict {
 			var d protocol.DictAdd
@@ -194,27 +210,12 @@ func (c *client) waitReady(n int) {
 	c.t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		f, ok := c.next(time.Second)
-		if !ok {
-			continue
+		if c.ready == n {
+			return
 		}
-		if f.kind == protocol.KindClusterState {
-			var st protocol.ClusterStates
-			if err := msgpack.Unmarshal(f.payload, &st); err != nil {
-				c.t.Fatal(err)
-			}
-			ready := 0
-			for _, s := range st.States {
-				if s.Phase == protocol.PhaseReady {
-					ready++
-				}
-			}
-			if ready == n {
-				return
-			}
-		}
+		c.next(time.Second) // updates c.ready on a cluster.state frame
 	}
-	c.t.Fatal("clusters did not become ready")
+	c.t.Fatalf("clusters did not become ready: %d of %d", c.ready, n)
 }
 
 func TestAuthAndOrigin(t *testing.T) {

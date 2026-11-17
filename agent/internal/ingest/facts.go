@@ -34,12 +34,17 @@ func factsEqual(a, b any) bool {
 	return reflect.DeepEqual(a, b)
 }
 
+// EventFacts is set on an Event whose involved object is not in the Event's own namespace (a Node's events
+// live in "default"): detectors index events by the object's namespace, not the Event's.
+type EventFacts struct{ InvolvedNS string }
+
 // CondFact is a status condition reduced to what detectors use.
 type CondFact struct {
 	Status  string // "True" | "False" | "Unknown" ("" when the condition is absent)
 	Reason  string
 	Message string
 	Since   int64 // lastTransitionTime, unix ms (0 unknown)
+	Updated int64 // lastUpdateTime, unix ms (Deployment conditions; 0 unknown)
 }
 
 // Present reports whether the condition exists.
@@ -214,7 +219,7 @@ type WorkloadFacts struct {
 func depCond(conds []appsv1.DeploymentCondition, t appsv1.DeploymentConditionType) CondFact {
 	for i := range conds {
 		if c := &conds[i]; c.Type == t {
-			return CondFact{Status: string(c.Status), Reason: c.Reason, Message: clipMsg(c.Message), Since: ms(c.LastTransitionTime)}
+			return CondFact{Status: string(c.Status), Reason: c.Reason, Message: clipMsg(c.Message), Since: ms(c.LastTransitionTime), Updated: ms(c.LastUpdateTime)}
 		}
 	}
 	return CondFact{}

@@ -55,6 +55,7 @@ type Hub struct {
 // Ack is one acknowledgement.
 type Ack struct {
 	At      int64  `json:"at"`
+	Seen    int64  `json:"seen,omitempty"` // last time the problem was live (unix ms; refreshed at most every ackSeenEvery)
 	Until   int64  `json:"until,omitempty"`
 	Rank    int    `json:"rank"`
 	Count   int    `json:"count"`
@@ -154,7 +155,7 @@ func parseAcks(doc map[string]any) map[string]Ack {
 			continue
 		}
 		cl, _ := m["cluster"].(string)
-		out[id] = Ack{At: num(m["at"]), Until: num(m["until"]), Rank: int(num(m["rank"])), Count: int(num(m["count"])), Cluster: cl}
+		out[id] = Ack{At: num(m["at"]), Seen: num(m["seen"]), Until: num(m["until"]), Rank: int(num(m["rank"])), Count: int(num(m["count"])), Cluster: cl}
 	}
 	return out
 }
@@ -163,6 +164,9 @@ func ackDoc(a Ack) map[string]any {
 	m := map[string]any{"at": a.At, "rank": a.Rank, "count": a.Count, "cluster": a.Cluster}
 	if a.Until > 0 {
 		m["until"] = a.Until
+	}
+	if a.Seen > 0 {
+		m["seen"] = a.Seen
 	}
 	return m
 }
@@ -250,25 +254,40 @@ func (h *Hub) engineList() []*Engine {
 // ackThreshold is the count at which an acknowledged problem counts as having grown: +50%.
 func ackThreshold(n int) int { return n + max(1, n/2) }
 
-// ackHolds reports whether the problem is currently acknowledged. An acknowledgement that has expired or
-// that the problem outgrew (severity rose, count grew past the threshold) is dropped for good.
-func (h *Hub) ackHolds(id string, now time.Time, rank, count int) bool {
+// ackSeenEvery bounds how often a live problem refreshes (and so re-persists) its acknowledgement's last-seen time.
+const ackSeenEvery = 6 * time.Hour
+
+// AckMaxAge is how long an acknowledgement of a problem that is not live is kept before GCAcks drops it: long
+// enough for a GitOps recreation, an agent restart or a class that was switched off for a while.
+const AckMaxAge = 7 * 24 * time.Hour
+
+// ackHolds reports whether the problem is currently acknowledged (until is the snooze deadline, 0 none). An
+// acknowledgement that has expired or that the problem outgrew (severity rose, count grew past the threshold)
+// is dropped for good.
+func (h *Hub) ackHolds(id string, now time.Time, rank, count int) (held bool, until int64) {
 	h.mu.Lock()
 	a, ok := h.acks[id]
 	if !ok {
 		h.mu.Unlock()
-		return false
+		return false, 0
 	}
 	material := (a.Until > 0 && now.UnixMilli() >= a.Until) || rank < a.Rank || (a.Count > 0 && count >= ackThreshold(a.Count))
+	persist := false
 	if material {
 		delete(h.acks, id)
+	} else if now.UnixMilli()-a.Seen >= ackSeenEvery.Milliseconds() {
+		a.Seen = now.UnixMilli()
+		h.acks[id] = a
+		persist = true
 	}
 	h.mu.Unlock()
-	if material {
+	if material || persist {
 		h.persistAsync()
-		return false
 	}
-	return true
+	if material {
+		return false, 0
+	}
+	return true, a.Until
 }
 
 // ackResolved drops the acknowledgement of a problem that resolved (a recurrence is a new problem).
@@ -365,13 +384,8 @@ func (h *Hub) Ack(id string, until int64) error {
 	for _, e := range h.engineList() {
 		if p, ok := e.Problem(id); ok {
 			h.mu.Lock()
-			h.acks[id] = Ack{At: h.Now().UnixMilli(), Until: until, Rank: p.Severity.Rank(), Count: p.Count, Cluster: e.cluster}
+			h.acks[id] = Ack{At: h.Now().UnixMilli(), Seen: h.Now().UnixMilli(), Until: until, Rank: p.Severity.Rank(), Count: p.Count, Cluster: e.cluster}
 			h.mu.Unlock()
-			if until > 0 {
-				e.mu.Lock()
-				e.heapPushAckExpiry(id, time.UnixMilli(until))
-				e.mu.Unlock()
-			}
 			if err := h.persist(); err != nil {
 				return err
 			}
@@ -400,17 +414,20 @@ func (h *Hub) Unack(id string) error {
 	return nil
 }
 
-// GCAcks drops acknowledgements of a cluster whose problem no longer exists (call once the cluster has been
-// ready for a while: a problem that resolved while the agent was not running must not stay acknowledged).
+// GCAcks drops acknowledgements of a cluster whose problem is not live and has not been seen for AckMaxAge.
+// An acknowledgement of a problem that is merely absent right now is kept: it may be in a grace period after a
+// restart, its object may be recreated by GitOps, or its class may be switched off. (A problem that resolved
+// and stayed resolved loses its acknowledgement at once, in the engine.)
 func (h *Hub) GCAcks(cluster string) {
 	e := h.Engine(cluster)
 	if e == nil {
 		return
 	}
+	now := h.Now().UnixMilli()
 	h.mu.Lock()
 	var mine []string
 	for id, a := range h.acks {
-		if a.Cluster == cluster {
+		if a.Cluster == cluster && now-max(a.Seen, a.At) >= AckMaxAge.Milliseconds() {
 			mine = append(mine, id)
 		}
 	}

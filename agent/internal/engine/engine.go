@@ -85,6 +85,7 @@ type Engine struct {
 	Handlers map[string]rpc.Handler
 	Server   *wire.Server
 
+	srv      atomic.Pointer[wire.Server] // Server, readable from the monitors' goroutines
 	cancel   context.CancelFunc
 	ownsJobs bool
 	closed   atomic.Bool
@@ -181,7 +182,7 @@ func New(cfg Config) *Engine {
 		e.Handlers[k] = v
 	}
 	e.Hubble = hubble.New(hubble.Config{Conn: connFn, Router: e.Ops, Clusters: selected, Problems: e.Problems,
-		ClientCount: func() int { return e.Server.ClientCount() }, Log: log})
+		ClientCount: e.clientCount, Log: log})
 	e.Hubble.RegisterStreams(e.Streams)
 	for k, v := range e.Hubble.Handlers() {
 		e.Handlers[k] = v
@@ -191,9 +192,14 @@ func New(cfg Config) *Engine {
 		Problems: e.Problems, Token: cfg.Token, Mode: src.Mode(), AgentVersion: version.Version, Port: cfg.Port,
 		AllowedOrigins: cfg.AllowedOrigins, DevOrigins: cfg.DevOrigins, StaticDir: cfg.StaticDir, PreAuthorized: cfg.PreAuthorized,
 		Log: log, Tick: cfg.Tick})
+	e.srv.Store(e.Server)
 	go e.Hubble.StartProblems(ctx) // after Server is set: the monitor reads its client count
 	return e
 }
+
+// clientCount is the number of connected UI clients; 0 until the wire server exists (a monitor that asks
+// earlier must not dereference a server that is still being built).
+func (e *Engine) clientCount() int { return e.srv.Load().ClientCount() }
 
 // Close stops the engine: problem monitor and persistence, Hubble links, streams, then the manager. A jobs
 // manager supplied by the caller is left running; one the engine created stops with its context.

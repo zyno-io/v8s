@@ -51,7 +51,7 @@ type indexes struct {
 	jobsByCron  map[string]map[string]struct{} // "ns/cronjob" → Job names
 	svcSlices   map[string]map[string][2]int64 // "ns/service" → slice → (ready, total)
 	ingBySvc    map[string]map[string]struct{} // "ns/service" → Ingress names
-	evBy        map[string]map[string]struct{} // "ns/Kind/name" → event names
+	evBy        map[string]map[string]struct{} // involved "ns/Kind/name" → "eventNS/eventName"
 }
 
 func (ix *indexes) init() {
@@ -161,12 +161,23 @@ func (ix *indexes) update(e *Engine, gr string, key Key, old, new *ingest.Row) {
 		}
 	case GREvents:
 		if old != nil {
-			setDel(ix.evBy, key.NS+"/"+old.StrCell(evObject), key.Name)
+			setDel(ix.evBy, evSubjectKey(old), nsName(key.NS, key.Name))
 		}
 		if new != nil {
-			setAdd(ix.evBy, key.NS+"/"+new.StrCell(evObject), key.Name)
+			setAdd(ix.evBy, evSubjectKey(new), nsName(key.NS, key.Name))
 		}
 	}
+}
+
+// evSubjectKey is the evBy key of an event row: the involved object's namespace, kind and name.
+func evSubjectKey(r *ingest.Row) string { return evInvolvedNS(r) + "/" + r.StrCell(evObject) }
+
+// evInvolvedNS is the namespace of an event's involved object ("" for cluster-scoped objects).
+func evInvolvedNS(r *ingest.Row) string {
+	if f, ok := r.Facts().(*ingest.EventFacts); ok {
+		return f.InvolvedNS
+	}
+	return r.GetNamespace()
 }
 
 // dependents are the built-in join edges: which other keys must be re-evaluated because key changed.
@@ -201,6 +212,11 @@ func (ix *indexes) dependents(e *Engine, gr string, key Key, old, new *ingest.Ro
 		}
 		if r.OwnerKind().Value() == "CronJob" {
 			out = append(out, Key{GRCronJobs, key.NS, r.OwnerName().Value()})
+			if old == nil || new == nil { // the pods of a new (or removed) run roll up to the CronJob
+				for p := range ix.podsByOwner["Job/"+key.NS+"/"+key.Name] {
+					out = append(out, Key{GRPods, key.NS, p})
+				}
+			}
 		}
 	}
 	return out
@@ -298,6 +314,10 @@ func (c *Ctx) WorkloadOfOwner(ns, kind, name string) (Subject, bool) {
 	case "StatefulSet", "DaemonSet":
 		return Subject{Group: "apps", Kind: kind, NS: ns, Name: name, GVR: "apps/v1/" + strings.ToLower(kind) + "s"}, true
 	case "Job":
+		// the runs of a CronJob share one problem (and one acknowledgement): the pods roll up to the CronJob
+		if j := c.Get(GRJobs, ns, name); j != nil && j.OwnerKind().Value() == "CronJob" {
+			return Subject{Group: "batch", Kind: "CronJob", NS: ns, Name: j.OwnerName().Value(), GVR: "batch/v1/cronjobs"}, true
+		}
 		return Subject{Group: "batch", Kind: "Job", NS: ns, Name: name, GVR: "batch/v1/jobs"}, true
 	}
 	return Subject{}, false
@@ -317,6 +337,10 @@ func (c *Ctx) PodsOf(w Subject) []string {
 		for rs := range ix.rsByDep[nsName(w.NS, w.Name)] {
 			add(ix.podsByOwner["ReplicaSet/"+w.NS+"/"+rs])
 		}
+	case "CronJob":
+		for j := range ix.jobsByCron[nsName(w.NS, w.Name)] {
+			add(ix.podsByOwner["Job/"+w.NS+"/"+j])
+		}
 	default:
 		add(ix.podsByOwner[w.Kind+"/"+w.NS+"/"+w.Name])
 	}
@@ -330,6 +354,13 @@ func (c *Ctx) PodCount(w Subject) int {
 		n := 0
 		for rs := range ix.rsByDep[nsName(w.NS, w.Name)] {
 			n += len(ix.podsByOwner["ReplicaSet/"+w.NS+"/"+rs])
+		}
+		return n
+	}
+	if w.Kind == "CronJob" {
+		n := 0
+		for j := range ix.jobsByCron[nsName(w.NS, w.Name)] {
+			n += len(ix.podsByOwner["Job/"+w.NS+"/"+j])
 		}
 		return n
 	}
@@ -368,8 +399,9 @@ func (c *Ctx) JobsOf(ns, cron string) []string {
 // EventsFor returns the Warning events about an object, newest first, at most n.
 func (c *Ctx) EventsFor(kind, ns, name string, n int) []EventInfo {
 	var out []EventInfo
-	for en := range c.e.idx.evBy[ns+"/"+kind+"/"+name] {
-		if r := c.Get(GREvents, ns, en); r != nil {
+	for ek := range c.e.idx.evBy[ns+"/"+kind+"/"+name] {
+		ens, en, _ := strings.Cut(ek, "/")
+		if r := c.Get(GREvents, ens, en); r != nil {
 			out = append(out, EventInfo{Name: en, Reason: r.StrCell(evReason), Message: r.StrCell(evMessage), Count: r.Cell(evCount).N, Last: r.Cell(evLast).N})
 		}
 	}
@@ -382,4 +414,28 @@ func (c *Ctx) EventsFor(kind, ns, name string, n int) []EventInfo {
 		out = out[:n]
 	}
 	return out
+}
+
+type progState struct {
+	ready, updated, avail int32
+	at                    time.Time
+}
+
+// ProgressSince returns when a workload's rollout last made progress: the last time its ready, updated or
+// available replica counts increased (the first time the engine saw the workload when they never did).
+// Decreases are recorded but are not progress.
+func (c *Ctx) ProgressSince(k Key, ready, updated, avail int32) time.Time {
+	e := c.e
+	st, ok := e.prog[k]
+	switch {
+	case !ok:
+		st = progState{ready, updated, avail, e.Now()}
+	default:
+		if ready > st.ready || updated > st.updated || avail > st.avail {
+			st.at = e.Now()
+		}
+		st.ready, st.updated, st.avail = ready, updated, avail
+	}
+	e.prog[k] = st
+	return st.at
 }

@@ -3,6 +3,7 @@ package trivy
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,8 +158,12 @@ func TestSecretAndConfigClasses(t *testing.T) {
 	if ps := h.ByClass("secret.exposed"); len(ps) != 1 || ps[0].Subject.Kind != "Deployment" || ps[0].Subject.Name != "x" || ps[0].Count != 1 {
 		t.Fatalf("secret.exposed: %+v", ps)
 	}
-	if len(h.ByClass("misconfig.critical"))+len(h.ByClass("misconfig.high")) != 0 {
-		t.Fatal("misconfig classes are off by default")
+	// docs/integrations.md: misconfig.critical is on by default, misconfig.high is off
+	if ps := h.ByClass("misconfig.critical"); len(ps) != 1 || ps[0].Count != 2 {
+		t.Fatalf("misconfig.critical must be on by default: %+v", ps)
+	}
+	if len(h.ByClass("misconfig.high")) != 0 {
+		t.Fatal("misconfig.high is off by default")
 	}
 	h.Set.ProblemPrefs = map[string]any{"classes": map[string]any{"misconfig.critical": true, "misconfig.high": true}}
 	h.Hub.SettingsChanged(h.Set)
@@ -262,6 +267,23 @@ func TestRescanDeletesReport(t *testing.T) {
 	}
 	if _, err := Rescan(context.Background(), &env.Cfg, protocol.TrivyRescanParams{Ref: protocol.ObjectRef{Cluster: "c", GVR: "apps/v1/deployments", Namespace: "n", Name: "x"}}); err == nil {
 		t.Fatal("rescan of a Deployment must be refused")
+	}
+}
+
+// Only kinds the operator regenerates may be deleted: a ClusterComplianceReport is configuration.
+func TestRescanRefusesNonRegeneratedKinds(t *testing.T) {
+	obj := fullReport("ClusterComplianceReport", map[string]any{})
+	obj.SetName("nsa")
+	gvrObj := schema.GroupVersionResource{Group: Group, Version: "v1alpha1", Resource: "clustercompliancereports"}
+	env := sectest.New(map[schema.GroupVersionResource]string{gvrObj: "ClusterComplianceReportList"}, obj)
+	for _, res := range []string{"clustercompliancereports", "somethingreports"} {
+		_, err := Rescan(context.Background(), &env.Cfg, protocol.TrivyRescanParams{Ref: protocol.ObjectRef{Cluster: "c", GVR: Group + "/v1alpha1/" + res, Name: "nsa"}})
+		if err == nil || !strings.Contains(err.Error(), "bad_request") {
+			t.Fatalf("%s: %v", res, err)
+		}
+	}
+	if _, err := env.Dyn.Resource(gvrObj).Namespace("n").Get(context.Background(), "nsa", metav1.GetOptions{}); err != nil {
+		t.Fatalf("the compliance report was deleted: %v", err)
 	}
 }
 

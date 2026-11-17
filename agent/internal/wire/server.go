@@ -94,7 +94,13 @@ func NewServer(opt Options) *Server {
 func (s *Server) Handler() http.Handler { return s.mux }
 
 // ClientCount is the number of connected data sockets (the Hubble problem subscriptions run only while > 0).
-func (s *Server) ClientCount() int { return int(s.clients.Load()) }
+// A nil server has no clients.
+func (s *Server) ClientCount() int {
+	if s == nil {
+		return 0
+	}
+	return int(s.clients.Load())
+}
 
 // SetPort records the listener port once known (own-origin allowance).
 func (s *Server) SetPort(p int) { s.opt.Port = p }

@@ -39,7 +39,13 @@ func init() {
 				return nil
 			}
 			sub := c.SubjectOf(k.GR, r)
-			since := firstNonZero(f.AvailableCond.Since*b2i(f.AvailableCond.Status == "False"), f.Progressing.Since)
+			// A Deployment is down since Available turned False. Otherwise (a rolling update within maxUnavailable, a
+			// StatefulSet or DaemonSet bringing replicas up) it is judged by when its rollout last made progress, so
+			// a normal rollout never raises and a stalled one raises a grace period after its last progress.
+			since := f.AvailableCond.Since * b2i(f.AvailableCond.Status == "False")
+			if since == 0 {
+				since = max(f.Progressing.Updated, c.ProgressSince(k, f.Ready, f.Updated, f.Available).UnixMilli())
+			}
 			grace := 10 * time.Minute
 			if f.ProgressDeadline > 0 {
 				grace = time.Duration(f.ProgressDeadline) * time.Second
@@ -122,14 +128,20 @@ func init() {
 			if f == nil || f.Suspend {
 				return nil
 			}
-			iv, ok := cronInterval(f.Schedule, c.Now())
-			if !ok || iv <= 0 {
+			base := max(f.LastSuccess, f.LastSchedule, r.CreatedMs())
+			// Two scheduled runs after the last one have passed (one missed run is a late controller, two are
+			// not scheduling), plus slack. Counting fire times, not a duration, keeps "0 9 * * 1-5" quiet all weekend.
+			due := cronSecondAfter(f.Schedule, time.UnixMilli(base))
+			if due.IsZero() {
 				return nil
 			}
-			base := max(f.LastSuccess, f.LastSchedule, r.CreatedMs())
 			sub := c.SubjectOf(k.GR, r)
-			return []Draft{{Subject: sub, Title: fmt.Sprintf("CronJob %s has not run for %s (schedule %s)", sub.Name, fmtDur(2*iv), f.Schedule),
-				Message: "no scheduled run within twice the schedule interval", Since: base, Grace: 2 * iv}}
+			msg := "no scheduled run for two consecutive fire times"
+			if base > 0 {
+				msg += "; last activity " + time.UnixMilli(base).UTC().Format(time.RFC3339)
+			}
+			return []Draft{{Subject: sub, Title: fmt.Sprintf("CronJob %s is not scheduling (schedule %s)", sub.Name, f.Schedule),
+				Message: msg, Since: due.UnixMilli(), Grace: cronSlack}}
 		}})
 
 	// ---- nodes ----
@@ -260,15 +272,16 @@ func init() {
 			if !ok {
 				return nil
 			}
+			ns := evInvolvedNS(r)
 			if kind == "Pod" { // pod problems are explained by the pod classes
-				if p := c.Get(GRPods, k.NS, name); p != nil && p.Facts() != nil {
+				if p := c.Get(GRPods, evInvolvedNS(r), name); p != nil && p.Facts() != nil {
 					return nil
 				}
 			}
 			cutoff := c.Now().Add(-10 * time.Minute).UnixMilli()
 			var n int64
 			oldest := int64(0)
-			for _, e := range c.EventsFor(kind, k.NS, name, 0) {
+			for _, e := range c.EventsFor(kind, ns, name, 0) {
 				if e.Last >= cutoff {
 					n += max(e.Count, 1)
 					if oldest == 0 || e.Last < oldest {
@@ -279,7 +292,7 @@ func init() {
 			if n < 10 {
 				return nil
 			}
-			return []Draft{{Subject: Subject{Kind: kind, NS: k.NS, Name: name}, Title: fmt.Sprintf("%d Warning events for %s %s in 10 minutes", n, kind, name),
+			return []Draft{{Subject: Subject{Kind: kind, NS: ns, Name: name}, Title: fmt.Sprintf("%d Warning events for %s %s in 10 minutes", n, kind, name),
 				Message: r.StrCell(evReason) + ": " + r.StrCell(evMessage), Count: int(n), Since: oldest, TTL: 10 * time.Minute}}
 		}})
 }
@@ -289,14 +302,4 @@ func b2i(b bool) int64 {
 		return 1
 	}
 	return 0
-}
-
-func fmtDur(d time.Duration) string {
-	switch {
-	case d >= 48*time.Hour:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	case d >= time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	return fmt.Sprintf("%dm", int(d.Minutes()))
 }

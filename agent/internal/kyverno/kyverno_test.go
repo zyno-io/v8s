@@ -161,6 +161,10 @@ func TestAdmissionDeniedFromEvents(t *testing.T) {
 	}
 	h.Put("v1/events", ev("e1", "PolicyViolation", now.Add(-10*time.Minute)))
 	h.Put("v1/events", ev("e2", "BackOff", now))
+	// an audit-mode / background finding carries the same reason but was not blocked
+	h.Put("v1/events", ingest.Lookup("v1/events").ProjectObj(&corev1.Event{ObjectMeta: metav1.ObjectMeta{Name: "e3", Namespace: "payments", UID: "e3", ResourceVersion: "1"},
+		Type: "Warning", Reason: "PolicyViolation", Message: "policy require-labels/check-team fail: validation error: team label required", Count: 7,
+		InvolvedObject: corev1.ObjectReference{Kind: "Deployment", Name: "audited"}, LastTimestamp: metav1.NewTime(now)}))
 	h.Pass()
 	ps := h.ByClass("policy.admission-denied")
 	if len(ps) != 1 || ps[0].Subject.Name != "api" || ps[0].Count != 2 || ps[0].Subject.NS != "payments" {
@@ -203,8 +207,8 @@ func TestSetMode(t *testing.T) {
 	}
 	// legacy policies are read-only; a rule cannot be targeted on a CEL policy; a replaced object is refused
 	_, err = SetMode(ctx, &env.Cfg, protocol.KyvernoSetModeParams{Ref: protocol.ObjectRef{Cluster: "c", GVR: cpolGVR, Name: "x"}, Mode: ModeEnforce})
-	if e, ok := err.(interface{ Error() string }); !ok || !strings.HasPrefix(e.Error(), "forbidden") {
-		t.Fatalf("legacy: %v", err)
+	if e, ok := err.(interface{ Error() string }); !ok || !strings.HasPrefix(e.Error(), "bad_request") {
+		t.Fatalf("legacy policies must be refused as bad_request (docs/protocol.md): %v", err)
 	}
 	if _, err = SetMode(ctx, &env.Cfg, protocol.KyvernoSetModeParams{Ref: ref, Mode: ModeEnforce, Rule: "r"}); err == nil {
 		t.Fatal("rule on a CEL policy must be refused")
@@ -230,6 +234,9 @@ func TestExceptionTemplate(t *testing.T) {
 		if !strings.Contains(cel.YAML, want) {
 			t.Errorf("CEL exception lacks %q:\n%s", want, cel.YAML)
 		}
+	}
+	if cel.Kind != "PolicyException" || cel.APIVersion != "policies.kyverno.io/v1" {
+		t.Errorf("result kind/apiVersion: %+v", cel)
 	}
 	var doc struct {
 		Spec struct {

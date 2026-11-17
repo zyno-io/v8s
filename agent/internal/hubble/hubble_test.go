@@ -520,10 +520,39 @@ func TestRelayDownFinding(t *testing.T) {
 
 // ---- flows stream -----------------------------------------------------------------------------
 
+// lockedClock is a clock tests advance by hand, safe for the stream's goroutines.
+type lockedClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *lockedClock) now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *lockedClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+// shownTotals folds the frames into (flows delivered, latest reported rate).
+func shownTotals(frames []protocol.FlowsFrame) (shown int, last *protocol.FlowRate) {
+	for _, f := range frames {
+		shown += len(f.Flows)
+		if f.Rate != nil {
+			last = f.Rate
+		}
+	}
+	return
+}
+
+// The sampler runs on an injected clock, so the cap does not depend on how fast the machine is: with the clock
+// held still the bucket holds MaxFlowsPerSec/10 tokens and no more; advancing it a second refills it. The
+// relay keeps offering flows in real time and the test polls for the outcome instead of sleeping.
 func TestFlowsStreamRateCapAndScope(t *testing.T) {
 	r := NewFakeRelay()
 	r.Rate = 3000
-	s := testService(t, r, nil)
+	clk := &lockedClock{t: time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)}
+	s := testService(t, r, func(c *Config) { c.Now = clk.now })
+	const burst = 200 / 10 // the sampler's capacity at the default 200 flows/s
 	var run func(context.Context, streams.Transport)
 	res, err := s.OpenFlows(context.Background(), protocol.StreamOpenParams{Type: "flows", Flows: &protocol.FlowsStreamParams{
 		Cluster: "c1", Scope: protocol.FlowScope{Namespace: "shop"}}}, func(f func(context.Context, streams.Transport)) string { run = f; return "sid" })
@@ -534,34 +563,47 @@ func TestFlowsStreamRateCapAndScope(t *testing.T) {
 	tr := newMemTransport()
 	done := make(chan struct{})
 	go func() { run(ctx, tr); close(done) }()
-	time.Sleep(1500 * time.Millisecond)
+	waitFor := func(what string, ok func(shown int, last *protocol.FlowRate) bool) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			if shown, last := shownTotals(tr.snapshot()); ok(shown, last) {
+				return
+			}
+			if time.Now().After(deadline) {
+				shown, last := shownTotals(tr.snapshot())
+				t.Fatalf("timed out waiting for %s: shown=%d rate=%+v", what, shown, last)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	// many more flows are offered than the cap lets through
+	waitFor("the offered rate", func(shown int, last *protocol.FlowRate) bool { return last != nil && last.Total >= 5*burst })
+	waitFor("the burst", func(shown int, _ *protocol.FlowRate) bool { return shown >= burst })
+	time.Sleep(50 * time.Millisecond) // anything over the cap would arrive in the next batches
+	shown, last := shownTotals(tr.snapshot())
+	if shown != burst || !last.Sampled || last.Shown != burst || last.Total < 5*burst {
+		t.Fatalf("with the clock held, shown=%d (want %d) rate=%+v", shown, burst, last)
+	}
+	// a second later the bucket is full again: exactly one more burst gets through
+	clk.advance(time.Second)
+	waitFor("the refill", func(shown int, _ *protocol.FlowRate) bool { return shown >= 2*burst })
+	time.Sleep(50 * time.Millisecond)
+	if shown, _ := shownTotals(tr.snapshot()); shown != 2*burst {
+		t.Fatalf("after one refill shown=%d, want %d", shown, 2*burst)
+	}
 	cancel()
 	<-done
 	frames := tr.snapshot()
 	if len(frames) < 3 || frames[0].Ready == nil || !frames[len(frames)-1].End {
 		t.Fatalf("frames: first=%+v n=%d", frames[0], len(frames))
 	}
-	shown := 0
-	var last *protocol.FlowRate
 	for _, f := range frames {
-		shown += len(f.Flows)
-		if f.Rate != nil {
-			last = f.Rate
-		}
 		for _, fl := range f.Flows {
 			if fl.Src.Namespace != "shop" && fl.Dst.Namespace != "shop" {
 				t.Fatalf("flow outside the scope reached the client: %+v", fl)
 			}
 		}
-	}
-	if shown > 200*2+40 {
-		t.Fatalf("cap exceeded: %d flows in 1.5 s", shown)
-	}
-	if shown < 100 {
-		t.Fatalf("hardly any flows: %d", shown)
-	}
-	if last == nil || !last.Sampled || last.Total < 1000 || last.Shown > 260 {
-		t.Fatalf("reported rate %+v", last)
 	}
 }
 
@@ -665,5 +707,50 @@ func TestFlowConversion(t *testing.T) {
 	}
 	if w := toFlow(gen(7, time.Now())); w.Src.Workload != "world" || w.Src.Namespace != "" {
 		t.Fatalf("world flow %+v", w)
+	}
+}
+
+// A link rebuilt while older holders still use the previous one must still idle out when the last holder (of
+// either generation) lets go.
+func TestLinkIdlesOutWhenOlderGenerationReleasesLast(t *testing.T) {
+	type gen struct{ dead, closed atomic.Bool }
+	var mu sync.Mutex
+	var gens []*gen
+	s := New(Config{LinkIdle: 20 * time.Millisecond, Connect: func(context.Context, string) (*Link, error) {
+		g := &gen{}
+		mu.Lock()
+		gens = append(gens, g)
+		mu.Unlock()
+		return &Link{Close: func() { g.closed.Store(true) }, Dead: g.dead.Load}, nil
+	}})
+	t.Cleanup(s.Close)
+	ctx := context.Background()
+	_, relA, err := s.acquire(ctx, "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, relB, _ := s.acquire(ctx, "c")
+	mu.Lock()
+	gens[0].dead.Store(true) // the forward died under A and B
+	mu.Unlock()
+	_, relC, err := s.acquire(ctx, "c") // rebuilds
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if len(gens) != 2 {
+		t.Fatalf("want a rebuilt link, got %d connects", len(gens))
+	}
+	g2 := gens[1]
+	mu.Unlock()
+	relC()
+	relA()
+	relB() // the last holder belongs to the older generation
+	deadline := time.Now().Add(2 * time.Second)
+	for !g2.closed.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("the rebuilt link never idled out: leaked")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

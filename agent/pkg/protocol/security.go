@@ -154,6 +154,7 @@ type KyvernoExceptionTemplateParams struct {
 type KyvernoExceptionTemplateResult struct {
 	YAML       string `msgpack:"yaml" json:"yaml"`
 	APIVersion string `msgpack:"apiVersion" json:"apiVersion"`
+	Kind       string `msgpack:"kind" json:"kind"` // "PolicyException"
 	Namespace  string `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
 }
 

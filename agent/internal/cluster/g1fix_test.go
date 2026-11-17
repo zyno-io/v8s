@@ -68,3 +68,8 @@ func TestResolveModuleFailsFastWhenListForbidden(t *testing.T) {
 		t.Fatalf("took %v", d)
 	}
 }
+
+func forbiddenAPIErr() error {
+	_, err := forbiddenAPI{}.List(context.Background(), metav1.ListOptions{})
+	return err
+}

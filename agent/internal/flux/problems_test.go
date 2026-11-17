@@ -224,6 +224,17 @@ func deployRow(ns, name string, replicas, available int32) *ingest.Row {
 		Spec: appsv1.DeploymentSpec{Replicas: &replicas}, Status: appsv1.DeploymentStatus{AvailableReplicas: available, ReadyReplicas: available}})
 }
 
+// A controller deliberately scaled to zero (spec.replicas=0) is not "down".
+func TestControllerScaledToZeroIsNotDown(t *testing.T) {
+	h := newHarness(t)
+	h.Put(gvrDep, deployRow("flux-system", "image-reflector-controller", 0, 0))
+	h.Pass()
+	h.Advance(5 * time.Minute)
+	if ps := h.ByClass("flux.controller-down"); len(ps) != 0 {
+		t.Fatalf("scaled-to-zero controller flagged: %+v", ps)
+	}
+}
+
 func TestControllerDown(t *testing.T) {
 	h := newHarness(t)
 	h.Put(gvrDep, deployRow("flux-system", "source-controller", 1, 0))

@@ -14,6 +14,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/hubble"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 const fakeRelayPod = "hubble-relay-6c9f7b8d4-fk7x2"
@@ -36,6 +37,25 @@ func init() {
 				"targetRef": map[string]any{"kind": "Pod", "namespace": "kube-system", "name": fakeRelayPod}}},
 			"ports": []any{map[string]any{"name": "grpc", "port": int64(4245), "protocol": "TCP"}}})
 	})
+}
+
+// fakeRelayDial serves the in-process relay over an in-memory listener (no socket); ok is false for any other pod.
+func (b *Backend) fakeRelayDial(ctx context.Context, ns, pod string) (*kube.PodDialer, bool) {
+	if ns != "kube-system" || !strings.HasPrefix(pod, "hubble-relay") || !hasFakeCilium(b.w.cluster) {
+		return nil, false
+	}
+	ln := bufconn.Listen(1 << 20)
+	stop, done := hubble.NewFakeRelay().Serve(ln)
+	var once sync.Once
+	st := func() { once.Do(func() { stop(); _ = ln.Close() }) }
+	go func() {
+		select {
+		case <-ctx.Done():
+			st()
+		case <-done:
+		}
+	}()
+	return &kube.PodDialer{DialContext: func(ctx context.Context, _ string) (net.Conn, error) { return ln.DialContext(ctx) }, Done: done, Close: st}, true
 }
 
 // fakeRelayForward serves the in-process relay for a port-forward to the fake relay pod; ok is false for any other pod.

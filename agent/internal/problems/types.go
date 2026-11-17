@@ -126,6 +126,9 @@ type Draft struct {
 	Grace time.Duration
 	// TTL ends the finding Since+TTL after it began (oomkilled within 1 h).
 	TTL time.Duration
+	// Wake lists times at which the key is evaluated again although nothing changed (a title or severity that
+	// depends on the clock: a certificate nearing expiry). Past times are ignored.
+	Wake []time.Time
 	// Evidence refs (related objects).
 	Evidence []Ref
 }
