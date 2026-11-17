@@ -461,7 +461,7 @@ Put it behind a TLS-terminating ingress at your `publicUrl`. v8s runs as a singl
 - **Storage.** The only thing written to disk is each user's settings file: stars, bookmarks, groups, layouts, and acknowledgements. There is no database and no activity log.
 - **Per-user access.** Each user's watches carry that user's own token. Problems contain only what that user's token can read. A user sees only the clusters mapped to their IdP groups, and v8s connects to a cluster only after they select it.
 - **No long-term logs.** v8s keeps a short, in-memory list of a user's own recent actions, cleared at sign-out. The authoritative records are your gateway's and the Kubernetes audit log. v8s sends `User-Agent: v8s/<version> (corr <id>)`, where the id is an HMAC of the session, never the session itself.
-- **Request checks.** `Origin` and `Sec-Fetch-Site` are checked on every HTTP and WebSocket endpoint.
+- **Request checks.** `Origin` and `Sec-Fetch-Site` are checked on every HTTP endpoint. WebSocket handshakes must carry an `Origin` equal to `publicUrl` (Chromium sends no `Sec-Fetch-*` headers there, so `Sec-Fetch-Site` is checked only when present).
 - **Shells and port-forward.** Shells run as the user, so Kubernetes RBAC decides who can open them. Streams through a write context have idle and duration caps. Port-forward is refused in hosted mode, and node shell is hidden on phones.
 - **If the server is compromised,** the attacker gets the live sessions' tokens, and with them whatever those users can reach, including write targets for anyone with an active elevated Warpgate session. Mitigate with a short session lifetime and a locked-down network path to the server.
 

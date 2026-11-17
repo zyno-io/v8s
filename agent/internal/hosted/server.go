@@ -364,10 +364,15 @@ func (s *Server) mutationOK(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
 }
 
-// wsOK is the stricter check of the WebSocket endpoints: Origin must equal the public origin and the browser
-// must report Sec-Fetch-Site: same-origin. Non-browser clients must send both headers.
+// wsOK checks a WebSocket handshake. Origin must be exactly the public URL: browsers always send it on WebSocket
+// handshakes and a page cannot forge it, which is what stops cross-site WebSocket hijacking. Chromium sends no
+// Sec-Fetch-* on WebSocket handshakes (Firefox and WebKit do), so Sec-Fetch-Site is only checked when present.
 func (s *Server) wsOK(r *http.Request) bool {
-	return r.Header.Get("Origin") == s.origin && r.Header.Get("Sec-Fetch-Site") == "same-origin"
+	if r.Header.Get("Origin") != s.origin {
+		return false
+	}
+	sfs := r.Header.Get("Sec-Fetch-Site")
+	return sfs == "" || sfs == "same-origin"
 }
 
 // readOK rejects cross-site subresource reads of the JSON API.
@@ -485,7 +490,7 @@ func offersSubprotocol(r *http.Request) bool {
 }
 
 // handleWS authenticates /ws by the session cookie (instead of the token subprotocol), requires the v8s.v1
-// subprotocol, a strict Origin and Sec-Fetch-Site: same-origin, then hands the socket to the user's own engine.
+// subprotocol and a strict Origin (see wsOK), then hands the socket to the user's own engine.
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if !s.wsOK(r) {
 		text(w, http.StatusForbidden, "forbidden\n")
@@ -523,7 +528,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // came from a request on its data socket).
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/stream/download" {
-		if r.Method != http.MethodGet || r.Header.Get("Sec-Fetch-Site") != "same-origin" {
+		// WebKit sends no Sec-Fetch-* on a programmatic <a download> (the Safari/iOS path), so only a present,
+		// foreign value is refused. The single-use streamId and the SameSite=Strict cookie are the real guard.
+		if sfs := r.Header.Get("Sec-Fetch-Site"); r.Method != http.MethodGet || (sfs != "" && sfs != "same-origin") {
 			text(w, http.StatusForbidden, "forbidden\n")
 			return
 		}

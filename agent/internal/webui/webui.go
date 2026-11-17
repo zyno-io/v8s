@@ -13,7 +13,7 @@ import (
 var embedded embed.FS
 
 // Same policy as the --static-dir handler in internal/wire.
-const csp = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+const csp = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
 
 func root() fs.FS {
 	sub, err := fs.Sub(embedded, "dist")

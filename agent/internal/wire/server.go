@@ -28,7 +28,7 @@ import (
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
-const csp = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+const csp = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
 
 // Options configures the server.
 type Options struct {
@@ -54,7 +54,7 @@ type Options struct {
 	// DevOrigins additionally allows http://localhost:* and http://127.0.0.1:* (fake mode with a dev token).
 	DevOrigins bool
 	StaticDir  string
-	// PreAuthorized: an authenticating front door (hosted mode: session cookie, strict Origin/Sec-Fetch-Site)
+	// PreAuthorized: an authenticating front door (hosted mode: session cookie, strict Origin)
 	// already vetted the request, so the token subprotocol and Origin allowlist are skipped.
 	PreAuthorized bool
 	Log           *slog.Logger

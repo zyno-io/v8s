@@ -189,8 +189,8 @@ The self-hosted multi-user mode speaks the same protocol over the same `/ws` and
 ### Connection auth
 
 - `/ws` and `/stream` authenticate by the **session cookie** `__Host-v8s_session` (HttpOnly, Secure, SameSite=Strict, Path=/), not the token subprotocol. The client still offers `Sec-WebSocket-Protocol: v8s.v1` (400 without it); there is no `token.*` entry.
-- **Strict origin**: `Origin` must equal the configured public URL **and** `Sec-Fetch-Site` must be `same-origin`; either missing or different is 403. No cookie, or an expired/ended session, is **401**: the UI sends the browser to `/auth/login?return=<path>`. Ending a session (logout, expiry, eviction) closes its sockets.
-- `GET /stream/download` needs the cookie and `Sec-Fetch-Site: same-origin`, plus the single-use `streamId`. Every state-changing HTTP request (`POST /auth/logout`) must carry a matching `Origin`, or `Sec-Fetch-Site: same-origin` when `Origin` is absent; a foreign value is 403. `GET /api/me` rejects cross-site fetches.
+- **Strict origin**: `Origin` must equal the configured public URL; missing or different is 403. Chromium sends no `Sec-Fetch-*` headers on WebSocket handshakes (Firefox and WebKit do), so `Sec-Fetch-Site` is checked only when present (then it must be `same-origin`). A page cannot forge `Origin`, which is what blocks cross-site WebSocket hijacking. No cookie, or an expired/ended session, is **401**: the UI sends the browser to `/auth/login?return=<path>`. Ending a session (logout, expiry, eviction) closes its sockets.
+- `GET /stream/download` needs the cookie and the single-use `streamId`; a present `Sec-Fetch-Site` must be `same-origin` (WebKit sends none on a programmatic `<a download>`, the Safari and iOS path). Every state-changing HTTP request (`POST /auth/logout`) must carry a matching `Origin`, or `Sec-Fetch-Site: same-origin` when `Origin` is absent; a foreign value is 403. `GET /api/me` rejects cross-site fetches.
 - `Hello.mode` is `"hosted"`.
 
 ### Engines
