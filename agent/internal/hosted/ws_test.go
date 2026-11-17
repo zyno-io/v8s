@@ -209,7 +209,6 @@ func TestWebSocketAuth(t *testing.T) {
 		{"missing cookie", anon, goodHeaders(e), nil, 401},
 		{"foreign origin", b, hdr("https://evil.example", "same-origin"), nil, 403},
 		{"missing origin", b, hdr("", "same-origin"), nil, 403},
-		{"missing sec-fetch-site", b, hdr(e.ts.URL, ""), nil, 403},
 		{"cross-site fetch metadata", b, hdr(e.ts.URL, "cross-site"), nil, 403},
 		{"same-site (sibling subdomain) fetch metadata", b, hdr(e.ts.URL, "same-site"), nil, 403},
 		{"missing subprotocol", b, goodHeaders(e), []string{"token.abc"}, 400},
@@ -224,6 +223,10 @@ func TestWebSocketAuth(t *testing.T) {
 	}
 	if e.srv.pool.Retained() != 0 {
 		t.Fatal("a rejected socket started an engine")
+	}
+	// What real browsers send on a WebSocket handshake: Origin, but no Sec-Fetch-* headers.
+	if _, resp, err := b.dialWS(hdr(e.ts.URL, "")); err != nil {
+		t.Fatalf("browser handshake (Origin, no Sec-Fetch-Site) rejected: %v %v", err, resp)
 	}
 	// The desktop token subprotocol is not an alternative to the cookie.
 	_, resp, err := anon.dialWS(goodHeaders(e), protocol.Subprotocol, "token.deadbeef")

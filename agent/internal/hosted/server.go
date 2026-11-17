@@ -366,8 +366,15 @@ func (s *Server) mutationOK(r *http.Request) bool {
 
 // wsOK is the stricter check of the WebSocket endpoints: Origin must equal the public origin and the browser
 // must report Sec-Fetch-Site: same-origin. Non-browser clients must send both headers.
+// wsOK checks a WebSocket handshake. Origin must be exactly the public URL: browsers always send it on WebSocket
+// handshakes and a page cannot forge it, which is what stops cross-site WebSocket hijacking. Browsers do not send
+// Sec-Fetch-* on WebSocket handshakes, so Sec-Fetch-Site is only checked when present.
 func (s *Server) wsOK(r *http.Request) bool {
-	return r.Header.Get("Origin") == s.origin && r.Header.Get("Sec-Fetch-Site") == "same-origin"
+	if r.Header.Get("Origin") != s.origin {
+		return false
+	}
+	sfs := r.Header.Get("Sec-Fetch-Site")
+	return sfs == "" || sfs == "same-origin"
 }
 
 // readOK rejects cross-site subresource reads of the JSON API.

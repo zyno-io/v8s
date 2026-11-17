@@ -28,7 +28,7 @@ import (
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
-const csp = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+const csp = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
 
 // Options configures the server.
 type Options struct {
