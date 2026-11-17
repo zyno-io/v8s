@@ -54,7 +54,7 @@ type Options struct {
 	// DevOrigins additionally allows http://localhost:* and http://127.0.0.1:* (fake mode with a dev token).
 	DevOrigins bool
 	StaticDir  string
-	// PreAuthorized: an authenticating front door (hosted mode: session cookie, strict Origin/Sec-Fetch-Site)
+	// PreAuthorized: an authenticating front door (hosted mode: session cookie, strict Origin)
 	// already vetted the request, so the token subprotocol and Origin allowlist are skipped.
 	PreAuthorized bool
 	Log           *slog.Logger

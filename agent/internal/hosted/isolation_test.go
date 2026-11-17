@@ -126,7 +126,8 @@ func TestStreamEndpointsNeedSessionAndEngine(t *testing.T) {
 		t.Fatalf("download without a session: %d", c)
 	}
 	b.login("alice-sub")
-	if c := do("/stream/download?streamId=x", nil); c != 403 {
+	// Safari/iOS send no fetch metadata on <a download>: allowed (the streamId is the credential).
+	if c := do("/stream/download?streamId=x", nil); c != 409 {
 		t.Fatalf("download without fetch metadata: %d", c)
 	}
 	if c := do("/stream/download?streamId=x", map[string]string{"Sec-Fetch-Site": "cross-site"}); c != 403 {

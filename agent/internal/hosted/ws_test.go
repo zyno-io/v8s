@@ -224,7 +224,7 @@ func TestWebSocketAuth(t *testing.T) {
 	if e.srv.pool.Retained() != 0 {
 		t.Fatal("a rejected socket started an engine")
 	}
-	// What real browsers send on a WebSocket handshake: Origin, but no Sec-Fetch-* headers.
+	// What Chromium sends on a WebSocket handshake: Origin, but no Sec-Fetch-* headers.
 	if _, resp, err := b.dialWS(hdr(e.ts.URL, "")); err != nil {
 		t.Fatalf("browser handshake (Origin, no Sec-Fetch-Site) rejected: %v %v", err, resp)
 	}
