@@ -12,23 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zyno-io/v8s/agent/internal/cluster"
-	"github.com/zyno-io/v8s/agent/internal/drainer"
-	"github.com/zyno-io/v8s/agent/internal/flux"
-	"github.com/zyno-io/v8s/agent/internal/helm"
-	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/engine"
 	"github.com/zyno-io/v8s/agent/internal/jobs"
-	"github.com/zyno-io/v8s/agent/internal/kube"
-	"github.com/zyno-io/v8s/agent/internal/ops"
 	"github.com/zyno-io/v8s/agent/internal/settings"
-	"github.com/zyno-io/v8s/agent/internal/streams"
-	"github.com/zyno-io/v8s/agent/internal/version"
-	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/wire"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // EngineGrace is how long a user's watches keep running after their last client closed.
@@ -40,11 +28,8 @@ const jobPoll = 10 * time.Second
 // activation is the running part of a user's engine: watches, views, problems, and the wire front end. It is
 // created on the user's first client and torn down EngineGrace after their last one.
 type activation struct {
-	cancel  context.CancelFunc
-	eng     *view.Engine
-	mgr     *cluster.Manager
-	streams *streams.Manager
-	srv     *wire.Server
+	eng *engine.Engine
+	srv *wire.Server
 }
 
 // userEngine is one identity's engine (same subject and groups). Its durable parts (settings, jobs) outlive an
@@ -293,11 +278,7 @@ func (p *Pool) Close() {
 	}
 }
 
-func (a *activation) close() {
-	a.mgr.Close()
-	a.streams.Close()
-	a.cancel()
-}
+func (a *activation) close() { a.eng.Close() }
 
 // ---- construction ---------------------------------------------------------------------------------
 
@@ -353,67 +334,15 @@ func (s *Server) newUserEngine(p *Pool, key string, sess *Session) (*userEngine,
 	return ue, nil
 }
 
-// activate starts the watches/views/wire front end of a user's engine (mirrors the desktop agent's wiring).
-// Port-forward is disabled in hosted mode (a local port is meaningless here); HTTP preview is not built yet.
+// activate starts the user's engine through the shared builder (the same one the desktop agent uses). Port-forward
+// is disabled in hosted mode (a local port is meaningless here); HTTP preview is not built yet. The user's jobs
+// outlive the activation (15-minute bound), so the engine borrows them.
 func (s *Server) activate(ue *userEngine) *activation {
-	ctx, cancel := context.WithCancel(ue.ctx)
 	log := s.log.With("user", ue.ident.Username)
-	src := ue.src
-	eng := view.NewEngine()
-	mgr := cluster.NewManager(ctx, src, eng, log)
-	mgr.SetSettings(ue.set)
-	connFn := func(id string) (kube.Conn, error) { return src.Backend(id) }
-	opsSvc := ops.New(ops.Config{Conn: connFn, Links: mgr.Links, Resolve: mgr.Resolve, Now: s.clock.Now})
-	streamMgr := streams.New(streams.Config{Router: opsSvc, Conn: connFn, Settings: ue.set.Get, AllowPortForward: false,
-		User: ue.ident.Username, Log: log})
-	drainSvc := drainer.New(drainer.Config{Router: opsSvc, Conn: connFn})
-	fluxSvc := flux.New(flux.Config{
-		Get: func(ctx context.Context, cl, gvr, ns, name string) (*unstructured.Unstructured, error) {
-			g, v, r, err := ingest.ParseGVR(gvr)
-			if err != nil {
-				return nil, err
-			}
-			c, err := connFn(cl)
-			if err != nil {
-				return nil, err
-			}
-			ri := c.Dynamic().Resource(schema.GroupVersionResource{Group: g, Version: v, Resource: r})
-			if ns != "" {
-				return ri.Namespace(ns).Get(ctx, name, metav1.GetOptions{})
-			}
-			return ri.Get(ctx, name, metav1.GetOptions{})
-		},
-		Scan:     mgr.ScanKind,
-		Clusters: func() []string { return mgr.List().Selected },
-		Resolve:  mgr.Resolve,
-	})
-	helmCfg := helm.Config{
-		Runtime: func(id string) (kube.Runtime, error) {
-			c, err := connFn(id)
-			if err != nil {
-				return nil, err
-			}
-			rt, ok := kube.RuntimeOf(c)
-			if !ok {
-				return nil, errors.New("this cluster is read-only or has no runtime")
-			}
-			return rt, nil
-		},
-		Route: func(ctx context.Context, cl, verb, gvr, sub, ns, name string) (string, bool, error) {
-			r, err := opsSvc.Route(ctx, cl, verb, gvr, sub, ns, name)
-			if err != nil {
-				return "", false, err
-			}
-			return r.ContextID, r.ViaWrite, nil
-		},
-		Log: log,
-	}
-	go eng.Run(ctx)
-	srv := wire.NewServer(wire.Options{
-		Manager: mgr, Engine: eng, Ops: opsSvc, Settings: ue.set, Streams: streamMgr, Jobs: ue.jobs, Drain: drainSvc, Flux: fluxSvc,
-		Helm: helm.New(helmCfg), Mode: src.Mode(), AgentVersion: version.Version, PreAuthorized: true, Log: log, Tick: s.tick,
-	})
-	return &activation{cancel: cancel, eng: eng, mgr: mgr, streams: streamMgr, srv: srv}
+	e := engine.New(engine.Config{Ctx: ue.ctx, Source: ue.src, Settings: ue.set, Log: log, Now: s.clock.Now, Tick: s.tick,
+		User: ue.ident.Username, AllowPortForward: false, RuntimeErr: "this cluster is read-only or has no runtime",
+		Jobs: ue.jobs, PreAuthorized: true})
+	return &activation{eng: e, srv: e.Server}
 }
 
 // handler returns the wire handler of the active engine.
