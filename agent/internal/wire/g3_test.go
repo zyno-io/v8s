@@ -41,7 +41,7 @@ func TestG3ProblemsOverWire(t *testing.T) {
 	var sub protocol.ViewSubscribeResult
 	decodeResult(t, c.call("view.subscribe", protocol.ViewSubscribeParams{QID: 1, Gen: 1, Window: protocol.Window{Limit: 50},
 		Query: protocol.ViewQuery{GVR: protocol.ProblemsGVR, Filters: []protocol.Filter{{Col: "family", Op: "in", Value: []string{"pods", "nodes"}}}}}, nil), &sub)
-	if got := colKeys(sub.Columns); got != "cluster,name,namespace,severity,severityRank,class,family,kind,title,message,since,lastChanged,count,source,acked,statusTone" {
+	if got := colKeys(sub.Columns); got != "cluster,name,namespace,severity,severityRank,class,family,kind,title,message,since,lastChanged,count,source,acked,problemId,statusTone" {
 		t.Fatalf("problem columns: %s", got)
 	}
 	var id string

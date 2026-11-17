@@ -862,6 +862,7 @@ func (e *Engine) buildRow(p *pstate, d *Detector, pb *published) *ingest.Row {
 	} else {
 		r.PutS("false")
 	}
+	r.PutS(p.id)
 	r.SetTone(pb.sev.Tone())
 	return r
 }
