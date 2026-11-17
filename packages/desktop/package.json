@@ -3,6 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "description": "v8s desktop shell",
+    "homepage": "https://zyno-io.github.io/v8s/",
     "license": "MIT",
     "author": "Signal24",
     "type": "module",
