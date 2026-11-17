@@ -20,6 +20,7 @@ import {
     viewRange,
     VIEW_PAD,
     dropCompensation,
+    followItems,
     type Run
 } from '@/lib/logs.ts';
 
@@ -35,6 +36,7 @@ const props = withDefaults(defineProps<{ handle: LogStreamHandle; follow: boolea
 const emit = defineEmits<{ 'update:follow': [boolean]; download: [] }>();
 
 const scroller = ref<HTMLElement | null>(null);
+const viewH = ref(0);
 const rowH = computed(() => rowHeight(props.wrap));
 const first = computed(() => props.handle.first.value);
 const count = computed(() => Math.max(0, props.handle.total.value - props.handle.first.value));
@@ -68,7 +70,8 @@ const rows = computed<Row[]>(() => {
     void props.handle.version.value;
     const f = first.value;
     const cur = props.handle.reveal.value?.line ?? -1;
-    return virt.value.getVirtualItems().map(it => {
+    const items = props.follow ? followItems(count.value, viewH.value, rowH.value, padStart.value) : virt.value.getVirtualItems();
+    return items.map(it => {
         const abs = f + it.index;
         const line = props.handle.lineAt(abs);
         // Plain lines (the vast majority) render one text node; only styled / highlighted lines split into runs.
@@ -229,8 +232,12 @@ let ro: ResizeObserver | null = null;
 onMounted(() => {
     document.addEventListener('visibilitychange', onVisibility);
     props.handle.setPaused(document.hidden);
+    viewH.value = scroller.value?.clientHeight ?? 0;
     if (typeof ResizeObserver === 'function' && scroller.value) {
-        ro = new ResizeObserver(() => schedule(true));
+        ro = new ResizeObserver(() => {
+            viewH.value = scroller.value?.clientHeight ?? 0;
+            schedule(true);
+        });
         ro.observe(scroller.value);
     }
     if (props.follow) pin = true;

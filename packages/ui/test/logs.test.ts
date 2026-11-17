@@ -20,7 +20,8 @@ import {
     shouldPauseFollow,
     splitRuns,
     streamParams,
-    viewRange
+    viewRange,
+    followItems
 } from '../src/lib/logs.ts';
 
 const pod = {
@@ -179,5 +180,13 @@ describe('follow helpers', () => {
         expect(shortTimestamp('2024-05-01T12:00:00.123456789Z')).toBe('2024-05-01 12:00:00.123');
         expect(shortTimestamp('2024-05-01T12:00:00Z')).toBe('2024-05-01 12:00:00');
         expect(shortTimestamp('weird')).toBe('weird');
+    });
+    it('follow items cover the tail regardless of scroll offset', () => {
+        const items = followItems(1000, 612, 18, 26, 12);
+        expect(items).toHaveLength(Math.ceil(612 / 18) + 1 + 12);
+        expect(items.at(-1)).toEqual({ index: 999, start: 26 + 999 * 18 });
+        expect(items[0]!.index).toBe(1000 - items.length);
+        expect(followItems(5, 612, 18, 0, 12).map(i => i.index)).toEqual([0, 1, 2, 3, 4]);
+        expect(followItems(0, 612, 18, 0)).toEqual([]);
     });
 });
