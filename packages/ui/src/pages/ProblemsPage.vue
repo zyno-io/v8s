@@ -77,6 +77,7 @@ const groupDisabled = computed(() => view.aggregateActive.value);
                     {{ s.label }}
                 </button>
             </div>
+            <ProblemsPresets :classes="view.classes.value?.classes ?? []" @changed="view.reloadClasses()" />
             <label class="sel opt">
                 <span class="sr-only">Group by</span>
                 <select v-model="store.groupBy" class="btn" :disabled="groupDisabled" aria-label="Group by" data-testid="group-by">

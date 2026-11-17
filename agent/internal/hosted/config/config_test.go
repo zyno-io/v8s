@@ -118,3 +118,14 @@ func TestPublicURLNormalized(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterAppSameAsLoginNeedsNoCredential(t *testing.T) {
+	same := strings.Replace(good, "clusterApp:\n  clientId: k8s\n  privateKey: {file: /etc/v8s/cluster-app.key}\n  certificate: {file: /etc/v8s/cluster-app.crt}\n", "clusterApp:\n  clientId: v8s\n", 1)
+	if _, err := Parse([]byte(same)); err != nil {
+		t.Fatalf("same-app clusterApp without a credential should be valid: %v", err)
+	}
+	other := strings.Replace(same, "clusterApp:\n  clientId: v8s\n", "clusterApp:\n  clientId: k8s\n", 1)
+	if _, err := Parse([]byte(other)); err == nil {
+		t.Fatal("a different clusterApp without a credential must be rejected")
+	}
+}

@@ -310,6 +310,16 @@ jobs:
           subject-name: ghcr.io/zyno-io/v8s
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+      # The Helm chart is published as an OCI artifact next to the image (helm is preinstalled on ubuntu runners).
+      - name: Package and push the Helm chart
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          helm package charts/v8s --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP/chart"
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/chart/v8s-${VERSION}.tgz" oci://ghcr.io/zyno-io/charts
 
   publish:
     needs: [meta, cli, desktop, container]

@@ -262,6 +262,9 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 		}
 		hooks.OnOK = func() {
 			w.setErr(nil)
+			if r.pe != nil {
+				r.pe.SetUnavailable(problems.GR(gvr), "")
+			}
 			if r.phase.Load() == protocol.PhaseConnecting {
 				r.setPhase(protocol.PhaseSyncing, "")
 			}

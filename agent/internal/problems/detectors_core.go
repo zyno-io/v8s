@@ -36,6 +36,7 @@ func init() {
 		Evaluate: func(c *Ctx, k Key, r *ingest.Row) []Draft {
 			f := workloadFacts(r)
 			if f == nil || f.Desired <= 0 || f.Available >= f.Desired || f.Paused {
+				c.ClearProgress(k) // healthy: the next rollout starts from scratch, not from the last one's counts
 				return nil
 			}
 			sub := c.SubjectOf(k.GR, r)

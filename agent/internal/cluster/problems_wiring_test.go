@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 // A kind that a user opened on demand becomes baseline when a problem class needs it: it must not linger out
@@ -87,6 +91,79 @@ func TestForbiddenBaselineKindIsReportedUnavailable(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// flakyPods is forbidden until allow is set, then the real pods API.
+type flakyPodsBackend struct {
+	kube.Backend
+	allow *atomic.Bool
+}
+
+type flakyAPI struct {
+	ingest.API
+	allow *atomic.Bool
+}
+
+func (a flakyAPI) List(ctx context.Context, o metav1.ListOptions) (runtime.Object, error) {
+	if !a.allow.Load() {
+		return forbiddenAPI{}.List(ctx, o)
+	}
+	return a.API.List(ctx, o)
+}
+
+func (a flakyAPI) Watch(ctx context.Context, o metav1.ListOptions) (watch.Interface, error) {
+	if !a.allow.Load() {
+		return forbiddenAPI{}.Watch(ctx, o)
+	}
+	return a.API.Watch(ctx, o)
+}
+
+func (b flakyPodsBackend) API(gvr string, m *ingest.Module) (ingest.API, error) {
+	a, err := b.Backend.API(gvr, m)
+	if err != nil || gvr != ingest.PodsGVR {
+		return a, err
+	}
+	return flakyAPI{a, b.allow}, nil
+}
+
+type flakyPodsSource struct {
+	*fake.Source
+	allow *atomic.Bool
+}
+
+func (s flakyPodsSource) Backend(id string) (Backend, error) {
+	b, err := s.Source.Backend(id)
+	if err != nil {
+		return nil, err
+	}
+	return flakyPodsBackend{b, s.allow}, nil
+}
+
+// The pods watch recovering clears its unavailable warning (it has its own OnOK hook).
+func TestPodsUnavailableClearsWhenWatchRecovers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub := problems.NewHub(problems.HubConfig{Settings: func() protocol.Settings {
+		return protocol.Settings{ProblemPrefs: map[string]any{}, Acks: map[string]any{}}
+	}})
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	allow := &atomic.Bool{}
+	m := NewManager(ctx, flakyPodsSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 5}), allow}, eng, nil)
+	defer m.Close()
+	m.SetProblems(hub)
+	_, _ = m.Select([]string{"prod-us"})
+	has := func() bool {
+		for _, u := range hub.Classes().Unavailable {
+			if u.Cluster == "prod-us" && u.Kind == "pods" {
+				return true
+			}
+		}
+		return false
+	}
+	waitFor(t, "pods reported unavailable", has)
+	allow.Store(true)
+	waitFor(t, "pods warning cleared", func() bool { return !has() })
 }
 
 func TestUnavailableReason(t *testing.T) {

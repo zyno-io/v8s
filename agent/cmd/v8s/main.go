@@ -39,6 +39,9 @@ func main() {
 		if err == errUsage {
 			os.Exit(2)
 		}
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, "v8s:", err)
 		os.Exit(1)
 	}

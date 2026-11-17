@@ -595,7 +595,7 @@ func (e *Engine) applyContrib(ck ckey, drafts []Draft, immediate bool, now time.
 		}
 		if p := e.probs[id]; p != nil {
 			delete(p.members, ck)
-			e.touch(id, immediate)
+			e.touch(id, immediate && e.subjectGone(p, ck))
 		}
 	}
 	for id, m := range seen {
@@ -623,6 +623,23 @@ func ownerOr(d Draft) Subject {
 
 func (e *Engine) heapPushAckExpiry(id string, at time.Time) {
 	heap.Push(&e.heap, deadline{at: at, kind: dlPID, pid: id})
+}
+
+// subjectGone reports whether a vanished member key means the problem's own subject went away (as opposed to
+// a member such as one pod of a rolled workload): only then may the acknowledgement outlive the problem.
+func (e *Engine) subjectGone(p *pstate, ck ckey) bool {
+	if p.pub == nil {
+		return true
+	}
+	sub := p.pub.sub
+	gr := GR(sub.GVR)
+	if ck.k.GR == gr && ck.k.NS == sub.NS && ck.k.Name == sub.Name {
+		return true
+	}
+	if t := e.tables[gr]; t != nil && t.rows[nk{sub.NS, sub.Name}] == nil {
+		return true
+	}
+	return false
 }
 
 func (e *Engine) touch(id string, immediate bool) { e.touched[id] = e.touched[id] || immediate }

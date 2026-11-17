@@ -99,11 +99,11 @@ func evalCert(c *problems.Ctx, k problems.Key, r *ingest.Row) []problems.Draft {
 			title = fmt.Sprintf("Certificate %s expired %s ago", sub.Name, days(-left))
 		}
 		// begins when the window opens (a deadline wakes the key then); it is evaluated again where the severity
-		// or the wording changes: urgent, the last day, expiry
+		// or the wording changes: urgent, the last day, expiry; and daily, since the title counts days (also after expiry)
 		na := time.UnixMilli(f.NotAfter)
 		out = append(out, problems.Draft{Subject: sub, Disc: "expiring", Severity: sev, Title: title, Message: "notAfter " + na.UTC().Format(time.RFC3339),
 			Since: f.NotAfter - ExpiryWindow.Milliseconds(), Grace: time.Nanosecond,
-			Wake: []time.Time{na.Add(-UrgentWindow), na.Add(-24 * time.Hour), na}})
+			Wake: []time.Time{na.Add(-UrgentWindow), na.Add(-24 * time.Hour), na, now.Add(24 * time.Hour)}})
 	}
 	return out
 }

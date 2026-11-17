@@ -349,8 +349,12 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("clusterApp.issuer: %w", err)
 			}
 		}
-		if err := checkAuth("clusterApp", ca.ClientSecret, ca.PrivateKey); err != nil {
-			return err
+		// The same app as login reuses the login tokens, so it needs no credential of its own.
+		sameApp := ca.ClientID == c.OIDC.ClientID && (ca.Issuer == "" || ca.Issuer == c.OIDC.Issuer)
+		if !sameApp {
+			if err := checkAuth("clusterApp", ca.ClientSecret, ca.PrivateKey); err != nil {
+				return err
+			}
 		}
 	} else if passthrough {
 		return errors.New("clusterApp is required when a cluster uses oidc-passthrough")

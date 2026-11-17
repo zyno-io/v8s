@@ -229,3 +229,30 @@ func TestCertExpiryDeadlines(t *testing.T) {
 		t.Fatalf("expired title not refreshed: %+v", p)
 	}
 }
+
+// The title counts days, so it is re-rendered every day inside the window and after expiry, without any event.
+func TestCertTitleRefreshesDaily(t *testing.T) {
+	h := ptest.New(t, gvrCert)
+	h.Put(gvrCert, rowOf(t, decodeCert, certJSON("c", "True", h.Clk.Now().Add(13*24*time.Hour+12*time.Hour))))
+	h.Pass()
+	title := func() string {
+		t.Helper()
+		ps := h.ByClass("cert.expiring")
+		if len(ps) != 1 {
+			t.Fatalf("%+v", ps)
+		}
+		return ps[0].Title
+	}
+	day := 0
+	for _, tc := range []struct {
+		day  int
+		want string
+	}{{0, "expires in 13 days"}, {1, "expires in 12 days"}, {2, "expires in 11 days"}, {7, "expires in 6 days"}, {17, "expired 3 days ago"}, {20, "expired 6 days ago"}} {
+		for ; day < tc.day; day++ {
+			h.Advance(24 * time.Hour)
+		}
+		if got := title(); !strings.Contains(got, tc.want) {
+			t.Fatalf("day %d: title %q, want %q", tc.day, got, tc.want)
+		}
+	}
+}

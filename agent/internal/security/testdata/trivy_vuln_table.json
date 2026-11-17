@@ -1,171 +1,160 @@
 {
- "kind": "Table",
- "apiVersion": "meta.k8s.io/v1",
- "metadata": {
-  "resourceVersion": "54490",
-  "continue": "eyJ2IjoibWV0YS5rOHMuaW8vdjEiLCJydiI6NTQ0OTAsInN0YXJ0IjoiL3JlcGxpY2FzZXQtaW1hZ2UtYXV0b21hdGlvbi1jb250cm9sbGVyLTg2Y2RjNzc1Yi1tYW5hZ2VyXHUwMDAwIn0",
-  "remainingItemCount": 4
- },
- "columnDefinitions": [
-  {
-   "name": "Name",
-   "type": "string",
-   "format": "name",
-   "description": "Name must be unique within a namespace. Is required when creating resources, although some resources may allow a client to request the generation of an appropriate name automatically. Name is primarily intended for creation idempotence and configuration definition. Cannot be updated. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names",
-   "priority": 0
-  },
-  {
-   "name": "Repository",
-   "type": "string",
-   "format": "",
-   "description": "The name of image repository",
-   "priority": 0
-  },
-  {
-   "name": "Tag",
-   "type": "string",
-   "format": "",
-   "description": "The name of image tag",
-   "priority": 0
-  },
-  {
-   "name": "Scanner",
-   "type": "string",
-   "format": "",
-   "description": "The name of the vulnerability scanner",
-   "priority": 0
-  },
-  {
-   "name": "Age",
-   "type": "date",
-   "format": "",
-   "description": "The age of the report",
-   "priority": 0
-  },
-  {
-   "name": "Critical",
-   "type": "integer",
-   "format": "",
-   "description": "The number of critical vulnerabilities",
-   "priority": 1
-  },
-  {
-   "name": "High",
-   "type": "integer",
-   "format": "",
-   "description": "The number of high vulnerabilities",
-   "priority": 1
-  },
-  {
-   "name": "Medium",
-   "type": "integer",
-   "format": "",
-   "description": "The number of medium vulnerabilities",
-   "priority": 1
-  },
-  {
-   "name": "Low",
-   "type": "integer",
-   "format": "",
-   "description": "The number of low vulnerabilities",
-   "priority": 1
-  },
-  {
-   "name": "Unknown",
-   "type": "integer",
-   "format": "",
-   "description": "The number of unknown vulnerabilities",
-   "priority": 1
-  }
- ],
- "rows": [
-  {
-   "cells": [
-    "replicaset-helm-controller-cb469dbfb-manager",
-    "fluxcd/helm-controller",
-    "v1.4.3",
-    "Trivy",
-    "142m",
-    4,
-    31,
-    16,
-    4,
-    164
-   ],
-   "object": {
-    "kind": "PartialObjectMetadata",
+    "kind": "Table",
     "apiVersion": "meta.k8s.io/v1",
     "metadata": {
-     "name": "replicaset-helm-controller-cb469dbfb-manager",
-     "namespace": "flux-system",
-     "uid": "a01a0b2c-5389-46e2-b952-689601ddfcf6",
-     "resourceVersion": "5552",
-     "generation": 1,
-     "creationTimestamp": "2026-11-17T08:21:00Z",
-     "labels": {
-      "app.kubernetes.io/managed-by": "trivy-operator",
-      "resource-spec-hash": "56bc9587db",
-      "trivy-operator.container.name": "manager",
-      "trivy-operator.resource.kind": "ReplicaSet",
-      "trivy-operator.resource.name": "helm-controller-cb469dbfb",
-      "trivy-operator.resource.namespace": "flux-system"
-     },
-     "ownerReferences": [
-      {
-       "apiVersion": "apps/v1",
-       "kind": "ReplicaSet",
-       "name": "helm-controller-cb469dbfb",
-       "uid": "97d3bc6d-eabf-4d52-8ddc-a1b9151b7969",
-       "controller": true,
-       "blockOwnerDeletion": false
-      }
-     ]
-    }
-   }
-  },
-  {
-   "cells": [
-    "replicaset-image-automation-controller-86cdc775b-manager",
-    "fluxcd/image-automation-controller",
-    "v1.0.3",
-    "Trivy",
-    "135m",
-    4,
-    27,
-    13,
-    6,
-    164
-   ],
-   "object": {
-    "kind": "PartialObjectMetadata",
-    "apiVersion": "meta.k8s.io/v1",
-    "metadata": {
-     "name": "replicaset-image-automation-controller-86cdc775b-manager",
-     "namespace": "flux-system",
-     "uid": "9ff55d99-28b8-4653-a774-a11cf75fe4bb",
-     "resourceVersion": "8048",
-     "generation": 1,
-     "creationTimestamp": "2026-11-17T08:28:06Z",
-     "labels": {
-      "app.kubernetes.io/managed-by": "trivy-operator",
-      "resource-spec-hash": "64487d665b",
-      "trivy-operator.container.name": "manager",
-      "trivy-operator.resource.kind": "ReplicaSet",
-      "trivy-operator.resource.name": "image-automation-controller-86cdc775b",
-      "trivy-operator.resource.namespace": "flux-system"
-     },
-     "ownerReferences": [
-      {
-       "apiVersion": "apps/v1",
-       "kind": "ReplicaSet",
-       "name": "image-automation-controller-86cdc775b",
-       "uid": "9376239e-75c6-47d5-91c2-24e0d642d11d",
-       "controller": true,
-       "blockOwnerDeletion": false
-      }
-     ]
-    }
-   }
-  }
- ]
+        "resourceVersion": "54490",
+        "continue": "eyJ2IjoibWV0YS5rOHMuaW8vdjEiLCJydiI6NTQ0OTAsInN0YXJ0IjoiL3JlcGxpY2FzZXQtaW1hZ2UtYXV0b21hdGlvbi1jb250cm9sbGVyLTg2Y2RjNzc1Yi1tYW5hZ2VyXHUwMDAwIn0",
+        "remainingItemCount": 4
+    },
+    "columnDefinitions": [
+        {
+            "name": "Name",
+            "type": "string",
+            "format": "name",
+            "description": "Name must be unique within a namespace. Is required when creating resources, although some resources may allow a client to request the generation of an appropriate name automatically. Name is primarily intended for creation idempotence and configuration definition. Cannot be updated. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names",
+            "priority": 0
+        },
+        {
+            "name": "Repository",
+            "type": "string",
+            "format": "",
+            "description": "The name of image repository",
+            "priority": 0
+        },
+        {
+            "name": "Tag",
+            "type": "string",
+            "format": "",
+            "description": "The name of image tag",
+            "priority": 0
+        },
+        {
+            "name": "Scanner",
+            "type": "string",
+            "format": "",
+            "description": "The name of the vulnerability scanner",
+            "priority": 0
+        },
+        {
+            "name": "Age",
+            "type": "date",
+            "format": "",
+            "description": "The age of the report",
+            "priority": 0
+        },
+        {
+            "name": "Critical",
+            "type": "integer",
+            "format": "",
+            "description": "The number of critical vulnerabilities",
+            "priority": 1
+        },
+        {
+            "name": "High",
+            "type": "integer",
+            "format": "",
+            "description": "The number of high vulnerabilities",
+            "priority": 1
+        },
+        {
+            "name": "Medium",
+            "type": "integer",
+            "format": "",
+            "description": "The number of medium vulnerabilities",
+            "priority": 1
+        },
+        {
+            "name": "Low",
+            "type": "integer",
+            "format": "",
+            "description": "The number of low vulnerabilities",
+            "priority": 1
+        },
+        {
+            "name": "Unknown",
+            "type": "integer",
+            "format": "",
+            "description": "The number of unknown vulnerabilities",
+            "priority": 1
+        }
+    ],
+    "rows": [
+        {
+            "cells": ["replicaset-helm-controller-cb469dbfb-manager", "fluxcd/helm-controller", "v1.4.3", "Trivy", "142m", 4, 31, 16, 4, 164],
+            "object": {
+                "kind": "PartialObjectMetadata",
+                "apiVersion": "meta.k8s.io/v1",
+                "metadata": {
+                    "name": "replicaset-helm-controller-cb469dbfb-manager",
+                    "namespace": "flux-system",
+                    "uid": "a01a0b2c-5389-46e2-b952-689601ddfcf6",
+                    "resourceVersion": "5552",
+                    "generation": 1,
+                    "creationTimestamp": "2026-11-17T08:21:00Z",
+                    "labels": {
+                        "app.kubernetes.io/managed-by": "trivy-operator",
+                        "resource-spec-hash": "56bc9587db",
+                        "trivy-operator.container.name": "manager",
+                        "trivy-operator.resource.kind": "ReplicaSet",
+                        "trivy-operator.resource.name": "helm-controller-cb469dbfb",
+                        "trivy-operator.resource.namespace": "flux-system"
+                    },
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "kind": "ReplicaSet",
+                            "name": "helm-controller-cb469dbfb",
+                            "uid": "97d3bc6d-eabf-4d52-8ddc-a1b9151b7969",
+                            "controller": true,
+                            "blockOwnerDeletion": false
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "cells": [
+                "replicaset-image-automation-controller-86cdc775b-manager",
+                "fluxcd/image-automation-controller",
+                "v1.0.3",
+                "Trivy",
+                "135m",
+                4,
+                27,
+                13,
+                6,
+                164
+            ],
+            "object": {
+                "kind": "PartialObjectMetadata",
+                "apiVersion": "meta.k8s.io/v1",
+                "metadata": {
+                    "name": "replicaset-image-automation-controller-86cdc775b-manager",
+                    "namespace": "flux-system",
+                    "uid": "9ff55d99-28b8-4653-a774-a11cf75fe4bb",
+                    "resourceVersion": "8048",
+                    "generation": 1,
+                    "creationTimestamp": "2026-11-17T08:28:06Z",
+                    "labels": {
+                        "app.kubernetes.io/managed-by": "trivy-operator",
+                        "resource-spec-hash": "64487d665b",
+                        "trivy-operator.container.name": "manager",
+                        "trivy-operator.resource.kind": "ReplicaSet",
+                        "trivy-operator.resource.name": "image-automation-controller-86cdc775b",
+                        "trivy-operator.resource.namespace": "flux-system"
+                    },
+                    "ownerReferences": [
+                        {
+                            "apiVersion": "apps/v1",
+                            "kind": "ReplicaSet",
+                            "name": "image-automation-controller-86cdc775b",
+                            "uid": "9376239e-75c6-47d5-91c2-24e0d642d11d",
+                            "controller": true,
+                            "blockOwnerDeletion": false
+                        }
+                    ]
+                }
+            }
+        }
+    ]
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,7 +31,8 @@ type Store struct {
 	cur protocol.Settings
 
 	cbMu sync.RWMutex
-	cbs  []func(protocol.Settings)
+	cbs  map[uint64]func(protocol.Settings)
+	cbID uint64
 }
 
 // DefaultPath returns os.UserConfigDir()/v8s/settings.json.
@@ -139,11 +141,28 @@ func (s *Store) Get() protocol.Settings {
 	return clone(s.cur)
 }
 
-// OnChange registers fn, called (outside the lock) after each successful Patch.
-func (s *Store) OnChange(fn func(protocol.Settings)) {
+// OnChange registers fn, called (outside the lock) after each successful Patch. The returned func removes it.
+func (s *Store) OnChange(fn func(protocol.Settings)) (unsubscribe func()) {
 	s.cbMu.Lock()
-	s.cbs = append(s.cbs, fn)
+	if s.cbs == nil {
+		s.cbs = map[uint64]func(protocol.Settings){}
+	}
+	s.cbID++
+	id := s.cbID
+	s.cbs[id] = fn
 	s.cbMu.Unlock()
+	return func() {
+		s.cbMu.Lock()
+		delete(s.cbs, id)
+		s.cbMu.Unlock()
+	}
+}
+
+// Listeners returns the number of registered OnChange callbacks.
+func (s *Store) Listeners() int {
+	s.cbMu.RLock()
+	defer s.cbMu.RUnlock()
+	return len(s.cbs)
 }
 
 // Patch applies an RFC 7386 merge patch, validates, persists atomically, and returns the new document.
@@ -196,7 +215,15 @@ func (s *Store) Patch(patch map[string]any) (protocol.Settings, error) {
 	s.mu.Unlock()
 
 	s.cbMu.RLock()
-	cbs := append([]func(protocol.Settings){}, s.cbs...)
+	ids := make([]uint64, 0, len(s.cbs))
+	for id := range s.cbs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids) // registration order
+	cbs := make([]func(protocol.Settings), len(ids))
+	for i, id := range ids {
+		cbs[i] = s.cbs[id]
+	}
 	s.cbMu.RUnlock()
 	for _, fn := range cbs {
 		fn(clone(out))
