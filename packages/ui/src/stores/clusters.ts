@@ -3,7 +3,9 @@ import type { Cluster, ClusterState } from '@v8s/client';
 import { defineStore } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 
-import { getAgent } from '@/lib/agent.ts';
+import { getAgent, refreshKinds } from '@/lib/agent.ts';
+import { isProductionCluster } from '@/lib/settings.ts';
+import { useSettingsStore } from '@/stores/settings.ts';
 
 export const useClustersStore = defineStore('clusters', () => {
     const list = shallowRef<Cluster[]>([]);
@@ -26,10 +28,21 @@ export const useClustersStore = defineStore('clusters', () => {
     const stateById = computed(() => new Map(states.value.map(s => [s.id, s])));
     const activeIds = computed(() => states.value.map(s => s.id));
     const nameById = computed(() => new Map(list.value.map(c => [c.id, c.name])));
+    const byId = computed(() => new Map(list.value.map(c => [c.id, c])));
 
-    async function load() {
+    const groupsOf = (id: string): readonly string[] => byId.value.get(id)?.groups ?? [];
+    const writeContextOf = (id: string): string => byId.value.get(id)?.writeContext ?? '';
+    const isProduction = (id: string): boolean => isProductionCluster(groupsOf(id), useSettingsStore().productionGroups);
+
+    /** Re-reads the list (groups and linked write contexts come from settings, so call this after changing them). */
+    async function refreshList() {
         const res = await getAgent().listClusters();
         list.value = res.clusters ?? [];
+        return res;
+    }
+
+    async function load() {
+        const res = await refreshList();
         remembered.value = res.selected ?? [];
         checked.value = new Set(remembered.value);
         loaded.value = true;
@@ -62,6 +75,7 @@ export const useClustersStore = defineStore('clusters', () => {
         try {
             await getAgent().selectClusters(ids);
             remembered.value = ids;
+            refreshKinds(0);
             focusAfterClose = 'table';
             popoverOpen.value = false;
         } catch (e) {
@@ -83,6 +97,11 @@ export const useClustersStore = defineStore('clusters', () => {
         stateById,
         activeIds,
         nameById,
+        byId,
+        groupsOf,
+        writeContextOf,
+        isProduction,
+        refreshList,
         takeFocusTarget,
         load,
         open,

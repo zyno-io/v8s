@@ -2,8 +2,19 @@ import type { ShallowRef } from 'vue';
 
 import { markRaw, shallowRef } from 'vue';
 
-import type { ClustersListResult, ClusterStates, KindsListResult } from './protocol.gen.ts';
-import type { AgentEndpoint, ClusterState, Column, ConnectionStatus, MainToWorker, Row, ViewQuery, Window, WorkerToMain } from './types.ts';
+import type { ClustersListResult, ClusterStates, ErrorBody, KindsListResult, ObjectPayload, ObjectRef } from './protocol.gen.ts';
+import type {
+    AgentEndpoint,
+    ClusterState,
+    Column,
+    ConnectionStatus,
+    MainToWorker,
+    ObjectFrameWire,
+    Row,
+    ViewQuery,
+    Window,
+    WorkerToMain
+} from './types.ts';
 
 export interface ViewHandle {
     readonly qid: number;
@@ -26,6 +37,12 @@ export interface ViewHandle {
     close(): void;
 }
 
+/** A live single-object subscription (`object.subscribe`); frames arrive on `onFrame` until `close()`. */
+export interface ObjectSubscription {
+    readonly oid: number;
+    close(): void;
+}
+
 export interface Agent {
     readonly status: ShallowRef<ConnectionStatus>;
     readonly statusMessage: ShallowRef<string>;
@@ -34,6 +51,10 @@ export interface Agent {
     listClusters(): Promise<ClustersListResult>;
     selectClusters(ids: string[]): Promise<ClusterStates>;
     listKinds(): Promise<KindsListResult>;
+    /** Any request/response method (`object.get`, `settings.set`, …). Rejects with RpcError. */
+    call<T = unknown>(method: string, params?: unknown): Promise<T>;
+    /** Subscribes to one object. The promise resolves once the agent accepted the subscription. */
+    subscribeObject(ref: ObjectRef, onFrame: (frame: ObjectFrameWire) => void): Promise<ObjectSubscription>;
     subscribeView(query: ViewQuery, window: Window): ViewHandle;
     close(): void;
 }
@@ -53,14 +74,18 @@ function defaultWorker(): WorkerLike {
     return new Worker(new URL('./worker/data.worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike;
 }
 
-class RpcError extends Error {
+export class RpcError extends Error {
     constructor(
         readonly code: string,
-        message: string
+        message: string,
+        /** `conflict` errors carry the live object. */
+        readonly live?: ObjectPayload
     ) {
         super(message);
     }
 }
+
+export type { ErrorBody };
 
 /** Opens the data worker and the socket. Resolves once the agent's Hello has been accepted. */
 export function connectAgent(opts: ConnectOptions): Promise<Agent> {
@@ -71,8 +96,10 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
     const clusterStates = shallowRef<ClusterState[]>([]);
     const calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
     const views = new Map<number, InternalView>();
+    const objects = new Map<number, (frame: ObjectFrameWire) => void>();
     let nextRid = 1;
     let nextQid = 1;
+    let nextOid = 1;
 
     interface InternalView extends ViewHandle {
         gen: number;
@@ -103,12 +130,15 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 const c = calls.get(m.rid);
                 if (!c) break;
                 calls.delete(m.rid);
-                if (m.error) c.reject(new RpcError(m.error.code, m.error.message));
+                if (m.error) c.reject(new RpcError(m.error.code, m.error.message, m.error.live));
                 else c.resolve(m.result);
                 break;
             }
             case 'clusterStates':
                 clusterStates.value = m.states;
+                break;
+            case 'object':
+                objects.get(m.oid)?.(m.frame);
                 break;
             case 'columns': {
                 const v = views.get(m.qid);
@@ -167,6 +197,24 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             return res;
         },
         listKinds: () => call('kinds.list'),
+        call,
+        async subscribeObject(ref, onFrame) {
+            const oid = nextOid++;
+            objects.set(oid, onFrame);
+            try {
+                await call('object.subscribe', { oid, ref });
+            } catch (e) {
+                objects.delete(oid);
+                throw e;
+            }
+            return {
+                oid,
+                close() {
+                    if (!objects.delete(oid)) return;
+                    call('object.unsubscribe', { oid }).catch(() => {});
+                }
+            };
+        },
         subscribeView(query, window) {
             const qid = nextQid++;
             const handle: InternalView = markRaw({

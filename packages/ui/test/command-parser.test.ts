@@ -7,10 +7,54 @@ import { matchScore, rank } from '../src/lib/fuzzy.ts';
 
 const ctx: CommandContext = {
     kinds: [
-        { gvr: 'v1/pods', kind: 'Pod', plural: 'pods', shortNames: ['po'], namespaced: true, available: true, group: '', version: 'v1', curated: true, clusters: [] },
-        { gvr: 'apps/v1/deployments', kind: 'Deployment', plural: 'deployments', shortNames: ['deploy'], namespaced: true, available: false, group: '', version: 'v1', curated: true, clusters: [] },
-        { gvr: 'v1/nodes', kind: 'Node', plural: 'nodes', shortNames: ['no'], namespaced: false, available: false, group: '', version: 'v1', curated: true, clusters: [] },
-        { gvr: 'v1/services', kind: 'Service', plural: 'services', shortNames: ['svc'], namespaced: true, available: false, group: '', version: 'v1', curated: true, clusters: [] }
+        {
+            gvr: 'v1/pods',
+            kind: 'Pod',
+            plural: 'pods',
+            shortNames: ['po'],
+            namespaced: true,
+            available: true,
+            group: '',
+            version: 'v1',
+            curated: true,
+            clusters: []
+        },
+        {
+            gvr: 'apps/v1/deployments',
+            kind: 'Deployment',
+            plural: 'deployments',
+            shortNames: ['deploy'],
+            namespaced: true,
+            available: false,
+            group: '',
+            version: 'v1',
+            curated: true,
+            clusters: []
+        },
+        {
+            gvr: 'v1/nodes',
+            kind: 'Node',
+            plural: 'nodes',
+            shortNames: ['no'],
+            namespaced: false,
+            available: false,
+            group: '',
+            version: 'v1',
+            curated: true,
+            clusters: []
+        },
+        {
+            gvr: 'v1/services',
+            kind: 'Service',
+            plural: 'services',
+            shortNames: ['svc'],
+            namespaced: true,
+            available: false,
+            group: '',
+            version: 'v1',
+            curated: true,
+            clusters: []
+        }
     ],
     namespaces: ['payments', 'search', 'kube-system'],
     clusters: [
@@ -74,7 +118,18 @@ describe('parseCommand', () => {
                 ...ctx,
                 kinds: [
                     ...ctx.kinds,
-                    { gvr: 'v1/pv', kind: 'PersistentVolume', plural: 'persistentvolumes', shortNames: ['pv'], namespaced: false, available: false, group: '', version: 'v1', curated: true, clusters: [] }
+                    {
+                        gvr: 'v1/pv',
+                        kind: 'PersistentVolume',
+                        plural: 'persistentvolumes',
+                        shortNames: ['pv'],
+                        namespaced: false,
+                        available: false,
+                        group: '',
+                        version: 'v1',
+                        curated: true,
+                        clusters: []
+                    }
                 ]
             }.kinds
         );
@@ -89,9 +144,18 @@ describe('parseCommand', () => {
         expect(parseCommand('problems', ctx)).toEqual({ type: 'problems' });
     });
 
-    it('rejects a namespace on cluster-scoped kinds', () => {
-        const nodes = { ...ctx, kinds: ctx.kinds.map(k => (k.plural === 'nodes' ? { ...k, available: true, group: '', version: 'v1', curated: true, clusters: [] } : k)) };
-        expect(parseCommand('nodes x', nodes).type).toBe('error');
+    it('parses star and unstar', () => {
+        expect(parseCommand('star', ctx)).toEqual({ type: 'star', on: true });
+        expect(parseCommand('unstar', ctx)).toEqual({ type: 'star', on: false });
+    });
+
+    it('treats an argument on cluster-scoped kinds as an object name', () => {
+        const nodes = {
+            ...ctx,
+            kinds: ctx.kinds.map(k => (k.plural === 'nodes' ? { ...k, available: true, group: '', version: 'v1', curated: true, clusters: [] } : k))
+        };
+        expect(parseCommand('nodes x', nodes)).toEqual({ type: 'open-kind', gvr: 'v1/nodes', plural: 'nodes', name: 'x' });
+        expect(complete('nodes ', nodes)).toEqual([]);
         expect(parseCommand('nodes', nodes)).toMatchObject({ type: 'open-kind', gvr: 'v1/nodes' });
     });
 });
@@ -99,7 +163,7 @@ describe('parseCommand', () => {
 describe('complete', () => {
     it('lists commands and kinds for an empty input', () => {
         const labels = complete('', ctx, 50).map(c => c.label);
-        expect(labels).toEqual(expect.arrayContaining(['ctx', 'ns', 'pb', 'q', 'pods', 'po', 'deploy']));
+        expect(labels).toEqual(expect.arrayContaining(['ctx', 'ns', 'pb', 'q', 'star', 'unstar', 'pods', 'po', 'deploy']));
     });
 
     it('ranks prefix matches before fuzzy matches', () => {

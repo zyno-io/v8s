@@ -13,6 +13,7 @@ export const kinds = shallowRef<Kind[]>([]);
 
 let agent: Agent | null = null;
 let podsAll: ViewHandle | null = null;
+let namespacesView: ViewHandle | null = null;
 
 export function getAgent(): Agent {
     if (!agent) throw new Error('agent not connected');
@@ -25,6 +26,35 @@ export function getPodsAll(): ViewHandle {
     return podsAll;
 }
 
+/**
+ * The `v1/namespaces` view, held for the app's lifetime (tier-0 data: a few dozen rows per cluster). Namespace filters,
+ * the command bar and the create dialog read names from it instead of scanning another view's rows.
+ */
+export function getNamespacesView(): ViewHandle {
+    if (!namespacesView) throw new Error('agent not connected');
+    return namespacesView;
+}
+
+let kindsTimer: ReturnType<typeof setTimeout> | undefined;
+/** Re-reads `kinds.list` (debounced): selection changes and a cluster finishing discovery both change the union. */
+export function refreshKinds(delay = 250): void {
+    clearTimeout(kindsTimer);
+    kindsTimer = setTimeout(async () => {
+        try {
+            const next = (await agent?.listKinds())?.kinds ?? [];
+            if (kindsSignature(next) !== kindsSignature(kinds.value)) kinds.value = next;
+        } catch {
+            // keep the previous list
+        }
+    }, delay);
+}
+
+function kindsSignature(list: readonly Kind[]): string {
+    let h = list.length + ':';
+    for (const k of list) h += k.gvr + (k.available ? '+' : '-') + k.clusters.length + ',';
+    return h;
+}
+
 export async function startAgent(): Promise<void> {
     bootState.value = 'booting';
     const ep = await resolveEndpoint();
@@ -35,11 +65,12 @@ export async function startAgent(): Promise<void> {
     try {
         agent = await connectAgent(ep);
         podsAll = agent.subscribeView({ clusters: [], gvr: 'v1/pods', namespaces: [], text: '', filters: [], sort: [] }, { offset: 0, limit: 1 });
+        namespacesView = agent.subscribeView(
+            { clusters: [], gvr: 'v1/namespaces', namespaces: [], text: '', filters: [], sort: [{ col: 'name', desc: false }] },
+            { offset: 0, limit: 500 }
+        );
         bootState.value = 'ready';
-        agent
-            .listKinds()
-            .then(r => (kinds.value = r.kinds))
-            .catch(() => {});
+        refreshKinds(0);
     } catch (err) {
         bootMessage.value = err instanceof Error ? err.message : String(err);
         bootState.value = 'error';

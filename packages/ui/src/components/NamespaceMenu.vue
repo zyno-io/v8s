@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { ViewHandle } from '@v8s/client';
-
 import { computed, nextTick, ref } from 'vue';
 
-import { collectNamespaces } from '@/lib/active-view.ts';
-import { usePodsStore } from '@/stores/pods.ts';
+import { getNamespacesView } from '@/lib/agent.ts';
+import { namespaceNames } from '@/lib/namespaces.ts';
+import { useTableStore } from '@/stores/table.ts';
 
-const props = defineProps<{ handle: ViewHandle }>();
-const pods = usePodsStore();
+const props = defineProps<{ gvr: string }>();
+const table = useTableStore();
+const ui = computed(() => table.of(props.gvr));
 
 const open = ref(false);
 const q = ref('');
@@ -16,7 +16,7 @@ const searchEl = ref<HTMLInputElement | null>(null);
 const btnEl = ref<HTMLButtonElement | null>(null);
 
 const label = computed(() => {
-    const n = pods.namespaces;
+    const n = ui.value.namespaces;
     return n.length === 0 ? 'all' : n.length === 1 ? n[0] : `${n.length} selected`;
 });
 const shown = computed(() => {
@@ -27,8 +27,8 @@ const shown = computed(() => {
 async function toggleMenu() {
     open.value = !open.value;
     if (open.value) {
-        // Scan the held window once per open; the list is a convenience, the agent filter is authoritative.
-        all.value = collectNamespaces(props.handle, pods.namespaces);
+        // Read the namespaces view once per open; the list is a convenience, the agent filter is authoritative.
+        all.value = namespaceNames(getNamespacesView(), ui.value.namespaces);
         q.value = '';
         await nextTick();
         searchEl.value?.focus();
@@ -39,7 +39,8 @@ function close() {
     btnEl.value?.focus();
 }
 function toggle(ns: string) {
-    pods.namespaces = pods.namespaces.includes(ns) ? pods.namespaces.filter(x => x !== ns) : [...pods.namespaces, ns];
+    const cur = ui.value.namespaces;
+    ui.value.namespaces = cur.includes(ns) ? cur.filter(x => x !== ns) : [...cur, ns];
 }
 </script>
 
@@ -60,13 +61,13 @@ function toggle(ns: string) {
                 <ul>
                     <li v-for="ns in shown" :key="ns">
                         <label class="opt"
-                            ><input class="cb" type="checkbox" :checked="pods.namespaces.includes(ns)" @change="toggle(ns)" />{{ ns }}</label
+                            ><input class="cb" type="checkbox" :checked="ui.namespaces.includes(ns)" @change="toggle(ns)" />{{ ns }}</label
                         >
                     </li>
                     <li v-if="!shown.length" class="muted none">{{ all.length ? 'No matches' : 'No namespaces loaded yet' }}</li>
                 </ul>
                 <div class="foot">
-                    <button class="btn ghost sm" type="button" :disabled="!pods.namespaces.length" @click="pods.namespaces = []">Clear</button>
+                    <button class="btn ghost sm" type="button" :disabled="!ui.namespaces.length" @click="ui.namespaces = []">Clear</button>
                     <div class="grow"></div>
                     <button class="btn sm" type="button" @click="close">Done</button>
                 </div>

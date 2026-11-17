@@ -4,24 +4,22 @@ import { useRouter } from 'vue-router';
 
 import type { CommandContext } from '@/lib/command-parser.ts';
 
-import { activePods, collectNamespaces } from '@/lib/active-view.ts';
-import { kinds } from '@/lib/agent.ts';
+import { getNamespacesView, kinds } from '@/lib/agent.ts';
 import { complete, findKind, parseCommand } from '@/lib/command-parser.ts';
+import { namespaceNames } from '@/lib/namespaces.ts';
 import { runCommand } from '@/lib/run-command.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
-import { usePodsStore } from '@/stores/pods.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const ui = useUiStore();
 const clusters = useClustersStore();
-const pods = usePodsStore();
 const router = useRouter();
 
 const input = ref('');
 const sel = ref(0);
 const error = ref('');
 const inputEl = ref<HTMLInputElement | null>(null);
-// Namespaces are scanned once when the bar opens (and when the context is rebuilt), never per keystroke.
+// Namespaces are read from the v1/namespaces view once when the bar opens, never per keystroke.
 const namespaces = ref<string[]>([]);
 
 const ctx = computed<CommandContext>(() => ({
@@ -50,7 +48,7 @@ watch(
             input.value = '';
             error.value = '';
             sel.value = 0;
-            namespaces.value = collectNamespaces(activePods.value, pods.namespaces);
+            namespaces.value = namespaceNames(getNamespacesView());
             await nextTick();
             inputEl.value?.focus();
         }

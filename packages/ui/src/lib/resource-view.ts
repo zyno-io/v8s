@@ -1,0 +1,60 @@
+import type { Column, ViewHandle } from '@v8s/client';
+
+import { computed, onScopeDispose, watch } from 'vue';
+
+import { chipsFor, buildQuery, stateQuery, useTableStore } from '@/stores/table.ts';
+
+import { getAgent } from './agent.ts';
+import { windowPad } from './viewport.ts';
+
+const hasTone = (cols: readonly Column[] | null) => !!cols?.some(c => c.type === 'tone' || c.key === 'statusTone');
+
+/**
+ * Subscribes one kind's list view plus a one-row count view per tone chip (only once the schema shows a tone column).
+ * Count views never render rows; they only contribute `total`, so chips show live counts with nothing computed in the UI.
+ */
+export function useResourceView(gvr: string) {
+    const agent = getAgent();
+    const table = useTableStore();
+    const state = table.of(gvr);
+    const initialLimit = () => windowPad() * 2 + 60;
+    const query = computed(() => stateQuery(gvr, state));
+
+    const handle = agent.subscribeView(query.value, { offset: 0, limit: initialLimit() });
+    const counts: Record<string, ViewHandle> = {};
+    const chips = chipsFor(gvr);
+
+    function ensureCounts() {
+        if (Object.keys(counts).length) return;
+        for (const c of chips)
+            counts[c.key] = agent.subscribeView(buildQuery(gvr, state.text, state.namespaces, [c.tone], []), { offset: 0, limit: 1 });
+    }
+    watch(
+        () => handle.columns.value,
+        cols => {
+            if (hasTone(cols)) ensureCounts();
+        },
+        { immediate: true }
+    );
+
+    watch(query, q => handle.update({ query: q, window: { offset: 0, limit: initialLimit() } }));
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    watch(
+        () => [state.text, state.namespaces] as const,
+        ([text, ns]) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                for (const c of chips) counts[c.key]?.update({ query: buildQuery(gvr, text, ns, [c.tone], []) });
+            }, 150);
+        }
+    );
+
+    onScopeDispose(() => {
+        clearTimeout(timer);
+        handle.close();
+        for (const c of Object.values(counts)) c.close();
+    });
+
+    return { handle, counts, chips, hasTone: computed(() => hasTone(handle.columns.value)) };
+}

@@ -1,6 +1,9 @@
+import router from '@/router.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
-import { usePodsStore } from '@/stores/pods.ts';
+import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
+
+import { closeDrawer, isDrawerOpen } from './drawer.ts';
 
 /** A page may claim j/k/x/Enter. Returns true when it handled the key. */
 type PageKeyHandler = (e: KeyboardEvent) => boolean;
@@ -24,18 +27,21 @@ function isEditable(t: EventTarget | null): boolean {
 
 /** Esc order from the design system: clear filter, then selection, then close the drawer. */
 export function escapeChain(): boolean {
-    const pods = usePodsStore();
-    const ui = useUiStore();
-    if (pods.text) {
-        pods.text = '';
-        return true;
+    const table = useTableStore();
+    const gvr = table.currentGvr;
+    if (gvr) {
+        const st = table.of(gvr);
+        if (st.text) {
+            st.text = '';
+            return true;
+        }
+        if (st.selected.size) {
+            table.clearSelection(gvr);
+            return true;
+        }
     }
-    if (pods.selected.size) {
-        pods.clearSelection();
-        return true;
-    }
-    if (ui.drawer) {
-        ui.drawer = null;
+    if (isDrawerOpen(router)) {
+        void closeDrawer(router);
         return true;
     }
     return false;
@@ -45,7 +51,18 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
     const handler = (e: KeyboardEvent) => {
         const ui = useUiStore();
         const clusters = useClustersStore();
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            ui.paletteOpen = !ui.paletteOpen;
+            return;
+        }
         if (e.key === 'Escape') {
+            if (ui.dialog || ui.paletteOpen || ui.createOpen) return; // those own Esc
+            // Esc inside the YAML editor only leaves the editor; it must never close the drawer over unsaved edits.
+            if (e.target instanceof HTMLElement && e.target.closest('.cm-editor')) {
+                e.target.blur();
+                return;
+            }
             if (ui.commandBarOpen) {
                 ui.commandBarOpen = false;
             } else if (ui.shortcutsOpen) {
@@ -59,7 +76,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
         if (isEditable(e.target)) return;
-        if (ui.commandBarOpen || ui.shortcutsOpen) return;
+        if (ui.commandBarOpen || ui.shortcutsOpen || ui.paletteOpen || ui.createOpen || ui.dialog) return;
         if (e.key === ':') {
             e.preventDefault();
             ui.commandBarOpen = true;
