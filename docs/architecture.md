@@ -14,7 +14,7 @@ v8s is an open-source, multi-cluster Kubernetes manager built around one constra
 | [problems.md](problems.md) | Problems engine: detectors, incremental evaluation, problem classes, cross-cluster merge, filter UX |
 | [integrations.md](integrations.md) | Flux, Helm, Kyverno, Trivy Operator, Kubescape, Hubble: data sources, surfaces, actions, problems, performance |
 | [operations.md](operations.md) | Editing, pod shell, node shell, cordon/drain, logs, port-forward, idempotency, recent activity, hosted security |
-| [auth.md](auth.md) | The user's credential all the way through: kubeconfig and exec plugins on desktop, OIDC pass-through in hosted mode, access gateways (Warpgate), access profiles |
+| [auth.md](auth.md) | The user's credential all the way through: kubeconfig and exec plugins on desktop, OIDC pass-through in hosted mode, access gateways (Warpgate), linked read/write contexts |
 | [packaging.md](packaging.md) | Electron desktop, `v8s serve`, hosted server, mobile web (installable PWA later) and what works on a phone |
 | [design-system.md](design-system.md) | v8s's design system: PixelCI's tokens and rules as the base, CI Dashboard interaction patterns, dense-table and mobile extensions |
 
@@ -62,7 +62,7 @@ It ships as a **desktop app** (macOS, Windows, Linux) and as a **self-hosted web
 - **True multi-cluster**: one table, one search, one Problems view over a chosen set, with groups for preselection. Most tools are one-cluster-at-a-time.
 - **First-class Flux and Helm** with the actions people actually use (reconcile with source, force, reset, suspend/resume, rollback, retry stuck releases) and correct GitOps awareness when editing.
 - **Security and network in the same place**: Kyverno, Trivy, Kubescape results and Hubble drops feed the same Problems view as crash loops.
-- **The user's own credential, all the way through**: on desktop and in hosted mode, every request carries the person's own token, whether the cluster is reached directly or through a gateway such as Warpgate (to which v8s is transparent). Elevated gateway targets are just another access profile, used per action.
+- **The user's own credential, all the way through**: on desktop and in hosted mode, every request carries the person's own token, whether the cluster is reached directly or through a gateway such as Warpgate (to which v8s is transparent). A cluster's read and write contexts can be linked, with automatic switching for writes.
 - **One codebase, three surfaces**: desktop, hosted web, and phone browser.
 - **Open source** under the MIT license.
 
@@ -155,14 +155,14 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
 
 - Each cluster progresses independently; a slow or broken cluster never blocks others. Its state shows in the cluster selector and in every multi-cluster view's toolbar (`syncing prod-eu · 4,210 rows` on desktop; a percentage in hosted mode, so no unfiltered cluster-wide total is shown).
 - `authenticating` serializes identical exec-plugin commands so one IdP login serves several contexts.
-- `elevation-required`: an elevated access profile was used without an active gateway session (e.g. no active Warpgate elevated session); the action fails with a link to the gateway, and the default profile keeps working.
+- `write-unavailable`: an action needed the linked write context and it was rejected (with Warpgate: no active elevated session); the action fails with a link to Warpgate, and reads keep working.
 - `degraded` lists what is missing ("no permission to list `ingresses`; Ingress checks disabled").
 - `reconnecting` keeps last-known rows visible but greyed with "stale since T"; the outage is itself a `cluster.unreachable` problem.
 - Selecting 40 clusters at once is allowed but staged: connections start in batches of 8 to avoid an exec-plugin and API-server stampede.
 
-### Access profiles
+### Linked contexts
 
-A cluster can be reached through several **access profiles**, for example two Warpgate targets for one cluster (an everyday `operator` target and an elevated `cluster-admin` target whose time-boxed sessions Warpgate grants). v8s suggests groupings (matching `kube-system` UIDs among connected contexts, or URLs that differ only by target name); the user confirms and the grouping is pinned. Watches, views, and problems always run on the default profile; elevated profiles are used per action, and elevated writes are pinned to the uid the user saw. Details: [auth.md §Access profiles](auth.md#access-profiles-one-cluster-several-contexts).
+A cluster's read-only and write contexts (for example two Warpgate targets) can be linked. Reads use the read context; actions that need more switch to the write context automatically. Details: [auth.md](auth.md#linked-contexts-read-and-write).
 
 ### Cluster groups
 
@@ -211,13 +211,13 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 
 - Multi-cluster selection, groups, remember last selection, connection lifecycle states.
 - Desktop auth: kubeconfig merge, exec plugins (the gateway's `kubelogin` profile is the reference case: one sign-in for all targets), login-shell environment, keychain.
-- Access profiles: suggested, user-confirmed, pinned grouping of contexts into clusters; default profile for watches.
+- Linked read/write contexts with automatic switch for writes.
 - Tier-0 and on-demand watches; discovery; generic CRDs in Table mode.
 - Curated views for P1 kinds in the [coverage matrix](data-model.md#coverage-matrix); detail drawer; events; related objects.
 - YAML view/edit (Update with resourceVersion, `kubectl edit` semantics) with server-side dry run, ownership warnings from `managedFields`, and conflict diff; create from YAML (server-side apply); delete; scale; restart.
 - Logs (single container, follow, search, download).
 - Starred resource types, bookmarks, global search, keyboard navigation, light/dark.
-- RBAC-aware UI per access profile (`SelfSubjectReview`, `SelfSubjectRulesReview`, `SelfSubjectAccessReview`).
+- RBAC-aware UI (`SelfSubjectReview`, `SelfSubjectRulesReview`, `SelfSubjectAccessReview`).
 - `v8s serve`. Signed builds for macOS, Windows, Linux; auto-update.
 
 **Exit:** all P0 budgets with 3 clusters selected, both direct and through Warpgate; cold start ≤ 1.5 s; Electron idle ≤ 350 MB.
@@ -225,7 +225,7 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 ### P2 · Operate, Flux, Helm
 
 - Pod shell (WebSocket exec, debug containers for distroless), node shell, cordon/uncordon, drain with pre-flight and resumable jobs, port-forward (desktop), recent activity.
-- Access profiles (pinned grouping) and per-action elevation ("Run as cluster-admin"), with gateway-session-required handling.
+- Write-context switch for operations that need it (node shell, drain).
 - Flux module: all kinds, overview, inventory tree, dependency graph, suspend/resume/reconcile/force/reset, bulk.
 - Helm module: metadata-only release list, detail with history/values/manifest/diff, rollback, uninstall, retry; Flux-aware routing.
 - Multi-pod logs.
@@ -242,7 +242,7 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 
 ### P4 · Hosted, identity pass-through, mobile web
 
-- `v8s server` (self-hosted): OIDC login, cluster registry with access profiles, groups, per-user state, Postgres/SQLite, Helm chart.
+- `v8s server` (self-hosted): OIDC login, cluster registry with linked contexts, groups, per-user state, Postgres/SQLite, Helm chart.
 - **OIDC pass-through**: per-user IdP tokens (an ID token for the cluster app registration, obtained by a server-side authorization-code flow) held for the session only and sent on every request, direct or through Warpgate; per-user watches, views, and problems, connected only while a client is open.
 - Optional strategies: per-cluster audiences, scoped impersonation, read-only kiosk; optional shared cache with per-user authorization filter for those.
 - **Mobile web**: responsive layouts (cards, bottom nav), touch targets, reduced-fan-out subscriptions, hold-to-confirm. Browser only; no install.
@@ -294,7 +294,7 @@ All open questions from the first review round are answered:
 | Identity | The user's own credential all the way through. Access gateways (Warpgate) are transparent: an endpoint with OIDC like any other. Most clusters will be reached directly |
 | Hosted cluster token | Entra ID token for the same app registration the clusters and Warpgate already trust (as `kubelogin` uses today), obtained server-side by an authorization-code flow and held for the session only |
 | Connections | Nothing stays connected while no v8s client is open (Warpgate records request content, so idle watches would only add volume) |
-| JIT elevation | Lives entirely in Warpgate (time-boxed elevated sessions); v8s just uses the elevated target as an access profile, per action |
+| Read/write contexts | Optionally link a cluster's read and write contexts; v8s switches to the write one automatically when an action needs it. Elevation itself is Warpgate's |
 | Direct contexts | Normal; no warning or "gateway-only" policy |
 | Hosted scale | ≤ 20 people × ≤ 10 clusters on one server process |
 | Desktop shell | Electron (baseline memory accepted) |

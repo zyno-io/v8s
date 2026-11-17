@@ -293,7 +293,7 @@ Hosted v8s is self-hosted for a team. How it fans out depends on the cluster's i
 
 Every OIDC pass-through cluster, direct or behind a gateway such as Warpgate, must see **every request carry the user's own token** ([auth.md](auth.md)). A shared cache would read cluster data under another identity, outside the gateway's per-request authorization and recording, so hosted v8s runs **per-user watches**:
 
-- Each `(user, cluster)` has its own tier-0 and on-demand watches, store, views, and problems, on the user's default access profile, exactly like a desktop agent.
+- Each `(user, cluster)` has its own tier-0 and on-demand watches, store, views, and problems, on the cluster's read context, exactly like a desktop agent.
 - **Connected only while a client is open.** A user's watches for a cluster start when one of their browser clients selects it and stop **30 s after their last client closes** or deselects it (the grace covers reloads and network blips). Nothing watches a cluster on behalf of someone who is not looking. Problems are therefore evaluated only while the user has v8s open; there is no background alerting.
 - **No authorization filter is needed.** The endpoint authorizes every watch and request directly, so the SubjectAccessReview machinery of the shared mode does not run.
 - **Cost model**, sized from the budget, not from the pod-only spike number: ≤ 50 MB agent RSS per 10k pods per active `(user, cluster)` (all tier-0 kinds plus security-report rows), and 20–50 tier-0 watches plus on-demand watches, within the 96-watch budget (§5).

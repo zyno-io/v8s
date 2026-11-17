@@ -12,7 +12,7 @@ A fast, multi-cluster Kubernetes manager for desktop, web, and phone.
 - **First-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble**, not just generic CRD browsing.
 - **Day-to-day operations**: edit with dry run and diff, pod shell, node shell, cordon/drain, logs, port-forward.
 - **Desktop app** (macOS, Windows, Linux) and a **self-hosted web app** that works in desktop and phone browsers.
-- **Your credential, all the way through**: every request carries the user's own credential, to the API server directly or through an access gateway such as [Warpgate](https://github.com/warp-tech/warpgate), including per-action use of elevated gateway targets.
+- **Your credential, all the way through**: every request carries the user's own credential, to the API server directly or through an access gateway such as [Warpgate](https://github.com/warp-tech/warpgate), with optional linked read/write contexts that switch automatically for writes.
 
 ## The plan
 
@@ -26,7 +26,7 @@ Start with [docs/architecture.md](docs/architecture.md). The performance chapter
 | [problems.md](docs/problems.md) | Problems engine and view |
 | [integrations.md](docs/integrations.md) | Flux, Helm, Kyverno, Trivy, Kubescape, Hubble |
 | [operations.md](docs/operations.md) | Editing, shells, drain, logs, port-forward, security |
-| [auth.md](docs/auth.md) | Credential pass-through on desktop and hosted, access gateways (Warpgate), access profiles |
+| [auth.md](docs/auth.md) | Credential pass-through on desktop and hosted, access gateways (Warpgate), linked read/write contexts |
 | [packaging.md](docs/packaging.md) | Electron desktop, hosted server, mobile web |
 | [design-system.md](docs/design-system.md) | Design system |
 

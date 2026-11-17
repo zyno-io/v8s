@@ -12,7 +12,7 @@ resourceVersion                                                                 
 
 - URLs use the address: `/c/prod-eu/apps/deployments/payments/api`. Bookmarks survive object recreation.
 - Inside the agent, rows are addressed by dense `u32` **handles** per `(cluster, GVR)`, mapped from `uid`. Handles never leave the agent. The wire carries **per-subscription ids** that are never reused ([performance.md §9](performance.md#9-wire-protocol-and-sync)), and actions resolve them back to `(cluster, uid)` in the agent.
-- A **cluster** has a stable local id assigned when it is first added, and a user-assigned name. A cluster has one or more **access profiles** (kubeconfig contexts or gateway targets, e.g. `operator` and `cluster-admin`); grouping contexts into one cluster is suggested, confirmed by the user, and pinned, never automatic, because the `kube-system` namespace UID is neither unique nor trustworthy ([auth.md](auth.md#access-profiles-one-cluster-several-contexts)). Ungrouped contexts are separate clusters.
+- A **cluster** has a stable local id assigned when it is first added, and a user-assigned name. A cluster can have a linked write context alongside its read context ([auth.md](auth.md#linked-contexts-read-and-write)); otherwise each context is its own cluster.
 
 ## Resource tiers
 

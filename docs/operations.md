@@ -5,7 +5,7 @@ Everything that changes a cluster or opens an interactive channel into it. All o
 ## Principles
 
 1. **The user's identity, always.** Every action carries the user's own credential all the way through: the kubeconfig credential on desktop, the user's own IdP token in hosted mode, to the API server or to a gateway such as Warpgate ([auth.md](auth.md)). The agent never uses a shared privileged credential to perform a user action.
-1. **Elevation is explicit.** Actions the default access profile cannot perform (node shell, drain, cluster-scoped edits on an operator role) offer "Run as `<elevated profile>`" in the confirm dialog, which shows that profile's endpoint. Time-boxing and approval are the gateway's (Warpgate tickets); without an active gateway session, v8s says so and links to the gateway. Elevated writes carry the uid and resourceVersion the user saw ([auth.md §Access profiles](auth.md#access-profiles-one-cluster-several-contexts)).
+1. **Writes switch contexts automatically.** If a cluster has a linked write context, actions the read context cannot perform (node shell, drain, edits) run through the write context; the confirm dialog names it ([auth.md](auth.md#linked-contexts-read-and-write)).
 2. **RBAC-aware UI, not RBAC-enforcing UI.** The agent asks `SelfSubjectRulesReview` (per namespace, cached) and `SelfSubjectAccessReview` (for specific verbs on specific objects) so buttons the user cannot use are disabled with a reason ("You can't `delete` pods in `payments`"). The server still decides; a stale cache produces a clean 403 toast, not a broken state.
 3. **Every mutation is previewable.** Edits and creates go through server-side dry run (`dryRun=All`) first, so admission webhooks (Kyverno, Gatekeeper) reject before the user commits.
 4. **Destructive actions confirm proportionally.** Single object: confirm dialog. Bulk, cross-cluster, or production-group: type-to-confirm with the count and cluster names spelled out.
@@ -28,7 +28,7 @@ Everything that changes a cluster or opens an interactive channel into it. All o
 - **Transport**: the agent uses the Kubernetes exec subresource over **WebSocket** (`v5.channel.k8s.io`), falling back to SPDY on old API servers. The browser never talks to the API server; the agent relays raw bytes over a dedicated WebSocket per session (see [performance.md §8](performance.md#8-logs-shell-and-flow-streaming)).
 - **Shell discovery**: try `/bin/bash`, `/bin/sh`, `/busybox/sh`; for distroless containers, offer **ephemeral debug container** (`kubectl debug`-style, `pods/ephemeralcontainers` subresource) with a chosen image targeting the container's process namespace.
 - **Terminal**: xterm.js, resize events forwarded, UTF-8 safe, copy-on-select.
-- **Session limits**: idle timeout (default 30 min hosted, none desktop), max concurrent sessions per user (hosted), and an explicit "Session ended: pod deleted / container restarted" state. **Streams opened through an elevated profile** (exec, attach, port-forward, log follow) have a 15-minute idle timeout and a 60-minute cap on desktop and hosted alike, because they outlive the gateway's per-request check once established.
+- **Session limits**: idle timeout (default 30 min hosted, none desktop), max concurrent sessions per user (hosted), and an explicit "Session ended: pod deleted / container restarted" state. **Streams opened through a write context** (exec, attach, port-forward, log follow) have a 15-minute idle timeout and a 60-minute cap on desktop and hosted alike, because they outlive the gateway's per-request check once established.
 - **Mobile**: available but secondary. A phone gets a simplified terminal (DOM renderer, an accessory key row for Esc/Ctrl/Tab/arrows) and a warning that it is best on desktop. See [packaging.md §Mobile](packaging.md#mobile-web).
 
 ## Node shell
@@ -51,7 +51,7 @@ spec:
   hostNetwork: true
   hostIPC: true
   restartPolicy: Never
-  activeDeadlineSeconds: 3600     # hard ceiling even if v8s dies; matches the elevated-stream cap
+  activeDeadlineSeconds: 3600     # hard ceiling even if v8s dies; matches the write-context stream cap
   terminationGracePeriodSeconds: 0
   tolerations: [{ operator: Exists }]
   priorityClassName: system-node-critical   # optional, configurable
@@ -70,7 +70,7 @@ The container's own command already entered the host namespaces, so the agent **
 
 - **Namespace.** `v8s-system` by default, created on first use with `pod-security.kubernetes.io/enforce: privileged`. Clusters that forbid privileged pods anywhere simply cannot use node shell; v8s says so instead of trying to bypass it.
 - **Who can.** Node shell requires `create` on `pods` and `pods/attach` in that namespace. Cluster operators gate it with RBAC (a `v8s-node-shell` Role, documented). Hosted mode adds an org-level policy switch, off by default for viewer roles.
-- **Cleanup in three layers**, all through the profile that created the pod (usually elevated): the agent deletes the pod when the session ends; `activeDeadlineSeconds` kills it 1 h after it starts no matter what (if the agent dies, or if the elevated gateway session ends first and the delete fails); and the next time the user uses that profile on the cluster, the agent deletes any `v8s-node-shell-*` pod whose `expires-at` has passed. Clusters can instead grant the default profile `delete pods` in `v8s-system` (a dedicated namespace, so the grant is narrow), letting cleanup run without elevation.
+- **Cleanup in three layers**, all through the context that created the pod (usually the write context): the agent deletes the pod when the session ends; `activeDeadlineSeconds` kills it 1 h after it starts no matter what (if the agent dies, or if the Warpgate session ends first and the delete fails); and the next time the user uses that context, the agent deletes any `v8s-node-shell-*` pod whose `expires-at` has passed. Clusters can instead grant the read context `delete pods` in `v8s-system` (a dedicated namespace, so the grant is narrow), letting cleanup run without elevation.
 - **Image.** Pinned by digest and configurable per cluster (air-gapped registries). No `:latest`.
 - **Recording.** v8s records nothing; the gateway records the session. Session start/end appear in recent activity.
 - **Windows nodes** are out of scope for MVP (no nsenter equivalent).
@@ -121,7 +121,7 @@ v8s keeps a short, bounded list of the user's own recent actions (last 200 entri
 | v8s becomes a privilege escalation path | User actions always run as the user (their own token through to the API server or gateway; impersonation only where an admin configures it); no shared admin credential for actions. |
 | Impersonation credential stolen | Impersonation SA is scoped (`resourceNames` on `impersonate`, see [auth.md](auth.md)), short-lived bound tokens, stored encrypted, never sent to the browser. |
 | Cross-user cache leakage | By default there is no shared cache: every user's data comes from watches carrying their own token. The optional shared cache (impersonation and kiosk clusters only) is filtered per user, fail-closed. See [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing). |
-| Shell or port-forward abused as a tunnel | Per-org switches; session limits and elevated-stream caps; the gateway's session recording where a gateway is used; node shell and port-forward off by default for viewer roles. |
+| Shell or port-forward abused as a tunnel | Per-org switches; session limits and write-context stream caps; the gateway's session recording where a gateway is used; node shell and port-forward off by default for viewer roles. |
 | CSRF / session theft | `__Host-` cookies (HttpOnly, Secure, SameSite=strict, host-only); `Origin`/`Sec-Fetch-Site` checks on **every** HTTP and WebSocket endpoint; proxied pod content only on a separate registrable domain; absolute session lifetime; re-auth (step-up) for destructive actions in production groups. |
 | Token leakage to browser or logs | IdP tokens stay server-side for the session's lifetime only; the browser holds only a v8s session cookie; the `User-Agent` carries an HMAC correlation id, never the session id. |
-| Server compromise | Live sessions' tokens are exposed, including any elevated gateway access those users currently hold; mitigated by session-lifetime-only storage, KMS encryption, short sessions, and optional step-up re-auth before elevated actions ([auth.md](auth.md#1-oidc-pass-through-default)). |
+| Server compromise | Live sessions' tokens are exposed, including any Warpgate write access those users currently hold; mitigated by session-lifetime-only storage, KMS encryption, short sessions, and optional step-up re-auth before using a write context ([auth.md](auth.md#1-oidc-pass-through-default)). |

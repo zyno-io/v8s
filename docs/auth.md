@@ -20,21 +20,21 @@ The desktop agent is a Kubernetes client on the user's machine. It uses the user
 
 To v8s a gateway is **transparent**: it is a Kubernetes endpoint with OIDC authentication, configured like any other cluster. v8s has no gateway-specific code path. A few gateway behaviours still shape the design:
 
-- **One endpoint per target**, where a target is a cluster × role (for example an everyday `operator` role and a `cluster-admin` role). Several contexts therefore reach one cluster; v8s models them as **access profiles** of one cluster (below).
-- **Just-in-time elevation lives in the gateway.** Warpgate's elevated targets are time-boxed sessions granted by a ticket in Warpgate. v8s implements no JIT, approval, or time-boxing of its own. It uses the elevated target like any other profile, and when Warpgate rejects a request because no ticket is active, v8s says so and links to Warpgate.
-- **Fixed upstream identity per target.** Warpgate connects upstream with its own short-lived credential for the target's role. `SelfSubjectReview` through the target returns that identity, which is exactly what the API server authorizes, so RBAC-aware UI works per profile. The person is attributed in Warpgate's records, not in the Kubernetes audit log; that is Warpgate's design.
+- **One endpoint per target**, where a target is a cluster × role (for example a read-only `operator` role and a writable `cluster-admin` role). v8s can link the two ([below](#linked-contexts-read-and-write)).
+- **Elevation lives in the gateway.** Warpgate's write targets work during time-boxed sessions granted in Warpgate. v8s just uses the linked write context; when Warpgate rejects it, v8s says so and links to Warpgate.
+- **Fixed upstream identity per target.** Warpgate connects upstream with its own short-lived credential for the target's role. `SelfSubjectReview` through the target returns that identity, which is exactly what the API server authorizes, so RBAC-aware UI works per context. The person is attributed in Warpgate's records, not in the Kubernetes audit log; that is Warpgate's design.
 - **Per-request authorization and recording.** Warpgate checks the grant on every request and records sessions, including request content. v8s therefore keeps its traffic lean: protobuf for built-in kinds, metadata-only and Table-mode watches where they suffice, no polling, and no connections while no v8s client is open ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)). Long-lived watches are re-established at least every 30 minutes (`timeoutSeconds`), so each is re-authorized at least that often even if a gateway does not cut revoked streams.
 - **Verify in P0** through Warpgate's (experimental) Kubernetes target support: watch and WatchList, the protobuf content type, `as=Table` requests, exec/attach/port-forward upgrades (WebSocket `v5.channel.k8s.io` and the SPDY fallback), and recording volume for long watch streams. Any gap becomes a recorded fallback (for example JSON instead of protobuf).
 
-## Access profiles: one cluster, several contexts
+## Linked contexts: read and write
 
-- A **cluster** in v8s can have several **access profiles**, one per kubeconfig context or gateway target that reaches it (typically `operator` and `cluster-admin`).
-- **Grouping is explicit and pinned.** v8s never merges contexts on its own, because a wrong merge would send an elevated action to the wrong cluster, and the `kube-system` namespace UID is neither unique (clusters restored from one etcd snapshot share it) nor trustworthy (any endpoint can report any UID). v8s **suggests** a grouping when two contexts the user has already connected report the same UID, or when their server URLs differ only in a target name; the user confirms once, seeing both endpoints, and the grouping is pinned. Contexts the user has not selected are never probed.
-- **The default profile is the one the user picks**, never auto-promoted when a profile is added. Watches, views, and problems always run on the default profile.
-- **Elevated profiles are used per action** ("Run as `cluster-admin`" in the action menu and confirm dialog) or by switching the cluster's active profile while a gateway session is active, shown by a warning-tone profile tag wherever the cluster appears. The confirm dialog shows the elevated endpoint URL.
-- **Elevated writes carry the uid and resourceVersion the user saw** (`preconditions.uid` for deletes, `metadata.uid` and `resourceVersion` for updates and patches). This is defence in depth only: objects untouched since a shared etcd snapshot have identical uids and resourceVersions in both clusters, and creates (including node-shell pods) carry no precondition. **The real control is the user-confirmed grouping**, plus the elevated endpoint and target object shown in every elevated confirm.
-- **Elevated permissions are evaluated lazily**: v8s does not probe an elevated profile until the user uses it, and shows elevated-only actions as "may require an active gateway session".
-- Grouped profiles share the cluster's problem IDs, acknowledgements, and bookmarks; ungrouped contexts are separate clusters.
+Many setups have two contexts per cluster: one read-only, one that can write (with Warpgate, two targets). v8s can **link** them so they behave as one cluster:
+
+- **Linking is optional and manual.** In the cluster selector, "Link a write context" pairs a second context with the cluster. v8s may suggest a pair when two context names differ only by a role suffix (`-operator` / `-cluster-admin`), but never links on its own. Unlinked contexts are simply separate clusters.
+- **Reads use the read context.** All watches, lists, views, and problems run on it.
+- **Writes switch automatically.** When an action needs more than the read context allows (v8s knows from the RBAC check, or the request is rejected with 403), it runs through the write context instead. The confirm dialog says which context the action will use, and a small `write` tag marks the cluster while it is in use. The user can turn the automatic switch off and be asked instead.
+- **If the write context is not usable right now** (with Warpgate: no active elevated session), the action fails with a clear message and a link to Warpgate. The read context keeps working.
+- Elevation time limits and approvals are Warpgate's; v8s adds none.
 
 ## Hosted
 
@@ -56,7 +56,7 @@ The endpoint (API server or gateway) trusts the same IdP; v8s sends the user's o
 - **Shared audience is the normal case with ID tokens.** Every cluster and gateway that trusts the same client ID accepts the same token, so they form one trust domain: an operator of one endpoint who captures a token can replay it against the others until it expires (about an hour with Entra). That is already true of the `kubelogin` setup this mirrors; v8s states it in the cluster settings.
 - **Per-cluster audiences** (optional hardening): endpoints that accept **access tokens** for their own API audience can be given one each, via on-behalf-of (Entra) or RFC 8693 token exchange; a token captured by one cluster is then useless against another.
 - **Refresh**: the server refreshes tokens before expiry with the session's refresh token; a failed refresh marks the user's clusters `auth expired` and prompts re-login.
-- **Risk profile**: v8s holds no cluster credential, only the app-registration certificate above. A server compromise yields the live sessions' IdP tokens, and with them whatever those users can reach, **including elevated gateway targets for anyone with an active gateway session**. Mitigations: session-lifetime-only storage, KMS-held encryption keys, IdP refresh-token rotation, short absolute session lifetime, and an optional **step-up re-authentication** (`max_age`/`prompt=login`) before any elevated-profile action in hosted mode.
+- **Risk profile**: v8s holds no cluster credential, only the app-registration certificate above. A server compromise yields the live sessions' IdP tokens, and with them whatever those users can reach, **including write targets for anyone with an active Warpgate session**. Mitigations: session-lifetime-only storage, KMS-held encryption keys, IdP refresh-token rotation, short absolute session lifetime, and an optional **step-up re-authentication** (`max_age`/`prompt=login`) before using a write context in hosted mode.
 
 #### 2. Cloud-native token exchange (later)
 
@@ -110,12 +110,12 @@ v8s sends `User-Agent: v8s/<version> (corr <id>)`, where the correlation id is a
 | Where credentials live | user's machine (plugins' own caches; OS keychain for v8s-held secrets) | v8s server memory and encrypted storage, for the session's lifetime only; never in the browser |
 | Exec plugins | yes, natively | no (no user machine); replaced by server-side OIDC flows |
 | Cluster list | user's kubeconfig contexts | admin-configured cluster records, filtered to clusters the user can reach |
-| Elevation | gateway-elevated profiles per action | same, plus optional step-up re-auth |
+| Linked write context | used automatically when an action needs it | same, plus optional step-up re-auth |
 
 ## RBAC awareness
 
-The agent resolves the identity **as the endpoint sees it** with `SelfSubjectReview` (behind Warpgate, the target's role identity), then asks what that identity can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions), cached 60 s per user per profile. The UI disables what the user cannot do and says why.
+The agent resolves the identity **as the endpoint sees it** with `SelfSubjectReview` (behind Warpgate, the target's role identity), then asks what that identity can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions), cached 60 s per user per context. The UI disables what the user cannot do and says why.
 
-**Hosted cluster visibility** comes from configuration, not probing: admins map IdP groups to cluster records, and a user's selector lists the clusters mapped to their groups (plus admin pins). v8s never connects to a cluster the user has not selected, so access is checked only when a cluster is selected: a `SelfSubjectAccessReview` through its default profile, and a rejection by the gateway or API server shows "no access" on that cluster.
+**Hosted cluster visibility** comes from configuration, not probing: admins map IdP groups to cluster records, and a user's selector lists the clusters mapped to their groups (plus admin pins). v8s never connects to a cluster the user has not selected, so access is checked only when a cluster is selected: a `SelfSubjectAccessReview` through its read context, and a rejection by the gateway or API server shows "no access" on that cluster.
 
 On desktop, a namespace-scoped user's namespaces cannot be discovered from the API (rules reviews take a namespace as input). v8s uses the kubeconfig context's namespace plus a per-cluster namespace list in settings, and offers to add namespaces as the user navigates to them.
