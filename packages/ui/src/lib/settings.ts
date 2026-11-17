@@ -21,7 +21,9 @@ export function emptySettings(): Settings {
         selection: [],
         columnLayouts: {},
         problemPrefs: {},
-        acks: {}
+        acks: {},
+        nodeShell: {},
+        portForwards: []
     };
 }
 
@@ -38,7 +40,9 @@ export function normalizeSettings(s: Partial<Settings> | null | undefined): Sett
         selection: s.selection ?? d.selection,
         columnLayouts: s.columnLayouts ?? d.columnLayouts,
         problemPrefs: s.problemPrefs ?? d.problemPrefs,
-        acks: s.acks ?? d.acks
+        acks: s.acks ?? d.acks,
+        nodeShell: s.nodeShell ?? d.nodeShell,
+        portForwards: s.portForwards ?? d.portForwards
     };
 }
 
