@@ -101,7 +101,7 @@ Every projection drops `managedFields` and `kubectl.kubernetes.io/last-applied-c
   | Trivy (VulnerabilityReport, ConfigAuditReport, ExposedSecretReport; others when their class is enabled) | ≤ 3 (+4) |
   | Kubescape summaries | ≤ 2 |
   | Gateway API (Gateway, HTTPRoute, GRPCRoute), cert-manager Certificate | ≤ 4 |
-  | Hosted only: Roles, ClusterRoles, RoleBindings, ClusterRoleBindings (authz cache invalidation) | 4 |
+  | Hosted shared-cache clusters only: Roles, ClusterRoles, RoleBindings, ClusterRoleBindings (authz cache invalidation) | 4 |
   | **Total** | **~20 bare cluster; ≤ 50 with everything installed** |
 - **On demand.** Any other resource type a view opens. Reference-counted by subscriptions; **lingers** after the last subscriber leaves (desktop 5 min, hosted 2 min) so flicking between views is instant. The lingering set is LRU-evicted to stay inside the watch budget (§5).
 - **Never watched**: Hubble flows (streamed on demand, §8), SbomReports, full vulnerability reports, Kubescape manifests, `metrics.k8s.io` (polled, §5).
@@ -112,7 +112,7 @@ Deselecting a cluster starts a 10 s grace (accidental toggles are free), then st
 
 ### Restricted users
 
-If a cluster-wide list returns 403, the agent falls back to per-namespace informers. `SelfSubjectRulesReview` needs a namespace as input, so it cannot discover namespaces; candidates come from the kubeconfig context's namespace, a per-cluster namespace list in settings, and (hosted) the hub cache's namespace list confirmed per namespace by SubjectAccessReview (§10). Per-namespace watches count against the watch budget, so this mode watches only Pods, Deployments, StatefulSets, DaemonSets, Jobs, and Warning Events per namespace (6 × namespaces), plus open views, across at most **5 namespaces** by default (≈ 30 watches inside the 96 budget). Other kinds in those namespaces are listed on demand when a view opens. The UI says which namespaces it is showing.
+If a cluster-wide list returns 403, the agent falls back to per-namespace informers. `SelfSubjectRulesReview` needs a namespace as input, so it cannot discover namespaces; candidates come from the kubeconfig context's namespace, a per-cluster namespace list in settings, and (hosted) namespaces an admin configured for the user's groups. Per-namespace watches count against the watch budget, so this mode watches only Pods, Deployments, StatefulSets, DaemonSets, Jobs, and Warning Events per namespace (6 × namespaces), plus open views, across at most **5 namespaces** by default (≈ 30 watches inside the 96 budget). Other kinds in those namespaces are listed on demand when a view opens. The UI says which namespaces it is showing.
 
 ### Memory practice in the agent
 
@@ -126,7 +126,7 @@ v8s must never be the reason an API server is slow.
 
 | Guardrail | Value |
 | --- | --- |
-| Read QPS per cluster (agent-wide) | 50, burst 100 |
+| Read QPS | 20, burst 40 per (user, cluster); ceiling 100 per cluster across all users of a hosted install |
 | Writes per user per cluster | 10/s |
 | Watches per (cluster, identity) from the agent | ≤ 96: tier 0 (≤ 50) first, on-demand LRU gets the remainder (≥ 32), restricted-user per-namespace watches and per-user hosted watches count against the same budget |
 | Lazy body fetches (reports, Helm payloads) | ≤ 4 concurrent per cluster, queued |
@@ -135,7 +135,7 @@ v8s must never be the reason an API server is slow.
 | OpenAPI v3 | per group-version, hash-addressed URLs, cached indefinitely |
 | `metrics.k8s.io` | polled every 30 s, only while a visible view shows usage columns |
 | Relists | jittered exponential backoff; never triggered by opening a view |
-| API Priority and Fairness | honour `429` + `Retry-After`; the agent sets a distinct User-Agent (`v8s/<version>`) so cluster operators can write a FlowSchema for it |
+| API Priority and Fairness | honour `429` + `Retry-After`. FlowSchemas match subjects, not User-Agents: v8s traffic is the user's identity (or, behind a gateway, the target's role identity, shared with `kubectl`), so operators who want to isolate it give those identities their own FlowSchema |
 | Events | Warning-only field selector in tier 0; full event stream only for an open object's Events tab (field selector on `involvedObject.uid`) |
 
 ## 6. Agent store, indexes, and view engine
@@ -289,20 +289,28 @@ Ack         { seq }
 
 Hosted v8s is self-hosted for a team. How it fans out depends on the cluster's identity strategy ([auth.md](auth.md)).
 
-### Per-user watches (default; required for gateway-fronted clusters)
+### Per-user watches (default)
 
-Clusters behind an access gateway such as Warpgate must see **every request carry the user's own token** ([auth.md §Gateway-fronted clusters](auth.md#gateway-fronted-clusters-warpgate)). A shared cache would read cluster data outside the gateway's per-request authorization and session recording, so hosted v8s runs **per-user watches** for these clusters:
+Every OIDC pass-through cluster, direct or behind a gateway such as Warpgate, must see **every request carry the user's own token** ([auth.md](auth.md)). A shared cache would read cluster data under another identity, outside the gateway's per-request authorization and recording, so hosted v8s runs **per-user watches**:
 
-- Each `(user, cluster)` has its own tier-0 and on-demand watches, store, views, and problems, all on the user's default access profile, exactly like a desktop agent.
-- **Lifecycle follows the user, not the server.** A user's watches for a cluster start when one of their sessions selects it, and stop 2 minutes after their last tab closes or deselects it (problems are therefore evaluated while a user is connected; offline alerting is out of scope).
-- **No authorization filter is needed.** The gateway and API server authorize every watch and request directly, so the SubjectAccessReview machinery below does not run for these clusters.
-- **Cost model**: per `(user, cluster)`, ~20–50 watches and ~14 MB agent memory per 10k pods (measured projection). A team of 10 people with 6 clusters of 10k pods each selected: ≈ 0.85 GB agent RSS and ≈ 1,200–3,000 long-lived watches through the gateway. That is comfortable for one server process; the gateway's capacity for that many watch streams (and their session recordings) is the number to verify in P0.
-- **Budget**: hosted agent RSS ≤ 50 MB per 10k pods per active `(user, cluster)`; watches per `(user, cluster)` within the §5 budget.
-- Wire, view, and UI behaviour is identical to the shared mode; only where the store lives changes.
+- Each `(user, cluster)` has its own tier-0 and on-demand watches, store, views, and problems, on the user's default access profile, exactly like a desktop agent.
+- **Connected only while a client is open.** A user's watches for a cluster start when one of their browser clients selects it and stop **30 s after their last client closes** or deselects it (the grace covers reloads and network blips). Nothing watches a cluster on behalf of someone who is not looking. Problems are therefore evaluated only while the user has v8s open; there is no background alerting.
+- **No authorization filter is needed.** The endpoint authorizes every watch and request directly, so the SubjectAccessReview machinery of the shared mode does not run.
+- **Cost model**, sized from the budget, not from the pod-only spike number: ≤ 50 MB agent RSS per 10k pods per active `(user, cluster)` (all tier-0 kinds plus security-report rows), and 20–50 tier-0 watches plus on-demand watches, within the 96-watch budget (§5).
 
-### Optional shared cache (clusters reached directly)
+  | Active team | Memory at budget | Watches (typical / worst case) |
+  | --- | --- | --- |
+  | 10 people × 6 clusters × 10k pods | ≈ 3 GB | 1,200–3,000 / ≤ 5,800 |
+  | 20 people × 10 clusters × 2k pods | ≈ 2 GB | 4,000–10,000 / ≤ 19,000 |
+  | 20 people × 10 clusters × 10k pods | ≈ 10 GB | 4,000–10,000 / ≤ 19,000 |
 
-For clusters reached without a gateway, an admin can enable a shared cache, because per-user watches multiply API-server watch load and agent memory by the number of users (50 users × 10 clusters × 10k pods ≈ 7 GB of per-user caches, and 50× the watches):
+  "Active" means a v8s client is open; a team rarely has everyone in at once. Above ~10 GB the server shards by user (P5). The gateway's capacity for that many concurrent watch streams, and the size of its recordings, are the numbers to verify in P0.
+- **Read QPS** is limited per `(user, cluster)` with a per-cluster ceiling (§5). Ten users cold-syncing one cluster at once share that ceiling, so "first rows" for the later ones can exceed budget during a thundering-herd start; WatchList keeps each sync cheap for the API server.
+- **Phone check-ins are cold.** A phone opening v8s after more than 30 s away starts its user's watches from scratch. Budget: problems complete for 6 clusters of 10k pods ≤ 6 s p95 on 4G (§11), thanks to WatchList and projection.
+
+### Optional shared cache (impersonation and kiosk clusters only)
+
+For clusters where an admin has configured a v8s-held identity anyway (impersonation or kiosk, [auth.md](auth.md)), the admin can enable a shared cache, because per-user watches multiply API-server watch load and agent memory by the number of users (50 users × 10 clusters × 10k pods ≈ 7 GB of per-user caches, and 50× the watches):
 
 - **One shared tier-0 cache per cluster**, read through a hub ServiceAccount with `get/list/watch` on tier-0 kinds and **no access to Secrets**.
 - **Per-user authorization filter** at `(cluster, GVR, namespace)` granularity:
@@ -314,9 +322,9 @@ For clusters reached without a gateway, an admin can enable a shared cache, beca
 - **Never from the shared cache**: Secrets (including Helm release metadata, which is a per-user metadata watch), full-object GETs, logs, exec, port-forward, interactive Hubble flows, and every write. All of these go to the API server **as the user**, so the API server remains the authority for anything sensitive or mutating.
 - **Counts and aggregates are masked, not just rows.** Every count (sidebar, starred types, filter chips, the mobile problems summary, a Node's pod count, "12 workloads" on a vulnerability problem) is the sum of per-namespace counts over the user's visible-namespace bitset. Aggregated problems (per image, per drop pair, cross-cluster collapses) are stored as per-namespace parts and re-aggregated per authorization scope; cross-cluster collapse happens **after** filtering. A problem with several subjects (a drop between two workloads) is shown only if the user can see every subject's namespace.
 - **Problems** from shared-cache inputs are computed once per cluster and filtered as above. Detectors whose inputs are user-only run per user: Helm classes use the user's own Helm release watch (or a Flux HelmRelease's status, which is in the shared cache). Hubble network classes use the cluster's **direct relay URL** (an Ingress or internal Service the operator exposes for v8s) rather than a port-forward, so the hub needs no `pods/portforward` at all; `pods/portforward` in `kube-system` would let the hub forward to every pod there, since relay pod names are random and `resourceNames` cannot narrow it. Without a direct relay URL, hosted network classes are unavailable for that cluster. Results are filtered per user like any multi-subject problem.
-- **Hubble in hosted mode**: the relay has no authorization of its own. Interactive flow subscriptions carry a server-injected `FlowFilter` restricting results to flows with at least one end in a namespace the user can see, and the server **redacts the other end** when its namespace is not visible: pod name, labels, workload, and IP are replaced by the namespace name, or by `world`/the Cilium reserved identity for non-pod endpoints. Users see that their pod talked to *something in* `payments`, never what. A direct relay URL is used in hosted mode only with this filtering and redaction.
+- **Hubble on shared-cache clusters**: the relay has no authorization of its own. Interactive flow subscriptions carry a server-injected `FlowFilter` restricting results to flows with at least one end in a namespace the user can see, and the server **redacts the other end** when its namespace is not visible: pod name, labels, workload, and IP are replaced by the namespace name, or by `world`/the Cilium reserved identity for non-pod endpoints. Users see that their pod talked to *something in* `payments`, never what. A direct relay URL is used on shared-cache clusters only with this filtering and redaction. On pass-through clusters Hubble always goes through a port-forward carrying the user's token ([integrations.md](integrations.md#hubble-cilium)).
 - **Views are shared** across sessions with the same normalized query and authorization scope; each session holds only its window and last-sent state (≤ 1 MB per session).
-- **Opt-in only**: the shared cache is enabled per cluster by an admin (it needs a hub ServiceAccount), and never for gateway-fronted clusters.
+- **Opt-in only**: the shared cache is enabled per cluster by an admin, and only for impersonation or kiosk clusters.
 
 ## 11. Performance budgets
 
@@ -327,7 +335,8 @@ Reference hardware: desktop = 2021 M1 MacBook Pro / equivalent x86 laptop; mobil
 | Cold start to interactive | ≤ 1.5 s from launch | ≤ 1.5 s | ≤ 3.5 s |
 | Warm start to interactive | ≤ 0.8 s | ≤ 0.8 s (HTTP cache) | ≤ 1.5 s (HTTP cache) |
 | Initial JS (shell + Problems + one list) | n/a | ≤ 250 KB gz | ≤ 150 KB gz |
-| Cluster select → first rows (10k pods) | ≤ 1.0 s p95 | ≤ 1.0 s + RTT (≤ 300 ms when hub cache is warm) | as hosted |
+| Phone check-in → problems complete (6 clusters × 10k pods, cold) | n/a | ≤ 6 s p95 | ≤ 6 s p95 on 4G |
+| Cluster select → first rows (10k pods) | ≤ 1.0 s p95 | ≤ 1.0 s + RTT | as hosted |
 | Full sync, 50k pods, LAN | ≤ 8 s | ≤ 8 s | n/a |
 | View switch, informer warm | ≤ 100 ms | ≤ 100 ms + RTT | ≤ 300 ms + RTT |
 | Sort/filter change over 50k rows | ≤ 20 ms agent, ≤ 50 ms to screen | ≤ 50 ms + RTT | ≤ 150 ms + RTT |
@@ -356,7 +365,7 @@ The failure modes of existing tools, ruled out by design:
 2. **Deep reactivity over payloads**: `ref(rows)`, `reactive(object)`, per-row or per-cell components, measured row heights in tables.
 3. **Main-thread parsing**: `JSON.parse` or YAML stringify of large payloads, or structured-cloning thousands of rows to the main thread at once.
 4. **Unpaginated `resourceVersion=0` lists of big kinds decoded into full objects and transformed afterwards**, `unstructured` for CRD lists, keeping `managedFields` and last-applied.
-5. **Relisting when a view opens**, per-user duplicate informers in hosted mode, or starting informers for every discovered resource type.
+5. **Relisting when a view opens**, duplicate informers for the same `(user, cluster, GVR)`, or starting informers for every discovered resource type.
 6. **Downloading VulnerabilityReport or PolicyReport arrays to compute counts.**
 7. **Op-log deltas with unbounded per-client queues**; unbounded log, flow, or terminal buffers; streams without acks or credit.
 8. **Index-based selection or scroll anchors**, and `Replace` implemented as clear-and-refill.

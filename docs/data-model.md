@@ -12,7 +12,7 @@ resourceVersion                                                                 
 
 - URLs use the address: `/c/prod-eu/apps/deployments/payments/api`. Bookmarks survive object recreation.
 - Inside the agent, rows are addressed by dense `u32` **handles** per `(cluster, GVR)`, mapped from `uid`. Handles never leave the agent. The wire carries **per-subscription ids** that are never reused ([performance.md §9](performance.md#9-wire-protocol-and-sync)), and actions resolve them back to `(cluster, uid)` in the agent.
-- A **cluster id** is the cluster's `kube-system` namespace UID (stable for the cluster's lifetime and readable through any access profile that can `get namespaces`), with a user-assigned name. Several kubeconfig contexts or gateway targets reaching the same cluster (e.g. an `operator` and a JIT `cluster-admin` target) become **access profiles** of one cluster rather than separate clusters ([auth.md](auth.md#access-profiles-one-cluster-several-targets)). Before the first successful connect, a context is its own provisional cluster; an explicit mapping in settings overrides detection.
+- A **cluster** has a stable local id assigned when it is first added, and a user-assigned name. A cluster has one or more **access profiles** (kubeconfig contexts or gateway targets, e.g. `operator` and `cluster-admin`); grouping contexts into one cluster is suggested, confirmed by the user, and pinned, never automatic, because the `kube-system` namespace UID is neither unique nor trustworthy ([auth.md](auth.md#access-profiles-one-cluster-several-contexts)). Ungrouped contexts are separate clusters.
 
 ## Resource tiers
 
@@ -104,5 +104,5 @@ Node and pod CPU/memory usage come from `metrics.k8s.io` (metrics-server) when p
 | Starred types, bookmarks, column layouts, problem class toggles | local settings file | user record |
 | Problem acknowledgements | local | user record |
 | Saved port-forwards | local | n/a |
-| Audit log | local JSONL | database |
+| Recent activity | in memory, cleared on quit | in memory, cleared at logout |
 | Kubeconfig contexts | the user's kubeconfig files (read, never rewritten) plus an optional v8s-managed kubeconfig for imported clusters | cluster records configured by admins |

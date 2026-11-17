@@ -16,7 +16,7 @@ One Vue bundle and one Go binary produce every surface:
 - **Linux is a first-tier platform for Kubernetes operators**, and Tauri (and Wails) use WebKitGTK there. WebKitGTK has a long tail of GPU/compositing problems (blank windows with DMABUF on NVIDIA, software rendering on some distributions, old WebKit on LTS releases) that directly threaten the scroll budget and xterm.js's WebGL renderer. Electron pins one Chromium on all three OSes, so the budgets measured in CI are what ships.
 - **Tauri's Rust core buys nothing here.** The heavy lifting is in the Go agent in every mode; the shell only spawns the agent and opens a window.
 - **Memory**: Electron's baseline is ~150–250 MB versus Tauri's ~60–120 MB. With the agent holding 100–300 MB of cluster projections for a typical multi-cluster session, the difference is not what users notice; frame time is. The Electron total stays under the 350 MB idle budget ([performance.md §11](performance.md#11-performance-budgets)).
-- **Shipping maturity**: electron-builder and electron-updater, macOS notarization (the agent is signed as a nested executable with the hardened runtime), Windows signing via Azure Trusted Signing, AppImage/deb/rpm, delta updates.
+- **Shipping maturity**: electron-builder and electron-updater, macOS notarization (the agent is signed as a nested executable with the hardened runtime), Windows signing via Azure Artifact Signing, AppImage/deb/rpm, delta updates. Signing reuses the setup Signal24 already runs for sp2p: Azure Artifact Signing (same signing account and service principal, as GitHub environment secrets) for Windows, and the same Apple certificate and App Store Connect API key for macOS. The secrets are copied into this repo's release environment when the release workflow lands (P1), not before.
 - **The UI stays WebKit-clean anyway**, because iOS Safari is WebKit. Electron is a consistency choice for desktop, not a Chromium lock-in.
 
 **What would reverse it**: the Playwright WebKit project (WebKitGTK-based on Linux) meeting the scroll, terminal, and log budgets in CI. Because the shell is thin, switching later is cheap; that comparison stays in the nightly suite. Wails was also considered: same system-webview problem, plus it couples an agent crash to a window crash.
@@ -35,10 +35,10 @@ The agent can serve the embedded UI itself and open the system browser. Useful o
 
 ## Hosted: `v8s server`
 
-- **One binary, one Deployment** for the open-source self-hosted install: OIDC login, cluster registry, groups, per-user state, audit, shared caches, problems, the passthrough, and the embedded UI.
-- **State store**: SQLite for single-replica installs, Postgres for HA. Stored: cluster records and identity strategies, encrypted credentials (impersonator tokens, IdP refresh tokens) under a KMS or file-provided key, users' groups/stars/bookmarks/layouts/acknowledgements, audit log, long-running job records (drains, Helm actions).
-- **Scaling**: caches are per cluster, so horizontal scaling shards **clusters** across replicas (consistent hashing on cluster id), with sessions routed to the replica that owns each cluster's cache, or proxied between replicas. MVP is single replica; sharding is P5.
-- **Helm chart** and a container image (distroless, non-root, read-only root filesystem). Flux-friendly: the chart's values cover OIDC, cluster records (or a CRD-based cluster registry, an open question), and storage.
+- **One binary, one Deployment** for the self-hosted install: OIDC login, cluster registry, groups, per-user state, per-user watches and problems, the passthrough, and the embedded UI.
+- **State store**: SQLite for single-replica installs, Postgres for HA. Stored: cluster records and identity strategies, impersonator credentials (only for clusters that use impersonation) encrypted under a KMS or file-provided key, users' groups/stars/bookmarks/layouts/acknowledgements, and records of running jobs (drains, Helm actions). Not stored: IdP tokens (session memory only) and logs of user activity.
+- **Scaling**: watches are per `(user, cluster)`, so horizontal scaling shards **users** across replicas (consistent hashing on user id; all of a user's sessions land on one replica). MVP is single replica; sharding is P5 and only needed past roughly 10 GB of active per-user state ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
+- **Helm chart** and a container image (distroless, non-root, read-only root filesystem). Flux-friendly: the chart's values cover OIDC, cluster records, and storage.
 - **Origins**: the app on `v8s.example.com`; proxied pod HTTP previews (port-forward replacement) on a **separate registrable domain** (`<random-label>.v8s-preview.example.net`). A subdomain of the app's domain would be same-site, so SameSite cookies would not stop in-cluster content from making requests to the app, and that content could set cookies on the parent domain. Session cookies are `__Host-` prefixed (host-only). Previews share one registrable domain with each other, so each preview's token is also a `__Host-` cookie (a sibling preview cannot set or overwrite it), and the hosted SaaS registers its preview domain on the Public Suffix List so previews are cross-site to each other; self-hosters are told to do the same or accept the residual risk.
 - **Self-hosted only.** No SaaS is planned, so there is no account or billing control plane and no in-cluster connector.
 
@@ -50,11 +50,11 @@ The first round is the **hosted web app in a phone's browser**: no app install, 
 
 Nothing in the first round blocks this; it is additive:
 
-- Web app manifest (name, short name, `start_url: /`, `display: standalone`, theme colours from tokens for light and dark, 192/512 PNG + maskable icons, `shortcuts` for Problems and Search). Installs from Chrome/Edge/Android and via Add to Home Screen on iOS Safari. Same recipe as the CI Dashboard.
+- Web app manifest (name, short name, `start_url: /`, `display: standalone`, theme colours from tokens for light and dark, 192/512 PNG + maskable icons, `shortcuts` for Problems and Search). Installs from Chrome/Edge/Android and via Add to Home Screen on iOS Safari (the recipe Signal24's CI Dashboard uses).
 - **Service worker** (production builds only) precaches the **app shell**: HTML, hashed JS/CSS chunks for the shell and the Problems/Search/Detail routes, fonts, icons. Route chunks for heavy desktop features (terminal, YAML editor, graphs) are cached on first use, not precached, to keep the install small.
 - **No offline cluster data.** API, auth, and WebSocket traffic are always network. Offline, the shell loads instantly and shows the last-known Problems snapshot (stored in IndexedDB, marked with its age and "offline") plus a reconnect state. A stale snapshot that says it is stale is useful on a train; a fake live view is not.
 - **Update flow**: new service worker waits; a toast offers "Reload to update". Never auto-reload mid-action.
-- **Web push**: notifications for new critical problems in chosen cluster groups, via the Push API (supported for installed PWAs on iOS 16.4+ and everywhere on Android). Off by default.
+- **No web push.** v8s evaluates problems only while a client is open, so there is nothing to push from.
 
 ### What works great on a phone
 
@@ -88,14 +88,14 @@ The phone talks to the same agent as the desktop browser. The agent does the wat
 - **Slow tick.** One patch per subscription per second (2 s on `saveData` or 2g/3g), versus 100–250 ms on desktop.
 - **Disabled classes are filtered in the agent**, so a phone never receives problems it would hide.
 - **Background = unsubscribe.** On `visibilitychange: hidden` ticks pause; after 30 s every subscription is dropped. iOS kills backgrounded sockets anyway; because sync is state-based, resuming costs one frame per view.
-- **The agent does not shrink.** Cluster-side watches are the same as for desktop clients. That is deliberate: they feed the problems engine, and the phone gets instant answers because the agent is already warm. The phone's battery never pays for watching clusters.
+- **The server does the watching.** Cluster-side watches are the same as for desktop clients and run on the server, so the phone's battery and data plan never pay for watching clusters. They start when the phone opens v8s and stop shortly after it closes, so a phone check-in is a cold start: WatchList and projection keep it within the budget below.
 
 ### Mobile performance budgets
 
 See [performance.md §Budgets](performance.md#11-performance-budgets) for the full table. The phone-specific ones, measured on a mid-range Android (Pixel 6a-class) with 4G throttling:
 
 - Warm start in the phone browser (HTTP-cached assets) to interactive: **≤ 1.5 s**.
-- Problems list with live data after launch (warm agent): **< 2.0 s**.
+- First problems visible after a cold check-in: **≤ 2.0 s**; problems complete for 6 clusters of 10k pods: **≤ 6 s** p95 on 4G.
 - Main-thread work per patch: **≤ 4 ms** p95.
 - Initial JS for the shell + Problems route: **< 150 KB gzipped**. Terminal, CodeMirror, and graph code are separate chunks.
 - Scroll of a 5,000-card list: ≤ 8 ms scripting per frame p95, zero layout shifts.

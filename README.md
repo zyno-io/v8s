@@ -10,9 +10,9 @@ A fast, multi-cluster Kubernetes manager for desktop, web, and phone.
 - **Multi-cluster by default.** Pick clusters or a group (`production`, `staging`); every list, search, and the Problems view span the selection. v8s only ever connects to clusters you selected.
 - **A Problems view** across all selected clusters: crash loops, failed Jobs, NotReady nodes, Ingresses with no endpoints, failed Helm releases, unhealthy Flux objects, policy failures, critical vulnerabilities, dropped network flows. Filterable by class.
 - **First-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble**, not just generic CRD browsing.
-- **Day-to-day operations**: edit with dry run and diff, pod shell, node shell, cordon/drain, logs, port-forward, with an audit trail.
+- **Day-to-day operations**: edit with dry run and diff, pod shell, node shell, cordon/drain, logs, port-forward.
 - **Desktop app** (macOS, Windows, Linux) and a **self-hosted web app** that works in desktop and phone browsers.
-- **Gateway-native identity**: built to run behind access gateways such as [Warpgate](https://github.com/warp-tech/warpgate). Every request carries the user's own token, including per-action elevation to just-in-time admin targets.
+- **Your credential, all the way through**: every request carries the user's own credential, to the API server directly or through an access gateway such as [Warpgate](https://github.com/warp-tech/warpgate), including per-action use of elevated gateway targets.
 
 ## The plan
 
@@ -25,10 +25,10 @@ Start with [docs/architecture.md](docs/architecture.md). The performance chapter
 | [data-model.md](docs/data-model.md) | Identity, resource coverage matrix, CRDs, stars and bookmarks |
 | [problems.md](docs/problems.md) | Problems engine and view |
 | [integrations.md](docs/integrations.md) | Flux, Helm, Kyverno, Trivy, Kubescape, Hubble |
-| [operations.md](docs/operations.md) | Editing, shells, drain, logs, port-forward, audit, security |
-| [auth.md](docs/auth.md) | Gateway (Warpgate) token pass-through, access profiles, desktop kubeconfig auth, hosted identity |
+| [operations.md](docs/operations.md) | Editing, shells, drain, logs, port-forward, security |
+| [auth.md](docs/auth.md) | Credential pass-through on desktop and hosted, access gateways (Warpgate), access profiles |
 | [packaging.md](docs/packaging.md) | Electron desktop, hosted server, mobile web |
-| [design-system.md](docs/design-system.md) | Visual design mapping |
+| [design-system.md](docs/design-system.md) | Design system |
 
 ## Spikes
 

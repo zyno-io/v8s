@@ -15,7 +15,7 @@ One view answers "what is broken, anywhere I'm looking?" across every selected c
 
 In the **agent**, next to the watch caches. Detectors read the agent's indexed, projected store directly; they never cross a process boundary per object. The UI subscribes to the problems query like any other view and receives windowed rows plus counts per class.
 
-Hosted mode runs detectors **per user** over that user's own watches for gateway-fronted clusters (the default; see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)). For directly reached clusters with the optional shared cache, detectors run **once per cluster** over the shared cache. Each problem inherits its subject's authorization scope and is filtered per user like any other row (see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)); a problem about an object a user cannot see is never shown to them.
+Hosted mode runs detectors **per user** over that user's own watches (the default; see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)), so problems contain only what the user's own token can read, and they are evaluated only while the user has v8s open. On impersonation or kiosk clusters with the optional shared cache, detectors run **once per cluster**, and each problem is filtered per user by its subject's authorization scope; a problem about an object a user cannot see is never shown to them.
 
 Problems are a **synthetic resource type** (`v8s/problems`) in the agent's view engine, so cross-cluster merge, sort, grouping, windowing, and authorization filtering are the same code that serves resource lists.
 
@@ -105,7 +105,7 @@ interface Detector {
 | `ingress.no-backend` | Ingress rule → Service missing, or Service has no ready endpoints (EndpointSlice join) [error] | on |
 | `service.no-endpoints` | Service with selector and zero ready endpoints > 2 min (excluding ExternalName/headless-by-design) [warning] | on |
 | `gateway.route-unaccepted` | Gateway API HTTPRoute `Accepted=False` or `ResolvedRefs=False` [error] | on |
-| `cert.expiring` | cert-manager Certificate not Ready or `status.notAfter` < 14 d (requires cert-manager; plain TLS Secrets are not read, because Secrets are never in the shared cache) [warning] | on when cert-manager is present |
+| `cert.expiring` | cert-manager Certificate not Ready or `status.notAfter` < 14 d (requires cert-manager; plain TLS Secrets are not read, because Secrets are only ever fetched on demand) [warning] | on when cert-manager is present |
 
 ### Platform and events
 
@@ -136,7 +136,7 @@ When a cluster is selected, the agent starts a fixed **baseline** set of watches
 | APIServices, Validating/MutatingWebhookConfigurations | full (few, small) | platform |
 | CustomResourceDefinitions | metadata only | discovery invalidation |
 | Flux sources, Kustomizations, HelmReleases | full, stripped | Flux classes |
-| Helm release Secrets | metadata only, `owner=helm`; **per user** in hosted mode (Secrets are never in the shared cache), so Helm classes are evaluated per user there | Helm classes |
+| Helm release Secrets | metadata only, `owner=helm`; per user, like every hosted watch | Helm classes |
 | Kyverno policies (ClusterPolicy, Policy, ValidatingPolicy, NamespacedValidatingPolicy) | status projection | `policy.not-ready` |
 | Gateway API Gateways/HTTPRoutes/GRPCRoutes, cert-manager Certificates | status projection (when installed) | `gateway.*`, `cert.*` |
 | Kyverno / OpenReports policy reports | server-side Table (Pass/Fail/Warn/Error/Skip counts) + metadata | policy classes |
@@ -162,7 +162,7 @@ Each cluster's engine emits problem deltas independently. The agent's query laye
 - **Rows**: severity tag, cluster tag, class, subject (kind/namespace/name), title, since. Expanding a row shows the evidence inline: the triggering condition/state, the last 5 related Warning events, and quick actions (logs, describe, restart, reconcile, rollback; whatever fits the class).
 - **Acknowledge** (the CI Dashboard's dismiss): hides a problem for this user until it materially changes (severity rises, count grows past a threshold, or it resolves and recurs). Optional snooze (1 h / 1 d / 1 w). "Show acknowledged" brings them back faded with Restore. Acknowledgements are stored per user (desktop: local; hosted: server) keyed by problem ID.
 - **Problem class presets** saved per cluster group, e.g. production shows everything, staging hides `pod.pending` and vulnerability classes.
-- **Notifications** (later): desktop notifications and web push (PWA) for new critical problems in chosen groups. Off by default.
+- **Notifications** (later): desktop notifications for new critical problems in chosen groups while the app is open. Off by default. There is no background or push alerting: v8s only evaluates problems while a client is open.
 
 ## Performance notes
 

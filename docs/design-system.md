@@ -1,10 +1,13 @@
-# Design system mapping
+# Design system
 
-v8s uses the Signal24 "CI Dashboard" design system, the same one PixelCI ships. The canonical description is PixelCI's `DESIGN.md` (tokens in its frontmatter). Signal24's internal CI Dashboard is the origin of the tokens and the closest relative in shape: a dense, filterable, live-updating status table that is also an installable PWA.
+v8s defines its own design system. It draws on two separate Signal24 products for their UI elements, not for a shared system:
 
-This chapter says what v8s takes unchanged, what it extends, and which rules it bends because a Kubernetes manager is denser than a review desk.
+- **PixelCI** for the visual foundation: its `DESIGN.md` tokens (colour, type, radius, shadow) and rules, which v8s adopts as its starting point.
+- **The CI Dashboard** for interaction patterns that fit v8s's shape: a dense, filterable, live-updating status table with tone filter chips, per-row dismiss, cards on narrow screens, and installability.
 
-## Take unchanged
+This chapter says what v8s takes from PixelCI, what it adds, and which rules it bends because a Kubernetes manager is denser than a review desk.
+
+## Take from PixelCI
 
 - **Tokens.** Every colour, radius, shadow, and type token, in light and dark, under the same custom-property names. Components never branch on theme. Theme follows the OS unless the user picks one.
 - **Type.** Inter with `cv11`, `ss01`, `tnum`; the 11–20px ramp; weight before size.
@@ -14,11 +17,11 @@ This chapter says what v8s takes unchanged, what it extends, and which rules it 
 - **The Shadow Means Detached Rule** and **The Nested Radius Rule** (12 › 8 › 5).
 - **Controls** share one 32px height so a filter row of search, selects, segmented controls, and buttons aligns.
 - **Danger buttons** are outlined with Destructive Red text and always lead to a confirm dialog.
-- **Icons**: Font Awesome Free, as in both siblings.
+- **Icons**: Font Awesome Free.
 
 ## Token delivery
 
-Copy the token block from PixelCI into `packages/ui/src/styles/tokens.scss` in P0. Three products now share these tokens; see [open question Q8](architecture.md#open-questions) about extracting them into a shared package (likely `@zyno-io/vue-foundation`).
+Copy the token block from PixelCI into `packages/ui/src/styles/tokens.scss` in P0 and own it there; v8s's tokens evolve independently. `@zyno-io/vue-foundation` stays designless and supplies behaviour only.
 
 ## Status mapping
 
@@ -37,7 +40,7 @@ Problem severity (see [problems.md](problems.md)) maps `critical`/`error` → da
 
 ## Extensions v8s needs
 
-PixelCI is a review desk: a 1120px column of cards and rows. v8s is closer to the CI Dashboard: one big live table. These additions keep the vocabulary and add density.
+PixelCI is a review desk: a 1120px column of cards and rows. v8s is closer in shape to the CI Dashboard: one big live table. These additions keep PixelCI's vocabulary and add density.
 
 ### App frame
 
@@ -50,7 +53,7 @@ PixelCI is a review desk: a 1120px column of cards and rows. v8s is closer to th
 A top-bar button showing the selected count ("3 clusters") or the single cluster name. It opens a floating menu:
 
 - Group chips at the top (`production`, `staging`, user-defined). Clicking a chip selects exactly that group; shift-click adds it.
-- A searchable checklist of clusters with a connection-state dot (connected, connecting, error, disconnected, ticket-required) and the group tags. A cluster with several access profiles shows its default profile and a small profile menu; an elevated profile in use wears a warning-tone tag (`cluster-admin`) everywhere the cluster tag appears.
+- A searchable checklist of clusters with a connection-state dot (connected, connecting, error, disconnected, elevation-required) and the group tags. A cluster with several access profiles shows its default profile and a small profile menu; an elevated profile in use wears a warning-tone tag (`cluster-admin`) everywhere the cluster tag appears.
 - "Apply" commits the selection. Checking boxes connects nothing until Apply, so a fat-fingered "select all" on 40 clusters does not open 40 connections. On launch, the remembered selection appears pre-checked with a "Connect" button (or reconnects automatically if the user turned that on).
 
 Each cluster gets a stable **cluster tag**: neutral tone, the cluster's short name, and an optional user-chosen accent dot (6 hues tuned to sit beside, not clash with, status tones). In multi-cluster tables the cluster tag is the first column.
@@ -94,7 +97,7 @@ Two graph surfaces: Flux dependency/inventory trees and the Hubble service map. 
 
 ## Mobile layouts
 
-The CI Dashboard already switches its project table to cards below 640px and is installable. v8s follows the same breakpoints (1120, 900, 640, 360).
+Like the CI Dashboard's project table, v8s switches tables to cards on narrow screens. Breakpoints follow PixelCI (1120, 900, 640, 360). The first round is the phone's browser; installability comes later ([packaging.md](packaging.md#mobile-web)).
 
 - **Below 900px** the sidebar becomes a bottom sheet behind a "Resources" button; the top bar keeps cluster selector, problems badge, and search.
 - **Below 640px** tables become **fixed-height cards** (72px: name + status tag on line one, cluster/namespace/age caption on line two, a single key metric right-aligned). Still virtualized; still fixed height. Multi-select moves to long-press.
@@ -105,4 +108,4 @@ The CI Dashboard already switches its project table to cards below 640px and is 
 
 ## Brand
 
-Name **v8s**, always lower case. Until there is a mark, use the CI Dashboard pattern: a small glyph in an inverted rounded square beside the text wordmark. No illustration; the cluster is the content.
+Name **v8s**, always lower case. Until there is a mark, use a small glyph in an inverted rounded square beside the text wordmark. No illustration; the cluster is the content.

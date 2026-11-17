@@ -1,168 +1,121 @@
 # Authentication and identity
 
-Goal: **every Kubernetes request v8s makes carries the real end user's identity**, so cluster RBAC, admission, and the API server audit log all see the person, not "v8s". That is easy on the desktop (the user's kubeconfig already is their identity) and the hard part of the hosted design.
+**Rule: the user's own credential goes all the way through.** Every request v8s makes (lists, watches, gets, writes, exec, logs, port-forward) carries the signed-in person's own credential to whatever endpoint the cluster is configured with. That endpoint may be an API server directly, or an access gateway such as [Warpgate](https://github.com/warp-tech/warpgate), which authorizes and records the person and then forwards to the cluster. v8s never reads cluster data under an identity of its own, unless an admin of a hosted install explicitly configures one for a specific cluster (impersonation or a read-only kiosk, below).
+
+That is easy on the desktop (the user's kubeconfig already is their identity) and the main constraint on the hosted design.
 
 ## Desktop
 
 The desktop agent is a Kubernetes client on the user's machine. It uses the user's kubeconfig exactly as `kubectl` would.
 
 - **Sources**: `$KUBECONFIG` (all paths, merged), `~/.kube/config`, extra files or directories added in settings, and **imported** kubeconfigs (copied into a v8s-managed file for offline use; the original is never rewritten). Files are watched; a new context appears without a restart.
-- **Credential types**: client certificates, bearer tokens, token files, basic auth (legacy), and **exec credential plugins** (`client.authentication.k8s.io/v1`): `kubelogin` (OIDC), `aws eks get-token`, `gke-gcloud-auth-plugin`, `kubelogin` for Azure, Teleport `tsh`, `pinniped`, and anything else that speaks the protocol. The agent runs plugins itself with the user's environment and `PATH` (a GUI app on macOS does not inherit the shell's `PATH`; the agent resolves the login shell's `PATH` once at start, as VS Code does).
+- **Credential types**: client certificates, bearer tokens, token files, basic auth (legacy), and **exec credential plugins** (`client.authentication.k8s.io/v1`): `kubelogin` (OIDC), `aws eks get-token`, `gke-gcloud-auth-plugin`, `kubelogin` for Azure, Teleport `tsh`, `pinniped`, and anything else that speaks the protocol. Real kubeconfigs mix all of these; v8s handles each context independently.
 - **Login-shell environment**: plugins are run with an environment captured once from the user's login shell (`$SHELL -ilc 'env -0'`, 5 s timeout), because apps launched from the macOS GUI otherwise lack the `PATH` entries for `aws`, `gke-gcloud-auth-plugin`, and `kubelogin`.
-- **Browser-based plugins** (e.g. `kubelogin` opening a browser for OIDC): the agent shows "Waiting for sign-in for `prod-eu` in your browser" on that cluster only; other clusters keep working. The first authentication per identical plugin command is **serialized**, so five contexts sharing one IdP open one browser login, not five. The returned `ExecCredential` is cached until `expirationTimestamp`.
-- **Plugins that prompt on stdin** (MFA codes typed into a terminal) are out of scope for v1; v8s detects them (plugin waiting on stdin with `interactiveMode: Always`) and suggests running the plugin once in a terminal to warm its cache.
-- **Built-in OIDC login** for clusters that trust an OIDC issuer but whose kubeconfig has no plugin: v8s can act as the client itself (authorization code + PKCE, loopback redirect, refresh token in the OS keychain). This is also how v8s writes a working kubeconfig for a teammate ("Copy kubeconfig for this cluster" emits an `exec` entry pointing at `v8s auth token --cluster X`).
-- **Secrets at rest**: anything v8s itself stores (OIDC refresh tokens, imported tokens) goes in the OS keychain (macOS Keychain, Windows Credential Manager, libsecret), never in plain settings files.
+- **Browser-based plugins** (e.g. `kubelogin` opening a browser for OIDC): the agent shows "Waiting for sign-in for `prod-eu` in your browser" on that cluster only; other clusters keep working. The first authentication per identical plugin command is **serialized**, so many contexts sharing one IdP client (for example every Warpgate target plus every cluster that trusts the same Entra ID app) open one browser sign-in, not one per context. The returned `ExecCredential` is cached until `expirationTimestamp`.
+- **Plugins that prompt on stdin** (MFA codes typed into a terminal) are out of scope for v1; v8s detects them and suggests running the plugin once in a terminal to warm its cache.
+- **Secrets at rest**: anything v8s itself stores (imported tokens) goes in the OS keychain (macOS Keychain, Windows Credential Manager, libsecret), never in plain settings files.
 - **Proxy**: honours `proxy-url` in kubeconfig and `HTTPS_PROXY`/`NO_PROXY`; supports SOCKS5 for bastion setups.
 
-## Gateway-fronted clusters (Warpgate)
+## Access gateways (Warpgate)
 
-The primary deployment v8s is designed for puts every cluster behind an **identity-aware access gateway**, specifically [Warpgate](https://github.com/warp-tech/warpgate). Teleport and similar gateways fit the same model. The gateway:
+To v8s a gateway is **transparent**: it is a Kubernetes endpoint with OIDC authentication, configured like any other cluster. v8s has no gateway-specific code path. A few gateway behaviours still shape the design:
 
-- authenticates the person with OIDC (the gateway hands out a kubeconfig whose exec profile is `kubelogin`);
-- exposes one Kubernetes endpoint per **target**, where a target is a cluster × role (for example an everyday `operator` role and a just-in-time `cluster-admin` role that needs an approved ticket);
-- re-evaluates the person's grant for that target **on every request** and records the session;
-- connects upstream with its own short-lived credential for a **fixed upstream identity per target** (for example a five-minute client certificate for `gateway-operator`), so the API server authorizes the target's role and the gateway attributes the request to the person.
+- **One endpoint per target**, where a target is a cluster × role (for example an everyday `operator` role and a `cluster-admin` role). Several contexts therefore reach one cluster; v8s models them as **access profiles** of one cluster (below).
+- **Just-in-time elevation lives in the gateway.** Warpgate's elevated targets are time-boxed sessions granted by a ticket in Warpgate. v8s implements no JIT, approval, or time-boxing of its own. It uses the elevated target like any other profile, and when Warpgate rejects a request because no ticket is active, v8s says so and links to Warpgate.
+- **Fixed upstream identity per target.** Warpgate connects upstream with its own short-lived credential for the target's role. `SelfSubjectReview` through the target returns that identity, which is exactly what the API server authorizes, so RBAC-aware UI works per profile. The person is attributed in Warpgate's records, not in the Kubernetes audit log; that is Warpgate's design.
+- **Per-request authorization and recording.** Warpgate checks the grant on every request and records sessions, including request content. v8s therefore keeps its traffic lean: protobuf for built-in kinds, metadata-only and Table-mode watches where they suffice, no polling, and no connections while no v8s client is open ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)). Long-lived watches are re-established at least every 30 minutes (`timeoutSeconds`), so each is re-authorized at least that often even if a gateway does not cut revoked streams.
+- **Verify in P0** through Warpgate's (experimental) Kubernetes target support: watch and WatchList, the protobuf content type, `as=Table` requests, exec/attach/port-forward upgrades (WebSocket `v5.channel.k8s.io` and the SPDY fallback), and recording volume for long watch streams. Any gap becomes a recorded fallback (for example JSON instead of protobuf).
 
-**Rule: the user's token goes all the way through.** Every request v8s makes to a gateway-fronted cluster (lists, watches, gets, writes, exec, logs, port-forward) carries **that user's own gateway token** to the target's URL. v8s never holds a gateway or upstream credential of its own for such a cluster. It never reads cluster data under any identity other than the user's, and it never bypasses the gateway. That rule is why hosted mode uses per-user watches for these clusters (see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
+## Access profiles: one cluster, several contexts
 
-### Desktop
-
-The gateway's kubeconfig works as-is: v8s runs the `kubelogin` exec plugin like any other ([Desktop](#desktop)). All targets share one exec profile, so the serialized first authentication means **one browser sign-in covers every target**.
-
-### Hosted
-
-The v8s server needs, for each signed-in user, the same token the `kubelogin` profile would obtain. It acquires it **server-side**, refreshes it server-side, and never sends it to the browser.
-
-- **Gateway trusts the organization's IdP** (for example Entra ID): v8s signs users in with the same IdP and obtains a token for the gateway's client (OIDC client ID / audience) via on-behalf-of or RFC 8693 token exchange, or by requesting that audience directly if v8s is registered as a client permitted to do so.
-- **Gateway is its own issuer**: v8s signs users in **through the gateway's OIDC** (v8s becomes a client of the gateway), so the login itself produces the token the gateway accepts.
-
-Which of the two applies is [open question Q2](architecture.md#open-questions).
-
-### Access profiles: one cluster, several targets
-
-- v8s treats a **cluster** as one thing with several **access profiles** (one per target or context). Contexts are grouped automatically by the **`kube-system` namespace UID**, a stable cluster identifier readable through any profile that can `get namespaces`. An explicit mapping in settings is the fallback.
-- **Watches always run on the default (least-privileged) profile.** Elevated profiles are used **per action** ("Run as cluster-admin" in the action menu and confirm dialog) or for an explicitly elevated, time-boxed session with a visible banner. They are never used for background watches.
-- **JIT tickets**: if the gateway rejects an elevated request because no ticket is active or it has expired, v8s shows "Ticket required for `<target>`" with a link to the gateway's ticket page. It does not retry in a loop.
-- **RBAC-aware UI** evaluates the profile's upstream identity: `SelfSubjectReview` returns the fixed target identity, which is exactly what the API server authorizes. Buttons are enabled or disabled per profile, and an action allowed only on the elevated profile says so.
-
-### Attribution
-
-- The gateway records the person, target, ticket decision, and requests.
-- v8s's own audit log records the person, cluster, profile (target), and action.
-- v8s sends a `User-Agent` of `v8s/<version> (session <id>)` so the two logs can be correlated where the gateway records request metadata.
-- The Kubernetes audit log sees only the fixed upstream identity. That is the gateway's design, not something v8s can or should work around.
-
-### Gateway effects on performance and features (verify in P0)
-
-- Every watch is one long-lived request through the gateway. A grant revoked mid-watch is the gateway's to enforce. As a backstop, v8s caps watch duration (`timeoutSeconds` ≤ 30 min), so every watch is re-authorized at least that often.
-- Protobuf and metadata-only watches reduce what the gateway proxies and records. Projection does not (it happens after the bytes arrive). Watch volume through the gateway is therefore a budget to measure, alongside gateway CPU and the size of its session recordings.
-- P0 must confirm, through Warpgate's Kubernetes target support:
-  - watch and WatchList;
-  - the protobuf content type;
-  - `as=Table` requests;
-  - exec/attach/port-forward upgrades (WebSocket `v5.channel.k8s.io` and the SPDY fallback);
-  - how session recording treats long watch streams.
-
-  Any gap becomes a fallback recorded in [performance.md](performance.md) (for example JSON instead of protobuf).
+- A **cluster** in v8s can have several **access profiles**, one per kubeconfig context or gateway target that reaches it (typically `operator` and `cluster-admin`).
+- **Grouping is explicit and pinned.** v8s never merges contexts on its own, because a wrong merge would send an elevated action to the wrong cluster, and the `kube-system` namespace UID is neither unique (clusters restored from one etcd snapshot share it) nor trustworthy (any endpoint can report any UID). v8s **suggests** a grouping when two contexts the user has already connected report the same UID, or when their server URLs differ only in a target name; the user confirms once, seeing both endpoints, and the grouping is pinned. Contexts the user has not selected are never probed.
+- **The default profile is the one the user picks**, never auto-promoted when a profile is added. Watches, views, and problems always run on the default profile.
+- **Elevated profiles are used per action** ("Run as `cluster-admin`" in the action menu and confirm dialog) or by switching the cluster's active profile while a gateway session is active, shown by a warning-tone profile tag wherever the cluster appears. The confirm dialog shows the elevated endpoint URL.
+- **Elevated writes are pinned to the object the user saw**: they carry `preconditions.uid` (deletes) or `metadata.uid` and `resourceVersion` (updates and patches) from the default profile's read, so a mis-grouped profile fails the request instead of acting on a different cluster's object of the same name.
+- **Elevated permissions are evaluated lazily**: v8s does not probe an elevated profile until the user uses it, and shows elevated-only actions as "may require an active gateway session".
+- Grouped profiles share the cluster's problem IDs, acknowledgements, and bookmarks; ungrouped contexts are separate clusters.
 
 ## Hosted
 
 ### Login to v8s
 
-Users sign in to v8s with **OIDC** (Keycloak, Okta, Entra ID, Google, Dex, GitLab, GitHub via Dex). No local passwords. The v8s server keeps the IdP refresh token server-side (encrypted at rest) **only for the lifetime of the v8s session**: it is deleted at logout and at session expiry, and sessions have an absolute lifetime (default 12 h). The browser holds only a host-only `__Host-` session cookie (HttpOnly, Secure, SameSite=strict). v8s maps IdP claims to:
+Users sign in to v8s with **OIDC** against the organization's IdP (Entra ID, Keycloak, Okta, Google, Dex, GitLab). No local passwords. In the expected deployment the IdP is Entra ID and the same app registration is trusted by the clusters and by Warpgate.
 
-- a **username** (configurable claim, default `email` or `preferred_username`, with an optional prefix such as `oidc:`), and
-- **groups** (configurable claim, default `groups`, optional prefix).
-
-The mapping must match what each cluster expects, because that string is what RBAC bindings name. Mapping is configured per cluster (defaulting to a global mapping).
+The browser holds only a host-only `__Host-` session cookie (HttpOnly, Secure, SameSite=strict). IdP tokens stay on the server, encrypted in memory and at rest, **only for the lifetime of the session**: they are deleted at logout and at session expiry, and sessions have an absolute lifetime (default 12 h). Nothing is held long-term.
 
 ### Forwarding identity to clusters
 
-Each cluster record has one **identity strategy**. Gateway-fronted clusters use **gateway pass-through** ([above](#gateway-fronted-clusters-warpgate)), the expected deployment. Clusters reached directly use one of these four, in order of preference:
+Each cluster record has one **identity strategy**. In order of preference:
 
-#### 1. OIDC pass-through (preferred)
+#### 1. OIDC pass-through (default)
 
-The API server trusts the same IdP. v8s sends the user's own IdP-issued token as the bearer token.
+The endpoint (API server or gateway) trusts the same IdP; v8s sends the user's own IdP-issued token as the bearer token. This covers Warpgate targets and directly reached clusters configured with `--oidc-*` flags or **Structured Authentication Configuration** (`AuthenticationConfiguration`, GA since 1.34), EKS with an associated OIDC provider, and AKS with Entra integration.
 
-- **When it works**: self-managed clusters with `--oidc-*` flags or, better, **Structured Authentication Configuration** (`AuthenticationConfiguration`, GA since Kubernetes 1.34), which allows several JWT issuers and audiences and CEL claim mappings; EKS with an associated OIDC identity provider; AKS with Entra ID integration (via token exchange below); GKE via Identity Service or Workforce Identity Federation; Rancher-, Pinniped-, or Teleport-fronted clusters with their own variants.
-- **Audience: one per cluster, by default.** v8s performs an **RFC 8693 token exchange** (Keycloak, Okta, and others) or an on-behalf-of flow (Entra) at the IdP for a short-lived token whose `aud` is that cluster alone. A token handed to cluster `dev` is then useless against cluster `prod`, so neither a `dev` operator reading request logs nor a compromised connector can replay it elsewhere.
-- **Never forward the v8s login ID token.** Its audience is v8s itself.
-- **Shared audience is an explicit opt-in** ("these clusters are one trust domain"), for IdPs without token exchange. It uses a **separate OIDC client registered for that trust domain** (not the v8s login client): v8s obtains that client's token for the user via the IdP's refresh flow, and every cluster in the domain trusts that client's audience. The cluster settings screen states the consequence: any cluster in the domain can replay a user's token against the others.
-- **Refresh**: the server refreshes tokens before expiry using the stored refresh token; a failed refresh marks the user's clusters `auth expired` and prompts re-login.
-- **Risk profile**: best of the four. v8s holds no cluster credential. It does hold IdP refresh tokens for users with live sessions, so a server compromise yields the ability to mint tokens for those users until their sessions expire or the refresh tokens are revoked at the IdP. Mitigations: refresh tokens encrypted with a KMS-held key, deleted at logout/expiry, IdP-side refresh-token rotation and short absolute lifetimes, and per-cluster audiences so stolen access tokens are narrow.
+- **Which token.** `kubelogin` sends an **ID token** whose `aud` is the client ID the endpoint trusts. A server can only obtain an ID token for a client it signs in as, so v8s registers its hosted redirect URI on that **cluster app registration** and runs a second authorization-code flow with it right after the v8s login (silent through the IdP's SSO session). v8s's own session login stays separate from this cluster token.
+- **Shared audience is the normal case with ID tokens.** Every cluster and gateway that trusts the same client ID accepts the same token, so they form one trust domain: an operator of one endpoint who captures a token can replay it against the others until it expires (about an hour with Entra). That is already true of the `kubelogin` setup this mirrors; v8s states it in the cluster settings.
+- **Per-cluster audiences** (optional hardening): endpoints that accept **access tokens** for their own API audience can be given one each, via on-behalf-of (Entra) or RFC 8693 token exchange; a token captured by one cluster is then useless against another.
+- **Refresh**: the server refreshes tokens before expiry with the session's refresh token; a failed refresh marks the user's clusters `auth expired` and prompts re-login.
+- **Risk profile**: v8s holds no cluster credential, but a server compromise yields the live sessions' IdP tokens, and with them whatever those users can reach, **including elevated gateway targets for anyone with an active gateway session**. Mitigations: session-lifetime-only storage, KMS-held encryption keys, IdP refresh-token rotation, short absolute session lifetime, and an optional **step-up re-authentication** (`max_age`/`prompt=login`) before any elevated-profile action in hosted mode.
 
-#### 2. Cloud-native token exchange
+#### 2. Cloud-native token exchange (later)
 
-For managed clusters whose API server trusts the cloud IAM, not the IdP:
-
-- **EKS**: v8s exchanges the user's IdP token at AWS STS (`AssumeRoleWithWebIdentity`, with the IdP registered as an IAM OIDC provider), setting the **role session name to the user's identity**, and presents an EKS token for that session. EKS access entries map the role to Kubernetes groups; the API server audit log shows the session name. Per-user RBAC needs per-group roles or access-entry mapping by session tag; this is coarser than true OIDC, and the doc for operators says so.
-- **AKS (Entra ID)**: on-behalf-of flow: exchange the user's Entra token for one with the AKS server application audience. The API server sees the real Entra user and groups. This is genuinely per-user.
-- **GKE**: Workforce Identity Federation: exchange the IdP token at Google STS for a federated access token; GKE RBAC sees the workforce principal. Per-user.
+For managed clusters whose API server trusts cloud IAM, not the IdP: EKS via STS `AssumeRoleWithWebIdentity` with the user as role session name (coarser: RBAC sees the mapped role), AKS via Entra on-behalf-of for the AKS server application audience (per user), GKE via Workforce Identity Federation (per user). P5.
 
 #### 3. Impersonation
 
-For any cluster that can't trust the IdP, v8s authenticates as a dedicated identity (a ServiceAccount with a bound, short-lived token from the TokenRequest API, or a client certificate) that holds `impersonate` permission, and sets `Impersonate-User` and `Impersonate-Group` headers with the mapped user identity.
+For directly reached clusters that cannot trust the IdP, v8s authenticates as a dedicated identity (a ServiceAccount with a bound, short-lived token, or a client certificate) holding `impersonate`, and sets `Impersonate-User`/`Impersonate-Group` from the mapped identity.
 
-- **When**: on-prem clusters without OIDC, clusters where adding an issuer is not possible, mixed fleets.
-- **The honest risk**: classic RBAC can scope `impersonate` with `resourceNames`, but user names are unbounded, so an impersonator that can impersonate "any user" can impersonate whoever holds cluster-admin. **Classic impersonation is admin-equivalent if the credential leaks.** v8s mitigates, and says so in the cluster setup screen:
-  - `impersonate` on `groups` must be limited by `resourceNames` to an explicit allowlist; v8s refuses to save a cluster whose impersonator can impersonate `system:masters` or any `system:` group, and refuses `impersonate` on `serviceaccounts`. These are checked with **`SelfSubjectAccessReview` probes** (impersonate `groups/system:masters`, `groups/system:nodes`, a random `system:` group, `serviceaccounts`, and a random user name), at save time and on every connect. Rules reviews are not authoritative and are not used for this check.
-  - v8s only ever sends usernames produced by its own claim mapping, with a mandatory prefix (default `v8s:`), and hard-denies any mapped name or group starting with `system:` in code, so a v8s *bug* cannot impersonate `admin`; only a stolen credential could.
-  - Where the cluster supports **constrained impersonation** (KEP-5284: alpha 1.35, beta 1.36, GA targeted 1.38), v8s uses it to limit which users and which actions the impersonator may impersonate. That removes the admin-equivalence and becomes the recommended setup once GA.
-  - `userextras` impersonation carries the IdP `sub` and the v8s session ID (header `Impersonate-Extra-v8s.dev%2Fsession`: extra keys are percent-encoded, which client-go does automatically), so the API server audit log ties every request to a v8s session.
-- **Risk profile**: the impersonator credential is a high-value secret. It never leaves the server, is encrypted at rest with a KMS-held key, is a bound token rotated hourly where possible, and its use is limited to requests carrying a valid user session.
+- **The honest risk**: user names are unbounded, so an impersonator that can impersonate "any user" can impersonate whoever holds cluster-admin. **Classic impersonation is admin-equivalent if the credential leaks.** v8s mitigates, and says so in the cluster setup screen:
+  - `impersonate` on `groups` must be limited by `resourceNames` to an explicit allowlist; v8s refuses to save a cluster whose impersonator can impersonate `system:masters`, any `system:` group, or `serviceaccounts`, checked with `SelfSubjectAccessReview` probes at save time and on every connect.
+  - v8s only sends usernames produced by its own claim mapping, with a mandatory prefix (default `v8s:`), and hard-denies any mapped name or group starting with `system:`.
+  - Where **constrained impersonation** is available (KEP-5284: beta 1.36, GA targeted 1.38), v8s uses it to limit what may be impersonated.
+  - The IdP `sub` and a correlation id travel as user extras (`Impersonate-Extra-v8s.io%2Fcorrelation`; client-go percent-encodes the key).
+- This is the only strategy (with the kiosk) where v8s holds a cluster credential, and the only one that permits the optional shared cache ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)).
 
 #### 4. Shared credential (read-only kiosk)
 
-A single read-only ServiceAccount for everyone. Only for wallboards and demos. v8s marks such clusters `shared identity` everywhere in the UI and disables every mutation, shell, and port-forward regardless of what the credential allows.
+A single read-only ServiceAccount for everyone, for wallboards. v8s marks such clusters `shared identity` everywhere and disables every mutation, shell, and port-forward regardless of what the credential allows.
 
 ### Reachability
 
-Hosted v8s is **self-hosted only** (no SaaS is planned). It reaches clusters through the access gateway, or over private networking for clusters reached directly. No in-cluster connector is planned.
+Hosted v8s is **self-hosted only** (no SaaS is planned). It reaches endpoints over whatever network the install has: the gateway, or private networking for directly reached clusters.
 
 ### Per-request flow (hosted)
 
 ```
 browser ──(session cookie, WS)──▶ v8s server
-    session → user (sub, username, groups, IdP tokens)
+    session → user (sub, username, groups, IdP tokens for this session only)
     cluster → strategy
-        gateway:           https://<gateway>/<target>   Authorization: Bearer <this user's gateway token>
-                           (the gateway authorizes the person per request, records it, and connects upstream
-                            as the target's fixed identity)
-        oidc-passthrough:  Authorization: Bearer <token exchanged for this cluster's audience>
-        cloud-exchange:    Authorization: Bearer <EKS/AKS/GKE token for this user>
+        oidc-passthrough:  Authorization: Bearer <user's ID token for the cluster app>
+                           ──▶ API server, or a gateway (Warpgate) that authorizes and records the person
+                               and forwards as the target's role identity
         impersonation:     Authorization: Bearer <impersonator token>
-                           Impersonate-User: <mapped username>
-                           Impersonate-Group: <mapped groups…>
-                           Impersonate-Extra-v8s.dev%2Fsession: <session id>
-    ──▶ kube-apiserver (RBAC evaluates the real user)
+                           Impersonate-User / Impersonate-Group: <mapped identity>
+                           Impersonate-Extra-v8s.io%2Fcorrelation: <correlation id>
+        kiosk:             Authorization: Bearer <read-only token>; mutations disabled
 ```
 
-**Gateway-fronted clusters: everything is per user.** Lists, watches, problems inputs, and writes all run as the user through the gateway (see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing) for the cost model).
+With OIDC pass-through, **everything is per user**: lists, watches, problem inputs, and writes all carry the user's token ([performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing) has the cost model).
 
-**Clusters reached directly** may opt in to a read optimization:
+## Correlation
 
-- **List and problem reads of tier-0 kinds** come from a **shared per-cluster cache**. A hub ServiceAccount that cannot read Secrets reads it. Results are filtered per user by SubjectAccessReview, fail-closed. This never widens what a user sees.
-- **Everything else** goes to the API server **as the user** through the strategy above, rate-limited per user and per cluster. That covers Secrets (including Helm release metadata), full-object GETs, logs, exec, port-forward, Hubble flows, and every write.
+v8s sends `User-Agent: v8s/<version> (corr <id>)`, where the correlation id is an HMAC of the session id (never the session id itself, which would be a credential in Warpgate's records). v8s keeps no long-term log of its own: the authoritative records are the gateway's and the Kubernetes audit log ([operations.md §Recent activity](operations.md#recent-activity)).
 
 ## Desktop vs hosted summary
 
 | | Desktop | Hosted |
 | --- | --- | --- |
-| Who authenticates to clusters | the user's kubeconfig credential (for gateway-fronted clusters, the gateway's `kubelogin` profile) | the user's own gateway token, forwarded per request (gateway-fronted); otherwise the user's identity via one of the four strategies |
-| Where credentials live | user's machine, OS keychain for v8s-held secrets | v8s server only, encrypted; never in the browser |
-| Exec plugins | yes, natively | no (no user machine); replaced by strategies 1–3 |
-| Cluster list | user's kubeconfig contexts | admin-configured cluster records, filtered to clusters the user has any access to |
-| Step-up for destructive actions | optional OS-level confirm | optional IdP re-auth (`max_age`/`prompt=login`) for production groups |
+| Who authenticates to clusters | the user's kubeconfig credential | the user's own IdP token (OIDC pass-through, default); impersonation or kiosk only where an admin configures it |
+| Where credentials live | user's machine (plugins' own caches; OS keychain for v8s-held secrets) | v8s server memory and encrypted storage, for the session's lifetime only; never in the browser |
+| Exec plugins | yes, natively | no (no user machine); replaced by server-side OIDC flows |
+| Cluster list | user's kubeconfig contexts | admin-configured cluster records, filtered to clusters the user can reach |
+| Elevation | gateway-elevated profiles per action | same, plus optional step-up re-auth |
 
 ## RBAC awareness
 
-Independent of strategy, the agent first resolves the user's identity **as the API server sees it** with `SelfSubjectReview` (exact username, groups, and extras after the cluster's own prefixes and claim mappings), then asks what the user can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions) and caches results for 60 s per user per cluster. The UI disables what the user cannot do and says why. In hosted mode this also decides which clusters appear in a user's selector, using **cheap signals only** (proving that a user has no access anywhere would need a SubjectAccessReview per namespace on webhook-authorizer clusters):
+The agent resolves the identity **as the endpoint sees it** with `SelfSubjectReview` (behind Warpgate, the target's role identity), then asks what that identity can do (`SelfSubjectRulesReview` per namespace on first visit, `SelfSubjectAccessReview` for specific actions), cached 60 s per user per profile. The UI disables what the user cannot do and says why.
 
-- a cluster-wide `list` on any tier-0 kind (a handful of SubjectAccessReviews), or
-- a namespace configured for the user's groups on that cluster by an admin, or the user's own saved namespaces, confirmed by one SubjectAccessReview each, or
-- an admin pin for a group.
-
-Namespace-scoped users therefore see their clusters as long as an admin has mapped their groups to namespaces (or they have added a namespace themselves), without a sweep. Clusters with no positive signal are hidden.
+**Hosted cluster visibility** uses the user's own token: a cluster appears in a user's selector if a `SelfSubjectAccessReview` through its default profile allows `list` on any tier-0 kind cluster-wide or in a namespace configured for the user's groups (or saved by the user). A request rejected by the gateway or API server means no access. Clusters with no positive signal are hidden unless an admin pins them. (For impersonation clusters, the same checks run as SubjectAccessReviews for the mapped identity.)
 
 On desktop, a namespace-scoped user's namespaces cannot be discovered from the API (rules reviews take a namespace as input). v8s uses the kubeconfig context's namespace plus a per-cluster namespace list in settings, and offers to add namespaces as the user navigates to them.
