@@ -16,6 +16,9 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/cluster"
 	"github.com/zyno-io/v8s/agent/internal/fake"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/kube"
+	"github.com/zyno-io/v8s/agent/internal/ops"
+	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/store"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
@@ -37,8 +40,11 @@ func startEnv(t *testing.T, cfg fake.Config, mut func(*Options)) *env {
 	eng := view.NewEngine()
 	src := fake.NewSource(cfg)
 	mgr := cluster.NewManager(ctx, src, eng, nil)
+	set, _ := settings.Open("")
+	mgr.SetSettings(set)
+	svc := ops.New(ops.Config{Conn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Links: mgr.Links, Resolve: mgr.Resolve})
 	go eng.Run(ctx)
-	opt := Options{Manager: mgr, Engine: eng, Token: testToken, Mode: "fake", AgentVersion: "test", Tick: 100 * time.Millisecond}
+	opt := Options{Manager: mgr, Engine: eng, Ops: svc, Settings: set, Token: testToken, Mode: "fake", AgentVersion: "test", Tick: 100 * time.Millisecond}
 	if mut != nil {
 		mut(&opt)
 	}
@@ -353,20 +359,6 @@ func TestEndToEndFake(t *testing.T) {
 	if len(list.Clusters) != 3 || len(list.Selected) != 3 || list.Clusters[0].ID != "prod-us" || list.Clusters[1].ID != "prod-eu" || list.Clusters[2].ID != "staging" {
 		t.Fatalf("clusters.list: %+v", list)
 	}
-	var kinds protocol.KindsListResult
-	decodeResult(t, c.call("kinds.list", nil, nil), &kinds)
-	avail := 0
-	for _, k := range kinds.Kinds {
-		if k.Available {
-			avail++
-			if k.GVR != "v1/pods" || k.ShortNames[0] != "po" {
-				t.Fatalf("bad pods kind: %+v", k)
-			}
-		}
-	}
-	if avail != 1 || len(kinds.Kinds) < 14 {
-		t.Fatalf("kinds: %d available of %d", avail, len(kinds.Kinds))
-	}
 	if r := c.call("nope", nil, nil); r.Error == nil || r.Error.Code != "bad_request" {
 		t.Fatalf("unknown method: %+v", r)
 	}
@@ -375,6 +367,30 @@ func TestEndToEndFake(t *testing.T) {
 	}
 	var st protocol.ClusterStates
 	decodeResult(t, c.call("clusters.select", protocol.ClustersSelectParams{IDs: list.Selected}, nil), &st)
+	waitKinds := time.Now().Add(10 * time.Second)
+	for time.Now().Before(waitKinds) {
+		var kr protocol.KindsListResult
+		decodeResult(t, c.call("kinds.list", nil, nil), &kr)
+		if len(kr.Kinds) >= 25 && len(kr.Kinds[0].Clusters) == 3 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	var kinds protocol.KindsListResult
+	decodeResult(t, c.call("kinds.list", nil, nil), &kinds)
+	byGVR := map[string]protocol.Kind{}
+	for _, k := range kinds.Kinds {
+		byGVR[k.GVR] = k
+		if !k.Available || len(k.Clusters) != 3 {
+			t.Fatalf("kind not served by all selected clusters: %+v", k)
+		}
+	}
+	if k := byGVR["v1/pods"]; !k.Curated || k.ShortNames[0] != "po" || k.Version != "v1" {
+		t.Fatalf("bad pods kind: %+v", k)
+	}
+	if k := byGVR["kustomize.toolkit.fluxcd.io/v1/kustomizations"]; k.Curated || k.Group != "kustomize.toolkit.fluxcd.io" || len(kinds.Kinds) < 25 {
+		t.Fatalf("bad generic kind: %+v (%d kinds)", k, len(kinds.Kinds))
+	}
 	if len(st.States) != 3 {
 		t.Fatalf("select states: %+v", st)
 	}
@@ -432,7 +448,7 @@ func TestEndToEndFake(t *testing.T) {
 // TestBackpressure: a client that never acks receives at most MaxUnacked patch frames / MaxInFlightBytes;
 // acking releases more; the whole large first patch eventually arrives, split into <=128 KiB frames.
 func TestBackpressure(t *testing.T) {
-	e := startEnv(t, fake.Config{Clusters: 1, Pods: 20000, Churn: 500}, func(o *Options) { o.Tick = 5 * time.Millisecond })
+	e := startEnv(t, fake.Config{Clusters: 1, Pods: 20000}, func(o *Options) { o.Tick = 5 * time.Millisecond })
 	c, _, err := e.dial(t, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -461,11 +477,13 @@ func TestBackpressure(t *testing.T) {
 
 	seen := map[uint32]bool{}
 	var ids []byte
+	total := 0
 	absorb := func(f frame) {
 		var vp protocol.ViewPatch
 		if err := msgpack.Unmarshal(f.payload, &vp); err != nil {
 			t.Fatal(err)
 		}
+		total = vp.Total
 		if len(vp.IDs) > 0 {
 			ids = vp.IDs
 		}
@@ -478,12 +496,12 @@ func TestBackpressure(t *testing.T) {
 		absorb(f)
 	}
 	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) && len(seen) < 20000 {
+	for time.Now().Before(deadline) && (total < 20000 || len(seen) < total) {
 		if f, ok := c.next(200 * time.Millisecond); ok && f.kind == protocol.KindPatch {
 			absorb(f)
 		}
 	}
-	if len(ids) != 4*20000 || len(seen) < 20000 {
+	if total != 20000 || len(ids) != 4*total || len(seen) < total {
 		t.Fatalf("incomplete first patch after acks: ids=%d rows=%d", len(ids)/4, len(seen))
 	}
 }
@@ -492,7 +510,7 @@ func TestBackpressure(t *testing.T) {
 // shortcut: list pages, project, Replace.
 func fillStore(t testing.TB, c *fake.Cluster) *store.Store {
 	t.Helper()
-	lw := &ingest.ListerWatcher{API: c}
+	lw := &ingest.ListerWatcher{API: ingest.PodAdapter{PodAPI: c}}
 	obj, err := lw.List(metav1.ListOptions{})
 	if err != nil {
 		t.Fatal(err)

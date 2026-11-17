@@ -13,12 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 )
@@ -28,6 +30,9 @@ type Config struct {
 	Clusters int
 	Pods     int // total across clusters
 	Churn    int // pod events per second across all clusters
+	// RBAC makes the second cluster read-only for mutations and adds the context "<name>-admin" that can
+	// be linked to it as its write context (settings.links).
+	RBAC bool
 }
 
 // ParseConfig parses "clusters=3,pods=50000,churn=200".
@@ -49,6 +54,8 @@ func ParseConfig(s string) (Config, error) {
 			c.Pods = n
 		case "churn":
 			c.Churn = n
+		case "rbac":
+			c.RBAC = n != 0
 		default:
 			return c, fmt.Errorf("unknown --fake option %q", k)
 		}
@@ -75,6 +82,7 @@ type Source struct {
 
 	mu       sync.Mutex
 	clusters map[string]*Cluster
+	worlds   map[string]*World
 }
 
 func NewSource(cfg Config) *Source {
@@ -83,46 +91,65 @@ func NewSource(cfg Config) *Source {
 
 func (s *Source) Mode() string { return "fake" }
 
+const adminSuffix = "-admin"
+
 func (s *Source) Clusters() []protocol.Cluster {
 	out := make([]protocol.Cluster, s.cfg.Clusters)
 	for i := range out {
 		n := Name(i)
 		out[i] = protocol.Cluster{ID: n, Name: n, Server: "https://" + n + ".fake.invalid:6443", Groups: []string{}}
 	}
-	return out
-}
-
-func (s *Source) DefaultSelection() []string {
-	cs := s.Clusters()
-	out := make([]string, len(cs))
-	for i := range cs {
-		out[i] = cs[i].ID
+	if s.cfg.RBAC && s.cfg.Clusters >= 2 {
+		n := Name(1) + adminSuffix
+		out = append(out, protocol.Cluster{ID: n, Name: n, Server: "https://" + Name(1) + ".fake.invalid:6443", Groups: []string{}})
 	}
 	return out
 }
 
-func (s *Source) PodAPI(id string) (ingest.PodAPI, error) {
+// Backend opens the fake cluster behind a context id (the read context "<name>", or "<name>-admin").
+func (s *Source) Backend(id string) (kube.Backend, error) {
+	base := strings.TrimSuffix(id, adminSuffix)
+	admin := base != id
 	for i := 0; i < s.cfg.Clusters; i++ {
-		if Name(i) == id {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			c := s.clusters[id]
-			if c == nil {
-				pods := s.cfg.Pods / s.cfg.Clusters
-				rate := float64(s.cfg.Churn) / float64(s.cfg.Clusters)
-				c = NewCluster(id, pods, rate, uint64(i)+1)
-				s.clusters[id] = c
-			}
-			return c, nil
+		if Name(i) != base {
+			continue
 		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		c := s.clusters[base]
+		if c == nil {
+			pods := s.cfg.Pods / s.cfg.Clusters
+			rate := float64(s.cfg.Churn) / float64(s.cfg.Clusters)
+			c = NewCluster(base, pods, rate, uint64(i)+1)
+			s.clusters[base] = c
+		}
+		if s.worlds == nil {
+			s.worlds = map[string]*World{}
+		}
+		w := s.worlds[base]
+		if w == nil {
+			w = NewWorld(c)
+			s.worlds[base] = w
+		}
+		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}}, nil
 	}
 	return nil, fmt.Errorf("unknown fake cluster %q", id)
 }
 
+func (s *Source) DefaultSelection() []string {
+	out := make([]string, s.cfg.Clusters)
+	for i := range out {
+		out[i] = Name(i)
+	}
+	return out
+}
+
 func (s *Source) Release(id string) {
+	id = strings.TrimSuffix(id, adminSuffix)
 	s.mu.Lock()
 	c := s.clusters[id]
 	delete(s.clusters, id)
+	delete(s.worlds, id)
 	s.mu.Unlock()
 	if c != nil {
 		c.Stop()
@@ -209,7 +236,7 @@ func (c *Cluster) Stop() {
 func (c *Cluster) newPod(app, k int) fakePod {
 	c.nextID++
 	c.rv++
-	p := fakePod{id: c.nextID, h1: c.rng.Uint64() & 0xffffffffff, h2: c.rng.Uint32() & 0xfffff, rv: c.rv,
+	p := fakePod{id: c.nextID, h1: rsHash(app), h2: uint32(c.nextID*2654435761) & 0xfffff, rv: c.rv,
 		created: time.Now().UnixMilli(), app: uint16(app), ns: uint8(app % 37), node: uint8(c.rng.IntN(150)), nc: uint8(1 + app%3)}
 	switch r := k % 1000; {
 	case r < 5:
@@ -231,6 +258,10 @@ func (c *Cluster) newPod(app, k int) fakePod {
 	}
 	return p
 }
+
+// rsHash is the pod-template hash of an app's current ReplicaSet: every pod of an app shares it, so
+// pods, ReplicaSets and Deployments line up.
+func rsHash(app int) uint64 { return (uint64(app) + 1) * 0x9E3779B97F4A7C15 >> 24 & 0xffffffffff }
 
 func (p *fakePod) uid(cluster string) string {
 	return fmt.Sprintf("%08x-%04x-4000-8000-%012x", p.id&0xffffffff, len(cluster), p.id)
@@ -571,4 +602,74 @@ func (c *Cluster) Len() int {
 		}
 	}
 	return n
+}
+
+// ---- pod access for the objects API ---------------------------------------------------------
+
+func (c *Cluster) findLocked(ns, name string) int {
+	for i := range c.pods {
+		p := &c.pods[i]
+		if p.state != stDead && "team-"+strconv.Itoa(int(p.ns)) == ns && p.name() == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c *Cluster) podObject(ns, name string) (*unstructured.Unstructured, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	i := c.findLocked(ns, name)
+	if i < 0 {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, name)
+	}
+	return podUnstructured(c.pod(&c.pods[i]))
+}
+
+func podUnstructured(p *corev1.Pod) (*unstructured.Unstructured, error) {
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(p)
+	if err != nil {
+		return nil, err
+	}
+	o := &unstructured.Unstructured{Object: m}
+	o.SetAPIVersion("v1")
+	o.SetKind("Pod")
+	return o, nil
+}
+
+// touchPod bumps a pod's resourceVersion (an update or patch) and emits a Modified event.
+func (c *Cluster) touchPod(ns, name string, dry bool) (*unstructured.Unstructured, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	i := c.findLocked(ns, name)
+	if i < 0 {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, name)
+	}
+	p := &c.pods[i]
+	if !dry {
+		c.rv++
+		p.rv = c.rv
+		c.emitLocked(watch.Modified, *p)
+	}
+	return podUnstructured(c.pod(p))
+}
+
+// killPod deletes a pod (it leaves the cluster; the next churn tick may create replacements).
+func (c *Cluster) killPod(ns, name string, dry bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	i := c.findLocked(ns, name)
+	if i < 0 {
+		return apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, name)
+	}
+	if dry {
+		return nil
+	}
+	c.rv++
+	dead := c.pods[i]
+	dead.rv = c.rv
+	c.emitLocked(watch.Deleted, dead)
+	c.pods[i] = c.newPod(int(dead.app), 0)
+	c.emitLocked(watch.Added, c.pods[i])
+	return nil
 }

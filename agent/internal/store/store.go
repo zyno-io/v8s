@@ -19,22 +19,22 @@ import (
 type Event struct {
 	H        uint32
 	Gen      uint32
-	Old, New *ingest.PodRow
+	Old, New *ingest.Row
 }
 
 // Item is a live row with its handle (used for snapshots).
 type Item struct {
 	H, Gen uint32
-	Row    *ingest.PodRow
+	Row    *ingest.Row
 }
 
 type nsList struct{ hs []uint32 }
 
 type Store struct {
 	mu    sync.RWMutex
-	rows  []*ingest.PodRow // by handle; nil = free
-	gens  []uint32         // bumped on every allocation of a handle
-	pos   []uint32         // position of the handle inside its namespace list
+	rows  []*ingest.Row // by handle; nil = free
+	gens  []uint32      // bumped on every allocation of a handle
+	pos   []uint32      // position of the handle inside its namespace list
 	free  []uint32
 	byUID map[string]uint32
 	ns    map[unique.Handle[string]]*nsList
@@ -59,12 +59,12 @@ func New() *Store {
 	return &Store{byUID: make(map[string]uint32), ns: make(map[unique.Handle[string]]*nsList)}
 }
 
-func asRow(obj interface{}) (*ingest.PodRow, error) {
-	if r, ok := obj.(*ingest.PodRow); ok {
+func asRow(obj interface{}) (*ingest.Row, error) {
+	if r, ok := obj.(*ingest.Row); ok {
 		return r, nil
 	}
 	if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		if r, ok := d.Obj.(*ingest.PodRow); ok {
+		if r, ok := d.Obj.(*ingest.Row); ok {
 			return r, nil
 		}
 	}
@@ -73,7 +73,7 @@ func asRow(obj interface{}) (*ingest.PodRow, error) {
 
 // ---- mutation (callers hold s.mu) -----------------------------------------------------
 
-func (s *Store) upsertLocked(row *ingest.PodRow) uint32 {
+func (s *Store) upsertLocked(row *ingest.Row) uint32 {
 	uid := row.UID()
 	if h, ok := s.byUID[uid]; ok {
 		old := s.rows[h]
@@ -146,6 +146,24 @@ func (s *Store) after(replace bool, n int) {
 	}
 }
 
+// Provisional shows rows while the first sync is still in progress (progressive rows): they are
+// upserted like any update and later reconciled by the reflector's Replace, which removes whatever the
+// final list does not contain. It does nothing once the store has synced.
+func (s *Store) Provisional(rows []*ingest.Row) {
+	s.mu.Lock()
+	if s.synced {
+		s.mu.Unlock()
+		return
+	}
+	for _, r := range rows {
+		s.upsertLocked(r)
+	}
+	s.mu.Unlock()
+	if f := s.notify.Load(); f != nil {
+		(*f)()
+	}
+}
+
 // ---- cache.Store ----------------------------------------------------------------------
 
 // SetNotify installs (or with nil removes) the callback invoked after every mutation.
@@ -195,7 +213,7 @@ func (s *Store) Delete(obj interface{}) error {
 // Replace diffs the list against the current contents: unchanged rows produce no events, changed
 // rows one update, new rows an add, missing rows a delete.
 func (s *Store) Replace(list []interface{}, rv string) error {
-	rows := make([]*ingest.PodRow, 0, len(list))
+	rows := make([]*ingest.Row, 0, len(list))
 	for _, o := range list {
 		r, err := asRow(o)
 		if err != nil {
@@ -329,7 +347,7 @@ func (s *Store) snapshotLocked(dst []Item, namespaces []string) []Item {
 }
 
 // Row returns the live row for a handle if its generation still matches.
-func (s *Store) Row(h, gen uint32) (*ingest.PodRow, bool) {
+func (s *Store) Row(h, gen uint32) (*ingest.Row, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if int(h) < len(s.rows) && s.gens[h] == gen && s.rows[h] != nil {
@@ -369,3 +387,15 @@ func (s *Store) Reset() {
 }
 
 var ErrClosed = errors.New("store closed")
+
+// Scan calls fn for every live row under a read lock (fn must not call back into the store); it
+// stops when fn returns false.
+func (s *Store) Scan(fn func(*ingest.Row) bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.rows {
+		if r != nil && !fn(r) {
+			return
+		}
+	}
+}

@@ -414,10 +414,13 @@ func bruteForce(e *Engine, v *View) []string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var all []entry
-	for cl, rec := range e.recs {
+	for _, rec := range e.srcL {
+		if rec.gv != v.gv {
+			continue
+		}
 		for _, it := range rec.st.Snapshot(nil, nil) {
-			if v.match(it.Row, uint16(cl)) {
-				all = append(all, mkEntry(it.Row, uint16(cl), it.H, 0))
+			if v.match(it.Row, rec.cl) {
+				all = append(all, mkEntry(it.Row, rec.cl, it.H, 0))
 			}
 		}
 	}

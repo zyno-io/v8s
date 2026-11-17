@@ -13,64 +13,67 @@ var intern = unique.Make[string]
 
 // Project turns a decoded pod into its row. managedFields, annotations, labels, spec and the
 // rest of the object are dropped here; nothing of p is retained.
-func Project(p *corev1.Pod) *PodRow {
-	// One allocation backs uid, name and resourceVersion.
-	all := string(p.UID) + p.Name + p.ResourceVersion
-	r := &PodRow{
-		uid:  all[:len(p.UID)],
-		name: all[len(p.UID) : len(p.UID)+len(p.Name)],
-		rv:   all[len(p.UID)+len(p.Name):],
-		ns:   intern(p.Namespace),
-		node: intern(p.Spec.NodeName),
-	}
-	if !p.CreationTimestamp.IsZero() {
-		r.created = p.CreationTimestamp.UnixMilli()
-	}
-	if p.DeletionTimestamp != nil {
-		r.flags |= flagDeleting
-	}
-	if len(p.OwnerReferences) > 0 {
-		o := &p.OwnerReferences[0]
-		for i := range p.OwnerReferences {
-			if p.OwnerReferences[i].Controller != nil && *p.OwnerReferences[i].Controller {
-				o = &p.OwnerReferences[i]
-				break
-			}
-		}
-		r.ownerKind, r.ownerName = intern(o.Kind), intern(o.Name)
-	}
+func Project(p *corev1.Pod) *Row {
+	r := newRow(&p.ObjectMeta, 5)
 	reason, restarts, ready, total := PodStatus(p)
-	r.status = intern(reason)
-	r.restarts = int32(restarts)
-	r.ready, r.total = uint16(ready), uint16(total)
+	r.putN(int64(ready))
+	r.putN(int64(total))
+	r.putS(reason)
+	r.putN(int64(restarts))
+	r.putS(p.Spec.NodeName)
 	r.tone = StatusTone(reason, p.Status.Phase, ready, total)
 	return r
 }
 
 // ProjectBookmark converts a bookmark event object (only resourceVersion and annotations matter).
-func ProjectBookmark(p *corev1.Pod) *PodRow {
-	r := &PodRow{rv: strings.Clone(p.ResourceVersion)}
-	if p.Annotations[metav1.InitialEventsAnnotationKey] == "true" {
+func ProjectBookmark(p *corev1.Pod) *Row {
+	return bookmarkRow(p.ResourceVersion, p.Annotations)
+}
+
+func bookmarkRow(rv string, annotations map[string]string) *Row {
+	r := &Row{rv: strings.Clone(rv), ns: emptyStr, ownerKind: emptyStr, ownerName: emptyStr}
+	if annotations[metav1.InitialEventsAnnotationKey] == "true" {
 		r.flags |= flagInitialEventsEnd
 	}
 	return r
 }
 
-// PodStatus mirrors the status column of `kubectl get pods` (printPod in kubectl's printers).
+// PodStatus mirrors the status column of `kubectl get pods` (printPod in kubectl's printers),
+// including native sidecars (init containers with restartPolicy Always) and SchedulingGated.
 // It returns the status reason, total restarts, ready containers and total containers.
 func PodStatus(pod *corev1.Pod) (reason string, restarts, ready, total int) {
 	reason = string(pod.Status.Phase)
 	if pod.Status.Reason != "" {
 		reason = pod.Status.Reason
 	}
+	for i := range pod.Status.Conditions {
+		if c := &pod.Status.Conditions[i]; c.Type == corev1.PodScheduled && c.Reason == corev1.PodReasonSchedulingGated {
+			reason = corev1.PodReasonSchedulingGated
+		}
+	}
 	total = len(pod.Spec.Containers)
+	sidecar := make(map[string]bool)
+	for i := range pod.Spec.InitContainers {
+		ic := &pod.Spec.InitContainers[i]
+		if ic.RestartPolicy != nil && *ic.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			sidecar[ic.Name] = true
+			total++
+		}
+	}
 
 	initializing := false
+	sidecarRestarts := 0
 	for i := range pod.Status.InitContainerStatuses {
 		st := &pod.Status.InitContainerStatuses[i]
 		restarts += int(st.RestartCount)
 		switch {
 		case st.State.Terminated != nil && st.State.Terminated.ExitCode == 0:
+			continue
+		case sidecar[st.Name] && st.Started != nil && *st.Started:
+			sidecarRestarts += int(st.RestartCount)
+			if st.Ready {
+				ready++
+			}
 			continue
 		case st.State.Terminated != nil:
 			if len(st.State.Terminated.Reason) == 0 {
@@ -92,8 +95,8 @@ func PodStatus(pod *corev1.Pod) (reason string, restarts, ready, total int) {
 		}
 		break
 	}
-	if !initializing {
-		restarts = 0
+	if !initializing || podInitialized(pod) {
+		restarts = sidecarRestarts
 		hasRunning := false
 		for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
 			st := &pod.Status.ContainerStatuses[i]
@@ -111,8 +114,6 @@ func PodStatus(pod *corev1.Pod) (reason string, restarts, ready, total int) {
 				}
 			case st.Ready && st.State.Running != nil:
 				hasRunning = true
-			}
-			if st.Ready {
 				ready++
 			}
 		}
@@ -123,19 +124,23 @@ func PodStatus(pod *corev1.Pod) (reason string, restarts, ready, total int) {
 				reason = "NotReady"
 			}
 		}
-	} else {
-		for i := range pod.Status.ContainerStatuses {
-			if pod.Status.ContainerStatuses[i].Ready {
-				ready++
-			}
-		}
 	}
+	terminal := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 	if pod.DeletionTimestamp != nil && pod.Status.Reason == "NodeLost" {
 		reason = "Unknown"
-	} else if pod.DeletionTimestamp != nil {
+	} else if pod.DeletionTimestamp != nil && !terminal {
 		reason = "Terminating"
 	}
 	return
+}
+
+func podInitialized(pod *corev1.Pod) bool {
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodInitialized {
+			return pod.Status.Conditions[i].Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
 
 func podReady(pod *corev1.Pod) bool {
@@ -160,7 +165,7 @@ func StatusTone(reason string, phase corev1.PodPhase, ready, total int) uint8 {
 			return ToneSuccess
 		}
 		return ToneWarning
-	case "Pending", "ContainerCreating", "PodInitializing", "Terminating", "NotReady", "Unknown":
+	case "Pending", "ContainerCreating", "PodInitializing", "Terminating", "NotReady", "Unknown", "SchedulingGated":
 		return ToneWarning
 	case "CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "OOMKilled", "Error", "Failed", "Evicted",
 		"InvalidImageName", "ErrImageNeverPull", "RunContainerError", "StartError", "DeadlineExceeded",

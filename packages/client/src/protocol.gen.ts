@@ -59,6 +59,11 @@ export const KindDict: FrameKind = 6;
  */
 export const KindClusterState: FrameKind = 7;
 /**
+ * KindObject (agent → client). channel = oid (chosen by the client in object.subscribe). Payload: ObjectFrame.
+ * Sent once after object.subscribe and again on every change of the object. Not acknowledged.
+ */
+export const KindObject: FrameKind = 8;
+/**
  * Hello is sent by the agent right after the WebSocket upgrade.
  */
 export interface Hello {
@@ -74,6 +79,17 @@ export interface Hello {
  * 	"view.update"        ViewUpdateParams → (empty)
  * 	"view.unsubscribe"   ViewUnsubscribeParams → (empty)
  * 	"kinds.list"         → KindsListResult (no params)
+ * 	"object.get"         ObjectGetParams → ObjectPayload
+ * 	"object.subscribe"   ObjectSubscribeParams → (empty); frames of KindObject follow on channel oid
+ * 	"object.unsubscribe" ObjectUnsubscribeParams → (empty)
+ * 	"object.dryRun"      ObjectDryRunParams → ObjectDryRunResult
+ * 	"object.apply"       ObjectApplyParams → ObjectApplyResult
+ * 	"object.delete"      ObjectDeleteParams → MutationResult
+ * 	"object.action"      ObjectActionParams → MutationResult
+ * 	"access.check"       AccessCheckParams → AccessCheckResult
+ * 	"settings.get"       → Settings (no params)
+ * 	"settings.set"       SettingsSetParams → Settings (the merged document)
+ * 	"search"             SearchParams → SearchResult
  */
 export interface Request {
   method: string;
@@ -87,14 +103,25 @@ export interface Response {
   error?: ErrorBody;
 }
 export interface ErrorBody {
-  code: string; // "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal"
+  /**
+   * Code is one of "bad_request" | "not_found" | "forbidden" | "unavailable" | "internal" |
+   * "conflict" (object.apply update lost a resourceVersion race; Live carries the current object) |
+   * "write_unavailable" (the linked write context was rejected with 401/403; Message is the server's) |
+   * "invalid" (the API server rejected the object, e.g. validation or admission).
+   */
+  code: string;
   message: string;
+  live?: ObjectPayload;
 }
 export interface Cluster {
   id: string; // stable local id (desktop: the kubeconfig context name)
   name: string; // display name
   server: string; // API server URL, for display
   groups: string[];
+  /**
+   * WriteContext is the id of the linked write context (settings.links), if any.
+   */
+  writeContext?: string;
 }
 export interface ClustersListResult {
   clusters: Cluster[];
@@ -127,15 +154,20 @@ export interface ClusterStates {
   states: ClusterState[];
 }
 /**
- * Kind describes a resource type the UI can open (P0: pods only; the list grows with discovery).
+ * Kind describes a resource type the UI can open. kinds.list returns the union over the selected
+ * clusters' discovery results.
  */
 export interface Kind {
   gvr: string; // "v1/pods", "apps/v1/deployments"
+  group: string;
+  version: string;
   kind: string;
   plural: string;
   shortNames: string[]; // from discovery: "po", "deploy", …
   namespaced: boolean;
-  available: boolean; // false: known to the UI but no view yet
+  available: boolean; // true for every listable kind
+  curated: boolean; // hand-written columns (mode A) vs Table columns (mode C)
+  clusters: string[]; // selected clusters that serve it
 }
 export interface KindsListResult {
   kinds: Kind[];
@@ -152,6 +184,9 @@ export const ColTone: ColumnType = "tone"; // small int: 0 neutral, 1 success, 2
 export interface Column {
   key: string;
   type: ColumnType;
+  label?: string;
+  width?: number /* int */; // px hint
+  align?: string; // "left" | "right"
 }
 export interface Filter {
   col: string;
@@ -230,6 +265,180 @@ export interface ViewPatch {
 export interface DictAdd {
   base: number /* uint32 */;
   strings: string[];
+}
+/**
+ * ObjectRef addresses one object. GVR is "v1/pods" or "apps/v1/deployments".
+ */
+export interface ObjectRef {
+  cluster: string;
+  gvr: string;
+  namespace?: string;
+  name?: string; // empty only for object.dryRun/apply in create mode
+}
+export interface ObjectGetParams {
+  cluster: string;
+  gvr: string;
+  namespace?: string;
+  name: string;
+  keepManagedFields?: boolean;
+}
+/**
+ * ManagedBy summarizes one managedFields entry: which manager owns which field paths.
+ */
+export interface ManagedBy {
+  manager: string;
+  operation: string; // "Apply" | "Update"
+  fields: string[]; // dotted paths, e.g. "spec.replicas", "metadata.labels.app"
+}
+export interface ObjectOwner {
+  kind: string;
+  name: string;
+}
+/**
+ * GitOps names the controller that manages an object, from Flux and Helm labels.
+ */
+export interface GitOps {
+  kind: string; // "Kustomization" | "HelmRelease" | "Helm"
+  name: string;
+  namespace?: string;
+}
+/**
+ * ObjectPayload is a full object as YAML plus the facts the editor needs. managedFields is
+ * stripped from YAML unless keepManagedFields is set.
+ */
+export interface ObjectPayload {
+  yaml: string;
+  uid: string;
+  resourceVersion: string;
+  managedBy: ManagedBy[];
+  owners: ObjectOwner[];
+  gitops?: GitOps;
+}
+export interface ObjectSubscribeParams {
+  oid: number /* uint32 */; // chosen by the client, unique per socket; the KindObject channel
+  ref: ObjectRef;
+  keepManagedFields?: boolean;
+}
+export interface ObjectUnsubscribeParams {
+  oid: number /* uint32 */;
+}
+/**
+ * ObjectFrame is the KindObject payload: the object's current state, or Deleted (payload fields hold
+ * the last known state) when it was removed, or Error when the watch failed.
+ */
+export interface ObjectFrame {
+  ObjectPayload: ObjectPayload;
+  deleted?: boolean;
+  error?: ErrorBody;
+}
+export interface ObjectDryRunParams {
+  ref: ObjectRef;
+  yaml: string;
+  mode: string; // "update" | "create"
+}
+/**
+ * FieldConflict: a changed field path that another field manager owns.
+ */
+export interface FieldConflict {
+  path: string;
+  manager: string;
+}
+export interface ObjectDryRunResult {
+  ok: boolean;
+  warnings: string[];
+  error?: ErrorBody;
+  conflicts: FieldConflict[];
+}
+export interface ObjectApplyParams {
+  requestId: string;
+  ref: ObjectRef;
+  yaml: string;
+  mode: string; // "update" | "create"
+  resourceVersion?: string; // update: the version the user opened
+}
+export interface ObjectApplyResult {
+  resourceVersion: string;
+  usedContext: string;
+  applied?: ObjectRef[]; // create mode: every object applied
+}
+export interface ObjectDeleteParams {
+  requestId: string;
+  ref: ObjectRef;
+  propagation?: string; // "Background" (default) | "Foreground" | "Orphan"
+}
+/**
+ * ObjectActionParams: Action is "scale" {replicas}, "restart", "cordon", "uncordon", "suspend",
+ * "resume", "trigger", "rollback" {revision}.
+ */
+export interface ObjectActionParams {
+  requestId: string;
+  ref: ObjectRef;
+  action: string;
+  params?: Record<string;
+}
+/**
+ * MutationResult answers object.delete and object.action.
+ */
+export interface MutationResult {
+  usedContext: string;
+  resourceVersion?: string;
+  name?: string; // action "trigger": the created Job
+}
+export interface AccessCheck {
+  cluster: string;
+  verb: string;
+  gvr: string;
+  namespace?: string;
+  name?: string;
+}
+export interface AccessCheckParams {
+  checks: AccessCheck[];
+}
+export interface AccessResult {
+  allowed: boolean;
+  viaWrite: boolean; // allowed only through the linked write context
+  reason: string;
+}
+export interface AccessCheckResult {
+  results: AccessResult[];
+}
+export interface Bookmark {
+  name: string;
+  url: string;
+}
+/**
+ * Settings is the per-user document persisted by the agent (desktop: <user config dir>/v8s/settings.json).
+ */
+export interface Settings {
+  groups: { [key: string]: string[]};
+  links: { [key: string]: string}; // clusterId → write context id
+  autoSwitchWrite: boolean;
+  stars: string[]; // gvrs
+  bookmarks: Bookmark[];
+  selection: string[];
+  columnLayouts: Record<string;
+  problemPrefs: Record<string;
+  acks: Record<string;
+}
+/**
+ * SettingsSetParams carries an RFC 7386 JSON merge patch against the Settings document.
+ */
+export interface SettingsSetParams {
+  patch: Record<string;
+}
+export interface SearchParams {
+  text: string;
+  limit: number /* int */;
+}
+export interface SearchHit {
+  cluster: string;
+  gvr: string;
+  kind: string;
+  namespace?: string;
+  name: string;
+}
+export interface SearchResult {
+  results: SearchHit[];
 }
 /**
  * Flow control (agent side): at most MaxUnacked patch frames or MaxInFlightBytes in flight per socket.

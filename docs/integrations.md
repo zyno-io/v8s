@@ -115,7 +115,7 @@ Performed by the agent with the Helm 4 SDK (`action.Rollback`, `action.Uninstall
 
 | Group/version | Kinds | Notes |
 | --- | --- | --- |
-| `kyverno.io/v1` | ClusterPolicy, Policy | Classic policies; deprecated since 1.17, still widely deployed |
+| `kyverno.io/v1` | ClusterPolicy, Policy | Classic policies; deprecated in 1.17, and since 1.20 no longer executed or accepted for create/update (read, list, and delete only). v8s shows them read-only with a "migrate to CEL" hint |
 | `policies.kyverno.io/v1` | ValidatingPolicy, ImageValidatingPolicy, MutatingPolicy, GeneratingPolicy, DeletingPolicy, their `Namespaced*` variants, PolicyException | CEL-based, stable since 1.17 |
 | `kyverno.io/v2` | PolicyException, CleanupPolicy, ClusterCleanupPolicy | Legacy exceptions for ClusterPolicy |
 | `wgpolicyk8s.io/v1alpha2` | PolicyReport, ClusterPolicyReport | Default report API |
