@@ -2,7 +2,7 @@
 
 **Status:** proposal for review. Nothing here is built yet beyond a [decode spike](../spikes/decode-bench/README.md).
 
-v8s is an open-source, multi-cluster Kubernetes manager built around one constraint: **it must stay fast on large clusters, many clusters at once, on a laptop and on a phone.** It ships as a desktop app and as a hosted web app (installable as a PWA), with first-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble support and a cross-cluster Problems view.
+v8s is an open-source, multi-cluster Kubernetes manager built around one constraint: **it must stay fast on large clusters, many clusters at once, on a laptop and on a phone.** It ships as a desktop app and as a self-hosted web app that also works in a phone's browser, with first-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble support and a cross-cluster Problems view.
 
 ## How to read this plan
 
@@ -15,7 +15,7 @@ v8s is an open-source, multi-cluster Kubernetes manager built around one constra
 | [integrations.md](integrations.md) | Flux, Helm, Kyverno, Trivy Operator, Kubescape, Hubble: data sources, surfaces, actions, problems, performance |
 | [operations.md](operations.md) | Editing, pod shell, node shell, cordon/drain, logs, port-forward, idempotency, audit, hosted security |
 | [auth.md](auth.md) | Kubeconfig and exec plugins on desktop; OIDC pass-through, cloud token exchange, and impersonation for hosted |
-| [packaging.md](packaging.md) | Electron desktop, `v8s serve`, hosted server, PWA and what works on a phone |
+| [packaging.md](packaging.md) | Electron desktop, `v8s serve`, hosted server, mobile web (installable PWA later) and what works on a phone |
 | [design-system.md](design-system.md) | Mapping onto the PixelCI / CI Dashboard design system, plus the dense-table and mobile extensions |
 
 ## Vision
@@ -28,7 +28,7 @@ Three bets:
 2. **Multi-cluster by default.** You pick a set of clusters (or a group like `production`), and every list, search, and the Problems view spans that set. v8s never connects to a cluster you have not selected, and never selects all by default.
 3. **Problems, not dashboards.** One cross-cluster, filterable list of things that are wrong, including failed Flux reconciliations, failed Helm releases, policy failures, critical vulnerabilities, and dropped flows, with the evidence and the fix one click away.
 
-It ships as a **desktop app** (macOS, Windows, Linux) and as a **hosted web app** that installs as a **PWA** on phones, from one Vue codebase and one agent.
+It ships as a **desktop app** (macOS, Windows, Linux) and as a **self-hosted web app** that works in desktop and phone browsers (installable PWA later), from one Vue codebase and one agent. Clusters are expected to sit behind an access gateway such as Warpgate, and every request carries the user's own token through it.
 
 ## Non-goals
 
@@ -38,7 +38,8 @@ It ships as a **desktop app** (macOS, Windows, Linux) and as a **hosted web app*
 - **Not a policy or security scanner.** v8s reads Kyverno, Trivy, and Kubescape results; it never scans images or evaluates policies itself.
 - **Not an RBAC administration product.** It shows effective permissions and respects them; managing IdPs and org-wide RBAC is out of scope.
 - **No plugin marketplace in v1.** Integrations are in-tree modules with a stable internal interface; third-party plugins come later if the interface proves itself.
-- **No Windows node shell, no multi-tenant SaaS billing, no AI assistant** in the MVP.
+- **Not a SaaS.** v8s is desktop and self-hosted only; no hosted service, accounts, or billing are planned.
+- **No Windows node shell, no AI assistant** in the MVP.
 
 ## Competitive landscape
 
@@ -62,8 +63,9 @@ It ships as a **desktop app** (macOS, Windows, Linux) and as a **hosted web app*
 - **First-class Flux and Helm** with the actions people actually use (reconcile with source, force, reset, suspend/resume, rollback, retry stuck releases) and correct GitOps awareness when editing.
 - **Security and network in the same place**: Kyverno, Trivy, Kubescape results and Hubble drops feed the same Problems view as crash loops.
 - **Real identity in hosted mode**: OIDC pass-through or scoped impersonation, so the API server audit log shows the person.
-- **One codebase, three surfaces**: desktop, hosted web, and phone (PWA).
-- **Open source** (license: [open question Q2](#open-questions)).
+- **One codebase, three surfaces**: desktop, hosted web, and phone browser.
+- **Gateway-native identity**: the user's own token flows through Warpgate-style gateways on every request, desktop and hosted, including per-action elevation to just-in-time admin targets.
+- **Open source** under the MIT license.
 
 ## Architecture
 
@@ -72,24 +74,30 @@ It ships as a **desktop app** (macOS, Windows, Linux) and as a **hosted web app*
 **One Go agent in every mode. Only the agent talks to Kubernetes.** The UI is a renderer of views the agent computes.
 
 ```
- Desktop                                         Hosted
- ┌──────────── Electron ─────────────┐           ┌──────── browser / installed PWA ────────┐
+ Desktop                                         Hosted (self-hosted)
+ ┌──────────── Electron ─────────────┐           ┌──────── browser (desktop or phone) ─────┐
  │ main: spawn+supervise agent,      │           │ same Vue bundle                          │
  │       updates, menus, keychain    │           │ Data Worker ── WebSocket (session cookie)│
  │ renderer: Vue bundle              │           └───────────────────┬──────────────────────┘
  │   Data Worker ── WebSocket(token) │                               │ HTTPS / WSS
  └───────────────┬───────────────────┘                               ▼
                  │ loopback                     ┌──────────── v8s server (Go) ─────────────┐
-                 ▼                              │ OIDC login · cluster registry · identity │
- ┌──────── v8s agent (Go) ─────────┐            │ strategies · shared caches + authz filter│
- │ kubeconfig + exec plugins       │            │ views · problems · passthrough · jobs ·  │
- │ ingest · store · views ·        │            │ audit · SQLite/Postgres                  │
- │ problems · passthrough · jobs · │            └───────┬───────────────────────┬──────────┘
- │ streams · local audit           │                    │ user identity         │ (P5) reverse tunnel
- └───────┬─────────────────────────┘                    ▼                       ▼
-         │ user's credentials                    kube-apiservers         v8s connector in a
-         ▼                                                               private cluster
-   kube-apiservers (N selected clusters)
+                 ▼                              │ OIDC login · per-user gateway tokens ·   │
+ ┌──────── v8s agent (Go) ─────────┐            │ per-user watches, views, problems ·      │
+ │ kubeconfig + exec plugins       │            │ passthrough · jobs · audit ·             │
+ │ (kubelogin for the gateway)     │            │ SQLite/Postgres                          │
+ │ ingest · store · views ·        │            └───────────────────┬──────────────────────┘
+ │ problems · passthrough · jobs · │                                │ each user's own token,
+ │ streams · local audit           │                                │ every request
+ └───────────────┬─────────────────┘                                │
+                 │ the user's own token, every request              │
+                 ▼                                                  ▼
+        ┌──────────────── access gateway (Warpgate): one target per cluster × role ───────────────┐
+        │ authenticates the person · checks the target grant / JIT ticket per request · records  │
+        │ the session · connects upstream as the target's fixed identity (short-lived cert)      │
+        └─────────────────────────────────────────┬──────────────────────────────────────────────┘
+                                                  ▼
+                                   kube-apiservers (N selected clusters)
 ```
 
 Why one smart agent everywhere:
@@ -106,7 +114,6 @@ Why one smart agent everywhere:
 | `v8s agent --desktop` | Single user, kubeconfig credentials, loopback only, launched by Electron |
 | `v8s serve` | The same, plus serves the embedded UI on localhost and opens the browser |
 | `v8s server` | Multi-tenant hosted server |
-| `v8s connector` | (P5) In-cluster reverse tunnel to a hosted server for private clusters |
 | `v8s auth token --cluster X` | Exec-credential plugin for kubeconfigs that v8s writes (built-in OIDC) |
 
 ### Agent components
@@ -151,9 +158,14 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
 
 - Each cluster progresses independently; a slow or broken cluster never blocks others. Its state shows in the cluster selector and in every multi-cluster view's toolbar (`syncing prod-eu · 4,210 rows` on desktop; a percentage in hosted mode, so no unfiltered cluster-wide total is shown).
 - `authenticating` serializes identical exec-plugin commands so one IdP login serves several contexts.
+- `ticket-required`: an elevated access profile was used without an active gateway ticket; the action fails with a link to request one, and the default profile keeps working.
 - `degraded` lists what is missing ("no permission to list `ingresses`; Ingress checks disabled").
 - `reconnecting` keeps last-known rows visible but greyed with "stale since T"; the outage is itself a `cluster.unreachable` problem.
 - Selecting 40 clusters at once is allowed but staged: connections start in batches of 8 to avoid an exec-plugin and API-server stampede.
+
+### Access profiles
+
+A cluster can be reached through several **access profiles**, typically one gateway target per role (an everyday `operator` target and a JIT `cluster-admin` target). v8s groups contexts into one cluster by the `kube-system` namespace UID, or by an explicit mapping. Watches, views, and problems always run on the default profile. Elevated profiles are used per action, or for an explicit, time-boxed elevated session. Details: [auth.md §Access profiles](auth.md#access-profiles-one-cluster-several-targets).
 
 ### Cluster groups
 
@@ -174,14 +186,14 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
 | D6 | Sort/filter location | Agent | UI worker over full dataset | Same path for phone and desktop; UI heap scales with viewport |
 | D7 | Ingest | Projection inside ListerWatcher; protobuf for built-ins, Table mode for generic CRDs and reports, metadata-only where enough | client-go informers of full objects + transform | 124–180 MB per 10k pods as typed objects vs 14 MB projected (both measured in the spike) |
 | D8 | List fetch | WatchList, else paged LIST (500), RV=0 only for small kinds | Unpaged LIST | Bounded memory on both sides |
-| D9 | Hosted caching | Shared per-cluster cache + per-user authz filter; sensitive paths as the user | Per-user watches | 50× less memory and watch load; API server stays the authority for sensitive reads and all writes |
-| D10 | Hosted identity | OIDC pass-through preferred; cloud token exchange; scoped impersonation; shared read-only kiosk | Single service account | API server audit shows the person; RBAC is the cluster's |
+| D9 | Hosted caching | **Per-user watches** (required behind the gateway); shared per-cluster cache + per-user authz filter only as an opt-in for directly reached clusters | Shared cache by default | A shared cache would read cluster data outside the gateway's per-request authorization and recording; per-user cost is ~14 MB per 10k pods per active user and cluster, fine for a team |
+| D10 | Identity | **The user's own token through the access gateway (Warpgate) on every request**, desktop and hosted; for directly reached clusters: OIDC pass-through, cloud token exchange, scoped impersonation, read-only kiosk | Single service account | The gateway authorizes and records the person per request; JIT elevation stays in the gateway |
 | D11 | Vue reactivity | `markRaw` data + `shallowRef` version counters + `v-memo` rows | Reactive datasets | Reactive proxies over thousands of objects are the main jank source |
 | D12 | Tables | Fixed row height, no row components | Measured rows, component per row | No layout reads during scroll; predictable windows |
 | D13 | Editor | CodeMirror 6 | Monaco | ~10× smaller, mobile-capable, virtualizes long docs |
 | D14 | Problems | Synthetic resource type in the view engine | Separate subsystem | Merge, sort, window, authz for free |
 
-None of these needed a call from Sean: each has a perf or ecosystem rationale strong enough to decide. Each lists what would reverse it in its chapter.
+None of these needed a maintainer decision: each has a perf or ecosystem rationale strong enough to decide. Each lists what would reverse it in its chapter.
 
 ## Roadmap
 
@@ -201,25 +213,27 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 ### P1 · Desktop MVP: browse and edit
 
 - Multi-cluster selection, groups, remember last selection, connection lifecycle states.
-- Desktop auth: kubeconfig merge, exec plugins, login-shell environment, keychain.
+- Desktop auth: kubeconfig merge, exec plugins (the gateway's `kubelogin` profile is the reference case: one sign-in for all targets), login-shell environment, keychain.
+- Access profiles: contexts grouped into clusters by `kube-system` UID; default profile for watches.
 - Tier-0 and on-demand watches; discovery; generic CRDs in Table mode.
 - Curated views for P1 kinds in the [coverage matrix](data-model.md#coverage-matrix); detail drawer; events; related objects.
 - YAML view/edit (Update with resourceVersion, `kubectl edit` semantics) with server-side dry run, ownership warnings from `managedFields`, and conflict diff; create from YAML (server-side apply); delete; scale; restart.
 - Logs (single container, follow, search, download).
 - Starred resource types, bookmarks, global search, keyboard navigation, light/dark.
-- RBAC-aware UI (`SelfSubjectRulesReview`/`SelfSubjectAccessReview`).
+- RBAC-aware UI per access profile (`SelfSubjectReview`, `SelfSubjectRulesReview`, `SelfSubjectAccessReview`).
 - `v8s serve`. Signed builds for macOS, Windows, Linux; auto-update.
 
-**Exit:** all P0 budgets with 3 clusters selected; cold start ≤ 1.5 s; Electron idle ≤ 350 MB.
+**Exit:** all P0 budgets with 3 clusters selected **through Warpgate**; cold start ≤ 1.5 s; Electron idle ≤ 350 MB.
 
 ### P2 · Operate, Flux, Helm
 
 - Pod shell (WebSocket exec, debug containers for distroless), node shell, cordon/uncordon, drain with pre-flight and resumable jobs, port-forward (desktop), local audit log.
+- Per-action elevation to a JIT profile ("Run as cluster-admin"), with ticket-required handling.
 - Flux module: all kinds, overview, inventory tree, dependency graph, suspend/resume/reconcile/force/reset, bulk.
 - Helm module: metadata-only release list, detail with history/values/manifest/diff, rollback, uninstall, retry; Flux-aware routing.
 - Multi-pod logs.
 
-**Exit:** on a 300-release, 30-Kustomization cluster, the Helm list (name, namespace, revision, status, updated, from Secret labels) and the Flux overview render ≤ 300 ms after connect; chart and app-version columns (from decoded payloads, visible rows only) fill within 1 s; exec keystroke latency ≤ 5 ms added.
+**Exit:** on a 300-release, 30-Kustomization cluster, the Helm list (name, namespace, revision, status, updated, from Secret labels) and the Flux overview render ≤ 300 ms after connect; chart and app-version columns (from decoded payloads, visible rows only) fill within 1 s; exec keystroke latency ≤ 5 ms added (measured through Warpgate as well as direct).
 
 ### P3 · Problems, Kyverno, Trivy
 
@@ -229,23 +243,23 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 
 **Exit:** 5k VulnerabilityReports and 20k PolicyReports add ≤ 30 MB agent RSS with every default-on class enabled (all of which are computed from Table-mode counts; no report bodies fetched); a crash loop appears in Problems ≤ 2 s after the container state changes.
 
-### P4 · Hosted, OAuth identity, PWA
+### P4 · Hosted with gateway identity, mobile web
 
-- `v8s server`: OIDC login, cluster registry, groups, per-user state, Postgres/SQLite, Helm chart.
-- Identity strategies: OIDC pass-through (with token exchange for audiences) and scoped impersonation (constrained impersonation where available); shared read-only kiosk.
-- Shared caches with per-user authorization filter; per-user paths for sensitive reads and all writes; hosted audit.
-- PWA: manifest, service worker app shell, offline snapshot, mobile layouts (cards, bottom nav), reduced-fan-out subscriptions, hold-to-confirm.
+- `v8s server` (self-hosted): OIDC login, cluster registry with access profiles, groups, per-user state, Postgres/SQLite, Helm chart.
+- **Gateway pass-through**: per-user gateway tokens acquired and refreshed server-side, sent on every request; per-user watches, views, and problems; hosted audit.
+- Identity strategies for directly reached clusters: OIDC pass-through with per-cluster audiences, scoped impersonation, read-only kiosk; optional shared cache with per-user authorization filter.
+- **Mobile web**: responsive layouts (cards, bottom nav), touch targets, reduced-fan-out subscriptions, hold-to-confirm. Browser only; no install.
 - Hosted HTTP preview on a separate registrable domain (opt-in).
 
-**Exit:** mobile budgets on a throttled mid-range Android profile; 50 simulated users × 10 clusters on one replica within ≤ 1 MB per session over the shared cache; a security review of the identity strategies and the authz filter.
+**Exit:** mobile budgets on a throttled mid-range Android profile in Chrome and iOS Safari; 10 simulated users × 6 clusters of 10k pods through Warpgate within the per-user RSS budget, with gateway CPU and recording volume measured; a security review of token handling and the identity strategies.
 
-### P5 · Network, depth, scale
+### P5 · Network, depth, PWA
 
 - Hubble module (flows tab, drops view, service map, network problem classes).
 - Kubescape module (summary ingest, ApplicationProfile/NetworkNeighborhood viewers).
 - Cross-cluster CVE index; violations-by-policy job.
-- Cloud token exchange (EKS, AKS OBO, GKE workforce), cluster connector for private clusters, hosted replica sharding.
-- Web push for critical problems; desktop notifications.
+- **Installable PWA**: manifest, service-worker app shell, offline problems snapshot, web push for critical problems; desktop notifications.
+- Cloud token exchange (EKS, AKS OBO, GKE workforce) for directly reached clusters; hosted replica sharding if a team outgrows one process.
 - CEL user-defined detectors; module API documentation for third-party integrations (Argo CD, KEDA, Gatekeeper).
 - Prometheus links/sparklines (optional).
 
@@ -271,24 +285,36 @@ Each phase has exit criteria, including performance budgets that must pass in CI
 
 ## Open questions
 
-Decisions for Sean. Each has a recommendation; none blocks P0.
+### Decided
+
+| Topic | Decision |
+| --- | --- |
+| License | MIT |
+| Repository | GitHub `zyno-io/v8s`, public |
+| SaaS | None planned; desktop and self-hosted only |
+| Phone | Mobile web in the browser first; installable PWA later (P5) |
+| Cluster identity | The user's own token flows through the access gateway (Warpgate) on every request, desktop and hosted |
+
+### Still open
+
+Each has a recommendation; none blocks P0.
 
 | # | Question | Recommendation |
 | --- | --- | --- |
-| Q1 | Project domain and reverse-DNS prefix for labels/annotations (`v8s.dev/...` is used as a placeholder) | Register `v8s.dev` if available |
-| Q2 | License | **Apache-2.0** (Kubernetes ecosystem norm, patent grant). PixelCI's source-available license would deter contributors and packagers |
-| Q3 | Where the canonical repo lives: GitHub `zyno-io/v8s` (like vue-foundation) or `git.s24.dev` with a GitHub mirror | GitHub `zyno-io/v8s`; OSS discovery and contributions happen there |
-| Q4 | Is a Signal24-run hosted SaaS planned, or self-hosted only? | Design for both (already done); build self-hosted first. SaaS raises the priority of the connector (P5) and a separate billing control plane |
-| Q5 | Is a cluster-wide read-only hub ServiceAccount acceptable as the hosted default? | Yes, default shared cache with per-cluster opt-out to per-user watches |
-| Q6 | Electron's ~150–250 MB baseline: acceptable for the desktop app? | Yes; frame-time consistency on Linux matters more. Keep the WebKit perf project in CI to revisit Tauri |
-| Q7 | Extract the CI Dashboard / PixelCI tokens into a shared package (e.g. in `@zyno-io/vue-foundation`) now that three products use them? | Yes, after v8s P0 proves the dense-table extensions |
-| Q8 | Opt-in telemetry (frame-time histograms, crash reports) in desktop and self-hosted builds? | Yes, opt-in, documented, no cluster data |
-| Q9 | Hosted node-shell session recording (keystroke/typescript capture) | Offer as an org opt-in in P4; off by default |
-| Q10 | Kubescape runtime alerts (only available via exporters) worth ingesting via an HTTP exporter endpoint on `v8s server`? | Later (post-P5), only if users ask |
+| Q1 | Project domain and reverse-DNS prefix for labels/annotations (`v8s.dev/...` is a placeholder) | Register `v8s.dev` if available |
+| Q2 | Which token does the gateway's `kubelogin` profile carry: an IdP token (e.g. Entra ID) for a gateway app registration, or a gateway-issued token? This decides how hosted v8s obtains each user's gateway token ([auth.md §Hosted](auth.md#hosted)) | If IdP-issued: register v8s with the IdP and use on-behalf-of for the gateway's audience. If gateway-issued: v8s signs users in through the gateway's OIDC |
+| Q3 | Does the gateway record Kubernetes request/response bodies? Long-lived watches from every active user could bloat recordings | Measure in P0 with protobuf + metadata-only watches; if still heavy, ask for a recording policy that keeps metadata for read-only watch traffic |
+| Q4 | Elevation to JIT admin targets: per action only, or also time-boxed elevated sessions? | Per action by default; elevated sessions allowed with a persistent banner and a 30-minute cap |
+| Q5 | Expected hosted scale (people, clusters, largest cluster)? | The plan sizes per-user mode for ≤ 20 people × ≤ 10 clusters on one server process |
+| Q6 | "Gateway-only" policy: should v8s hide or warn on kubeconfig contexts that reach an API server directly when the cluster also has a gateway target (break-glass contexts)? | Warn and mark them `direct` in red; hide them with an org setting |
+| Q7 | Electron's ~150–250 MB baseline: acceptable for the desktop app? | Yes; frame-time consistency on Linux matters more. Keep the WebKit perf project in CI to revisit Tauri |
+| Q8 | Extract the CI Dashboard / PixelCI tokens into a shared package (e.g. in `@zyno-io/vue-foundation`) now that three products use them? | Yes, after v8s P0 proves the dense-table extensions |
+| Q9 | Opt-in telemetry (frame-time histograms, crash reports) in desktop and self-hosted builds? | Yes, opt-in, documented, no cluster data |
+| Q10 | Shell session recording: rely on the gateway's recording, or add v8s's own? | Rely on the gateway; v8s audits session start/end only |
 | Q11 | Platform priority for the first desktop alpha | macOS + Linux first, Windows in the same release if signing is ready |
-| Q12 | Name the pod/flow/log defaults (ring sizes, linger times) as user settings or keep them internal? | Internal defaults with an "Advanced" settings page |
+| Q12 | Kubescape runtime alerts (only available via exporters): ingest via an HTTP exporter endpoint on `v8s server`? | Later, only if wanted |
 
-Engineering questions to settle by benchmark or a quick check (not for Sean): whether pods should use Table-mode ingest above ~30k pods per cluster; whether Helm 4's SDK rolls back releases created by Helm 3 cleanly (else vendor the v3 SDK for rollback); Kubescape storage watch support and kind list; Trivy report digest location.
+Engineering questions to settle by benchmark or a quick check (no maintainer decision needed): Warpgate support for watch, WatchList, protobuf, Table requests, and exec/attach/port-forward upgrades; whether pods should use Table-mode ingest above ~30k pods per cluster; whether Helm 4's SDK rolls back releases created by Helm 3 cleanly; Kubescape storage watch support and kind list.
 
 ## Repository layout
 
@@ -297,11 +323,11 @@ A Yarn 4 workspace (Signal24 convention) plus a Go module:
 ```
 v8s/
 ├── README.md
-├── LICENSE                         # Q2
+├── LICENSE                         # MIT
 ├── package.json                    # yarn workspaces: packages/*
 ├── go.work                         # agent + spikes
 ├── agent/                          # Go module: github.com/zyno-io/v8s/agent
-│   ├── cmd/v8s/                    # one binary: agent | serve | server | connector | auth
+│   ├── cmd/v8s/                    # one binary: agent | serve | server | auth
 │   ├── internal/
 │   │   ├── kube/                   # clients, kubeconfig, exec plugins, OIDC, passthrough, rate limits
 │   │   ├── ingest/                 # discovery, projecting ListerWatchers, tiers, linger, GC

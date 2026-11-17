@@ -18,7 +18,7 @@ This chapter says what v8s takes unchanged, what it extends, and which rules it 
 
 ## Token delivery
 
-Copy the token block from PixelCI into `packages/ui/src/styles/tokens.scss` in P0. Three products now share these tokens; see [open question Q7](architecture.md#open-questions) about extracting them into a shared package (likely `@zyno-io/vue-foundation`).
+Copy the token block from PixelCI into `packages/ui/src/styles/tokens.scss` in P0. Three products now share these tokens; see [open question Q8](architecture.md#open-questions) about extracting them into a shared package (likely `@zyno-io/vue-foundation`).
 
 ## Status mapping
 
@@ -50,7 +50,7 @@ PixelCI is a review desk: a 1120px column of cards and rows. v8s is closer to th
 A top-bar button showing the selected count ("3 clusters") or the single cluster name. It opens a floating menu:
 
 - Group chips at the top (`production`, `staging`, user-defined). Clicking a chip selects exactly that group; shift-click adds it.
-- A searchable checklist of contexts with a connection-state dot (connected, connecting, error, disconnected) and the group tags.
+- A searchable checklist of clusters with a connection-state dot (connected, connecting, error, disconnected, ticket-required) and the group tags. A cluster with several access profiles shows its default profile and a small profile menu; an elevated profile in use wears a warning-tone tag (`cluster-admin`) everywhere the cluster tag appears.
 - "Apply" commits the selection. Checking boxes connects nothing until Apply, so a fat-fingered "select all" on 40 clusters does not open 40 connections. On launch, the remembered selection appears pre-checked with a "Connect" button (or reconnects automatically if the user turned that on).
 
 Each cluster gets a stable **cluster tag**: neutral tone, the cluster's short name, and an optional user-chosen accent dot (6 hues tuned to sit beside, not clash with, status tones). In multi-cluster tables the cluster tag is the first column.

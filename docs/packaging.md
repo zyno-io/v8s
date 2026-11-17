@@ -6,8 +6,8 @@ One Vue bundle and one Go binary produce every surface:
 | --- | --- | --- | --- |
 | **Desktop app** (macOS, Windows, Linux) | Electron renderer, byte-identical to the hosted bundle | `v8s agent --desktop`, a child process of Electron main | the user's kubeconfig |
 | **`v8s serve`** | the system browser on `http://127.0.0.1:<port>` | the same binary, serving the embedded UI | the user's kubeconfig |
-| **Hosted web + PWA** | browser / installed PWA | `v8s server` (multi-tenant) | forwarded OIDC identity ([auth.md](auth.md)) |
-| **Cluster connector** (P5) | n/a | `v8s connector` in a private cluster, dialling out to `v8s server` | relays the user's identity |
+| **Hosted web** (desktop and phone browsers) | browser | `v8s server` (self-hosted, multi-user) | each user's own token, forwarded through the access gateway ([auth.md](auth.md)) |
+| **Installable PWA** (later) | installed web app | `v8s server` | same as hosted |
 
 ## Desktop: Electron + Go agent
 
@@ -17,7 +17,7 @@ One Vue bundle and one Go binary produce every surface:
 - **Tauri's Rust core buys nothing here.** The heavy lifting is in the Go agent in every mode; the shell only spawns the agent and opens a window.
 - **Memory**: Electron's baseline is ~150–250 MB versus Tauri's ~60–120 MB. With the agent holding 100–300 MB of cluster projections for a typical multi-cluster session, the difference is not what users notice; frame time is. The Electron total stays under the 350 MB idle budget ([performance.md §11](performance.md#11-performance-budgets)).
 - **Shipping maturity**: electron-builder and electron-updater, macOS notarization (the agent is signed as a nested executable with the hardened runtime), Windows signing via Azure Trusted Signing, AppImage/deb/rpm, delta updates.
-- **The UI stays WebKit-clean anyway**, because the iOS PWA runs on WebKit. Electron is a consistency choice for desktop, not a Chromium lock-in.
+- **The UI stays WebKit-clean anyway**, because iOS Safari is WebKit. Electron is a consistency choice for desktop, not a Chromium lock-in.
 
 **What would reverse it**: the Playwright WebKit project (WebKitGTK-based on Linux) meeting the scroll, terminal, and log budgets in CI. Because the shell is thin, switching later is cheap; that comparison stays in the nightly suite. Wails was also considered: same system-webview problem, plus it couples an agent crash to a window crash.
 
@@ -40,19 +40,21 @@ The agent can serve the embedded UI itself and open the system browser. Useful o
 - **Scaling**: caches are per cluster, so horizontal scaling shards **clusters** across replicas (consistent hashing on cluster id), with sessions routed to the replica that owns each cluster's cache, or proxied between replicas. MVP is single replica; sharding is P5.
 - **Helm chart** and a container image (distroless, non-root, read-only root filesystem). Flux-friendly: the chart's values cover OIDC, cluster records (or a CRD-based cluster registry, an open question), and storage.
 - **Origins**: the app on `v8s.example.com`; proxied pod HTTP previews (port-forward replacement) on a **separate registrable domain** (`<random-label>.v8s-preview.example.net`). A subdomain of the app's domain would be same-site, so SameSite cookies would not stop in-cluster content from making requests to the app, and that content could set cookies on the parent domain. Session cookies are `__Host-` prefixed (host-only). Previews share one registrable domain with each other, so each preview's token is also a `__Host-` cookie (a sibling preview cannot set or overwrite it), and the hosted SaaS registers its preview domain on the Public Suffix List so previews are cross-site to each other; self-hosters are told to do the same or accept the residual risk.
-- A future Signal24 SaaS control plane (accounts, billing) would be a separate TS Server Foundation service that mints JWTs `v8s server` validates. It stays out of the data path.
+- **Self-hosted only.** No SaaS is planned, so there is no account or billing control plane and no in-cluster connector.
 
-## Mobile (PWA)
+## Mobile web
 
-The hosted web app is an installable **PWA** and the phone is a first-class client for the jobs people actually do on a phone: *is anything broken, what, since when, and can I do the one safe thing that fixes it.* It is not a shrunken desktop.
+The first round is the **hosted web app in a phone's browser**: no app install, no service worker. The phone is a first-class client for the jobs people actually do on a phone: *is anything broken, what, since when, and can I do the one safe thing that fixes it.* It is not a shrunken desktop. Responsive layouts, touch targets, reduced fan-out, and the mobile budgets all apply from P4.
 
-### Installability and offline
+### Installable PWA (later, P5)
+
+Nothing in the first round blocks this; it is additive:
 
 - Web app manifest (name, short name, `start_url: /`, `display: standalone`, theme colours from tokens for light and dark, 192/512 PNG + maskable icons, `shortcuts` for Problems and Search). Installs from Chrome/Edge/Android and via Add to Home Screen on iOS Safari. Same recipe as the CI Dashboard.
 - **Service worker** (production builds only) precaches the **app shell**: HTML, hashed JS/CSS chunks for the shell and the Problems/Search/Detail routes, fonts, icons. Route chunks for heavy desktop features (terminal, YAML editor, graphs) are cached on first use, not precached, to keep the install small.
 - **No offline cluster data.** API, auth, and WebSocket traffic are always network. Offline, the shell loads instantly and shows the last-known Problems snapshot (stored in IndexedDB, marked with its age and "offline") plus a reconnect state. A stale snapshot that says it is stale is useful on a train; a fake live view is not.
 - **Update flow**: new service worker waits; a toast offers "Reload to update". Never auto-reload mid-action.
-- **Web push** (P5): notifications for new critical problems in chosen cluster groups, via the Push API (supported for installed PWAs on iOS 16.4+ and everywhere on Android). Off by default.
+- **Web push**: notifications for new critical problems in chosen cluster groups, via the Push API (supported for installed PWAs on iOS 16.4+ and everywhere on Android). Off by default.
 
 ### What works great on a phone
 
@@ -92,7 +94,7 @@ The phone talks to the same agent as the desktop browser. The agent does the wat
 
 See [performance.md §Budgets](performance.md#11-performance-budgets) for the full table. The phone-specific ones, measured on a mid-range Android (Pixel 6a-class) with 4G throttling:
 
-- App shell from installed PWA to interactive (warm start, cached shell): **≤ 1.5 s**.
+- Warm start in the phone browser (HTTP-cached assets) to interactive: **≤ 1.5 s**.
 - Problems list with live data after launch (warm agent): **< 2.0 s**.
 - Main-thread work per patch: **≤ 4 ms** p95.
 - Initial JS for the shell + Problems route: **< 150 KB gzipped**. Terminal, CodeMirror, and graph code are separate chunks.

@@ -11,7 +11,8 @@ A fast, multi-cluster Kubernetes manager for desktop, web, and phone.
 - **A Problems view** across all selected clusters: crash loops, failed Jobs, NotReady nodes, Ingresses with no endpoints, failed Helm releases, unhealthy Flux objects, policy failures, critical vulnerabilities, dropped network flows. Filterable by class.
 - **First-class Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble**, not just generic CRD browsing.
 - **Day-to-day operations**: edit with dry run and diff, pod shell, node shell, cordon/drain, logs, port-forward, with an audit trail.
-- **Desktop app** (macOS, Windows, Linux) and a **hosted web app** that installs as a **PWA** on phones, forwarding each user's own OIDC identity to clusters.
+- **Desktop app** (macOS, Windows, Linux) and a **self-hosted web app** that works in desktop and phone browsers.
+- **Gateway-native identity**: built to run behind access gateways such as [Warpgate](https://github.com/warp-tech/warpgate). Every request carries the user's own token, including per-action elevation to just-in-time admin targets.
 
 ## The plan
 
@@ -25,8 +26,8 @@ Start with [docs/architecture.md](docs/architecture.md). The performance chapter
 | [problems.md](docs/problems.md) | Problems engine and view |
 | [integrations.md](docs/integrations.md) | Flux, Helm, Kyverno, Trivy, Kubescape, Hubble |
 | [operations.md](docs/operations.md) | Editing, shells, drain, logs, port-forward, audit, security |
-| [auth.md](docs/auth.md) | Desktop kubeconfig auth; hosted OIDC identity forwarding |
-| [packaging.md](docs/packaging.md) | Electron desktop, hosted server, PWA and mobile |
+| [auth.md](docs/auth.md) | Gateway (Warpgate) token pass-through, access profiles, desktop kubeconfig auth, hosted identity |
+| [packaging.md](docs/packaging.md) | Electron desktop, hosted server, mobile web |
 | [design-system.md](docs/design-system.md) | Visual design mapping |
 
 ## Spikes
@@ -39,4 +40,4 @@ Go agent (client-go, Helm SDK) · Vue 3 + Vite + Pinia · Electron for desktop �
 
 ## License
 
-To be decided (see [open question Q2](docs/architecture.md#open-questions)).
+[MIT](LICENSE)

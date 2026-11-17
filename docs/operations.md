@@ -4,7 +4,8 @@ Everything that changes a cluster or opens an interactive channel into it. All o
 
 ## Principles
 
-1. **The user's identity, always.** Desktop: the kubeconfig credential. Hosted: the forwarded OIDC identity (see [auth.md](auth.md)). The agent never uses a shared privileged credential to perform a user action.
+1. **The user's identity, always.** For gateway-fronted clusters, every action carries the user's own gateway token to the target, on desktop and hosted (see [auth.md](auth.md#gateway-fronted-clusters-warpgate)). Otherwise: desktop uses the kubeconfig credential, hosted the forwarded identity. The agent never uses a shared privileged credential to perform a user action.
+1. **Elevation is explicit.** Actions the default access profile cannot perform (node shell, drain, cluster-scoped edits on an operator role) offer "Run as `<elevated profile>`" in the confirm dialog. That request goes to the JIT target, which the gateway authorizes against the user's active ticket. Without a ticket, v8s links to the gateway's ticket page.
 2. **RBAC-aware UI, not RBAC-enforcing UI.** The agent asks `SelfSubjectRulesReview` (per namespace, cached) and `SelfSubjectAccessReview` (for specific verbs on specific objects) so buttons the user cannot use are disabled with a reason ("You can't `delete` pods in `payments`"). The server still decides; a stale cache produces a clean 403 toast, not a broken state.
 3. **Every mutation is previewable.** Edits and creates go through server-side dry run (`dryRun=All`) first, so admission webhooks (Kyverno, Gatekeeper) reject before the user commits.
 4. **Destructive actions confirm proportionally.** Single object: confirm dialog. Bulk, cross-cluster, or production-group: type-to-confirm with the count and cluster names spelled out.
@@ -28,7 +29,7 @@ Everything that changes a cluster or opens an interactive channel into it. All o
 - **Shell discovery**: try `/bin/bash`, `/bin/sh`, `/busybox/sh`; for distroless containers, offer **ephemeral debug container** (`kubectl debug`-style, `pods/ephemeralcontainers` subresource) with a chosen image targeting the container's process namespace.
 - **Terminal**: xterm.js, resize events forwarded, UTF-8 safe, copy-on-select.
 - **Session limits**: idle timeout (default 30 min hosted, none desktop), max concurrent sessions per user (hosted), and an explicit "Session ended: pod deleted / container restarted" state.
-- **Mobile**: available but secondary. A phone gets a simplified terminal (DOM renderer, an accessory key row for Esc/Ctrl/Tab/arrows) and a warning that it is best on desktop. See [packaging.md §Mobile](packaging.md#mobile-pwa).
+- **Mobile**: available but secondary. A phone gets a simplified terminal (DOM renderer, an accessory key row for Esc/Ctrl/Tab/arrows) and a warning that it is best on desktop. See [packaging.md §Mobile](packaging.md#mobile-web).
 
 ## Node shell
 

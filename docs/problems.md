@@ -15,7 +15,7 @@ One view answers "what is broken, anywhere I'm looking?" across every selected c
 
 In the **agent**, next to the watch caches. Detectors read the agent's indexed, projected store directly; they never cross a process boundary per object. The UI subscribes to the problems query like any other view and receives windowed rows plus counts per class.
 
-Hosted mode runs detectors **once per cluster** over the shared cache. Each problem inherits its subject's authorization scope and is filtered per user like any other row (see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)); a problem about an object a user cannot see is never shown to them.
+Hosted mode runs detectors **per user** over that user's own watches for gateway-fronted clusters (the default; see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)). For directly reached clusters with the optional shared cache, detectors run **once per cluster** over the shared cache. Each problem inherits its subject's authorization scope and is filtered per user like any other row (see [performance.md §10](performance.md#10-hosted-mode-fan-out-and-sharing)); a problem about an object a user cannot see is never shown to them.
 
 Problems are a **synthetic resource type** (`v8s/problems`) in the agent's view engine, so cross-cluster merge, sort, grouping, windowing, and authorization filtering are the same code that serves resource lists.
 
@@ -144,7 +144,7 @@ When a cluster is selected, the agent starts a fixed **baseline** set of watches
 
 Kinds a detector needs but the user cannot `list`/`watch` are skipped; the Problems view shows "Some checks are unavailable in `prod-eu` (no permission to list `ingresses`)" instead of silently reporting zero problems.
 
-On a phone the baseline is the same (it runs in the agent, not the phone); only the UI subscription is narrower. See [packaging.md §Mobile](packaging.md#mobile-pwa).
+On a phone the baseline is the same (it runs in the agent, not the phone); only the UI subscription is narrower. See [packaging.md §Mobile](packaging.md#mobile-web).
 
 ## Cross-cluster merge
 

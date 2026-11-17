@@ -281,13 +281,28 @@ Ack         { seq }
 | Ship all rows to the UI, sort/filter in a worker | Works on loopback, fails the mobile data and memory budgets, and UI heap grows with the cluster. One code path for all clients wins. |
 | Op-log deltas (resourceVersion-ordered event replay) | Needs per-client unbounded queues or complex compaction; reconnect needs a replay window. State diffs are bounded by construction. |
 | Protobuf to the UI | No benefit at window scale; msgpack is schemaless and has a fast JS decoder. |
-| WebTransport | Not available in Safari (iOS PWA). |
+| WebTransport | Not available in Safari (iOS). |
 | gRPC-web | Needs a proxy layer; streams are one-directional; no win over WebSocket here. |
 | Columnar typed arrays to the UI | The spike shows they transfer fastest (0.8 ms per 10k rows), but with windows of ≤ 2k rows, plain arrays cost < 1 ms. Revisit if a feature needs > 5k client-side rows (charts). |
 
 ## 10. Hosted mode: fan-out and sharing
 
-Hosted v8s serves many users across many clusters. Per-user watches would multiply API-server watch load and agent memory by the number of users (50 users × 10 clusters × 10k pods ≈ 20 GB of per-user caches, and 50× the watches). The design shares caches and filters per user.
+Hosted v8s is self-hosted for a team. How it fans out depends on the cluster's identity strategy ([auth.md](auth.md)).
+
+### Per-user watches (default; required for gateway-fronted clusters)
+
+Clusters behind an access gateway such as Warpgate must see **every request carry the user's own token** ([auth.md §Gateway-fronted clusters](auth.md#gateway-fronted-clusters-warpgate)). A shared cache would read cluster data outside the gateway's per-request authorization and session recording, so hosted v8s runs **per-user watches** for these clusters:
+
+- Each `(user, cluster)` has its own tier-0 and on-demand watches, store, views, and problems, all on the user's default access profile, exactly like a desktop agent.
+- **Lifecycle follows the user, not the server.** A user's watches for a cluster start when one of their sessions selects it, and stop 2 minutes after their last tab closes or deselects it (problems are therefore evaluated while a user is connected; offline alerting is out of scope).
+- **No authorization filter is needed.** The gateway and API server authorize every watch and request directly, so the SubjectAccessReview machinery below does not run for these clusters.
+- **Cost model**: per `(user, cluster)`, ~20–50 watches and ~14 MB agent memory per 10k pods (measured projection). A team of 10 people with 6 clusters of 10k pods each selected: ≈ 0.85 GB agent RSS and ≈ 1,200–3,000 long-lived watches through the gateway. That is comfortable for one server process; the gateway's capacity for that many watch streams (and their session recordings) is the number to verify in P0.
+- **Budget**: hosted agent RSS ≤ 50 MB per 10k pods per active `(user, cluster)`; watches per `(user, cluster)` within the §5 budget.
+- Wire, view, and UI behaviour is identical to the shared mode; only where the store lives changes.
+
+### Optional shared cache (clusters reached directly)
+
+For clusters reached without a gateway, an admin can enable a shared cache, because per-user watches multiply API-server watch load and agent memory by the number of users (50 users × 10 clusters × 10k pods ≈ 7 GB of per-user caches, and 50× the watches):
 
 - **One shared tier-0 cache per cluster**, read through a hub ServiceAccount with `get/list/watch` on tier-0 kinds and **no access to Secrets**.
 - **Per-user authorization filter** at `(cluster, GVR, namespace)` granularity:
@@ -301,16 +316,16 @@ Hosted v8s serves many users across many clusters. Per-user watches would multip
 - **Problems** from shared-cache inputs are computed once per cluster and filtered as above. Detectors whose inputs are user-only run per user: Helm classes use the user's own Helm release watch (or a Flux HelmRelease's status, which is in the shared cache). Hubble network classes use the cluster's **direct relay URL** (an Ingress or internal Service the operator exposes for v8s) rather than a port-forward, so the hub needs no `pods/portforward` at all; `pods/portforward` in `kube-system` would let the hub forward to every pod there, since relay pod names are random and `resourceNames` cannot narrow it. Without a direct relay URL, hosted network classes are unavailable for that cluster. Results are filtered per user like any multi-subject problem.
 - **Hubble in hosted mode**: the relay has no authorization of its own. Interactive flow subscriptions carry a server-injected `FlowFilter` restricting results to flows with at least one end in a namespace the user can see, and the server **redacts the other end** when its namespace is not visible: pod name, labels, workload, and IP are replaced by the namespace name, or by `world`/the Cilium reserved identity for non-pod endpoints. Users see that their pod talked to *something in* `payments`, never what. A direct relay URL is used in hosted mode only with this filtering and redaction.
 - **Views are shared** across sessions with the same normalized query and authorization scope; each session holds only its window and last-sent state (≤ 1 MB per session).
-- **Opt-out**: a cluster can be configured "per-user watches only" (no hub ServiceAccount), for organizations that will not grant a cluster-wide reader. That is slower and heavier, and v8s says so in the cluster settings.
+- **Opt-in only**: the shared cache is enabled per cluster by an admin (it needs a hub ServiceAccount), and never for gateway-fronted clusters.
 
 ## 11. Performance budgets
 
 Reference hardware: desktop = 2021 M1 MacBook Pro / equivalent x86 laptop; mobile = Pixel 6a-class Android with 4× CPU throttling and 4G network profile in CI.
 
-| Metric | Desktop (Electron, local agent) | Hosted (desktop browser) | Mobile PWA |
+| Metric | Desktop (Electron, local agent) | Hosted (desktop browser) | Mobile web |
 | --- | --- | --- | --- |
 | Cold start to interactive | ≤ 1.5 s from launch | ≤ 1.5 s | ≤ 3.5 s |
-| Warm start to interactive | ≤ 0.8 s | ≤ 0.8 s (service worker) | ≤ 1.5 s |
+| Warm start to interactive | ≤ 0.8 s | ≤ 0.8 s (HTTP cache) | ≤ 1.5 s (HTTP cache) |
 | Initial JS (shell + Problems + one list) | n/a | ≤ 250 KB gz | ≤ 150 KB gz |
 | Cluster select → first rows (10k pods) | ≤ 1.0 s p95 | ≤ 1.0 s + RTT (≤ 300 ms when hub cache is warm) | as hosted |
 | Full sync, 50k pods, LAN | ≤ 8 s | ≤ 8 s | n/a |
@@ -321,7 +336,7 @@ Reference hardware: desktop = 2021 M1 MacBook Pro / equivalent x86 laptop; mobil
 | Main-thread cost per patch | ≤ 2 ms p95 | ≤ 2 ms | ≤ 4 ms |
 | 1,000 events/s sustained churn | main thread ≤ 10% busy; agent ≤ 1 core | same | n/a |
 | UI heap | ≤ 80 MB; growing the cluster set 10k → 200k objects adds ≤ 10 MB | same | ≤ 50 MB |
-| Agent RSS | base ≤ 50 MB; ≤ 50 MB per 10k pods; ≤ 600 MB at 200k objects | ≤ 50 MB per 10k pods per cluster (shared) + ≤ 1 MB per session | n/a |
+| Agent RSS | base ≤ 50 MB; ≤ 50 MB per 10k pods; ≤ 600 MB at 200k objects | ≤ 50 MB per 10k pods per active (user, cluster) (per-user mode); per cluster + ≤ 1 MB per session (shared mode) | n/a |
 | Electron total (main + renderer + GPU), idle, 1 cluster | ≤ 350 MB | n/a | n/a |
 | Log streaming | 5k lines/s at ≤ 30% main thread; ≤ 60 paints/s | same | 1k lines/s |
 | Added exec keystroke latency | ≤ 5 ms | ≤ 15 ms | ≤ 15 ms |
@@ -352,6 +367,6 @@ The failure modes of existing tools, ruled out by design:
 
 - **Agent micro-benchmarks** (`go test -bench`, every merge request): recorded watch streams (captured once from kwok, stored as fixtures) replayed through a fake ListerWatcher. Tracked: ns/event, allocs/event, retained bytes per 10k objects (heap after GC), view rebuild time at 50k, incremental update time. Compared to `main` with `benchstat` in the same job; > 10% regression fails.
 - **Nightly scale test**: `kwokctl` with 500 fake nodes and 50k pods, Stage rules producing crash loops, pending pods, and churn at configurable rates; synthetic CRDs (5k VulnerabilityReports at ~300 KB, 20k PolicyReports, a few hundred Flux objects with status). Measured: connect → first rows, full sync time, event → row latency (an annotation timestamp on the pod compared with a UI "row visible" test hook), agent RSS, API-server request counts (to catch accidental relists).
-- **UI performance tests** (Playwright Chromium with CDP tracing) against the real agent with a replay backend (`v8s agent --fake-cluster=<fixture> --rate=1000ev/s`): wheel-scroll through 50k rows, type a filter, sustained churn, log flood, terminal flood. Collected: rAF frame times, Long Tasks, heap (`Performance.getMetrics`). A mobile project runs with 4× CPU throttling; a WebKit project runs coarse checks (iOS PWA proxy and the future Tauri question).
+- **UI performance tests** (Playwright Chromium with CDP tracing) against the real agent with a replay backend (`v8s agent --fake-cluster=<fixture> --rate=1000ev/s`): wheel-scroll through 50k rows, type a filter, sustained churn, log flood, terminal flood. Collected: rAF frame times, Long Tasks, heap (`Performance.getMetrics`). A mobile project runs with 4× CPU throttling; a WebKit project runs coarse checks (iOS Safari proxy and the future Tauri question).
 - **Noise control**: fixed self-hosted runner for absolute budgets, plus same-job comparison against `main` for regressions.
 - **Field telemetry** (opt-in, desktop and self-hosted): frame-time and long-task histograms per view, so budgets are checked on real clusters, not only kwok.
