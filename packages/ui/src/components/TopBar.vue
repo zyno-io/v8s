@@ -8,12 +8,14 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getProblemsAll } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
+import { useSidebarStore } from '@/stores/sidebar.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const clusters = useClustersStore();
 const problemsAll = getProblemsAll();
 const problemCount = computed(() => problemsAll.total.value);
 const ui = useUiStore();
+const sidebar = useSidebarStore();
 
 const label = computed(() => {
     const ids = clusters.activeIds;
@@ -36,6 +38,22 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
 
 <template>
     <header class="topbar">
+        <button
+            v-if="!sidebar.pinned"
+            class="btn ghost sidebar-toggle"
+            type="button"
+            :aria-expanded="sidebar.open"
+            aria-label="Show sidebar"
+            title="Show sidebar"
+            data-sidebar-toggle
+            data-testid="sidebar-toggle"
+            @click="sidebar.open = !sidebar.open"
+        >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="2" y="3" width="12" height="10" rx="2" />
+                <path d="M6 3v10" />
+            </svg>
+        </button>
         <router-link class="brand" to="/pods">
             <span class="mark">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -102,6 +120,14 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
 </template>
 
 <style scoped>
+.sidebar-toggle {
+    margin-right: -4px;
+}
+@media (max-width: 899.98px) {
+    .sidebar-toggle {
+        display: none;
+    }
+}
 .cluster-btn {
     margin-left: 8px;
 }

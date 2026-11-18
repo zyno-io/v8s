@@ -22,6 +22,7 @@ export function emptySettings(): Settings {
         columnLayouts: {},
         problemPrefs: {},
         acks: {},
+        uiPrefs: {},
         nodeShell: {},
         portForwards: [],
         protectedClusters: []
@@ -47,6 +48,7 @@ export function normalizeSettings(s: Partial<Settings> | null | undefined): Sett
         columnLayouts: s.columnLayouts ?? d.columnLayouts,
         problemPrefs: s.problemPrefs ?? d.problemPrefs,
         acks: s.acks ?? d.acks,
+        uiPrefs: s.uiPrefs ?? d.uiPrefs,
         nodeShell: s.nodeShell ?? d.nodeShell,
         portForwards: s.portForwards ?? d.portForwards,
         protectedClusters: protectedClusters(s)

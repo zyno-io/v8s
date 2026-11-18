@@ -104,7 +104,7 @@ Every request is a `Request{method, params}` on a fresh channel id answered by o
 
 ### Settings document
 
-`{groups: {name: [clusterId]}, links: {clusterId: writeContextId}, autoSwitchWrite: bool (default true), stars: [gvr], bookmarks: [{name, url}], selection: [clusterId], columnLayouts: {gvr: {...}}, problemPrefs: {}, acks: {}, nodeShell: {clusterId | "*": {image?, namespace?, priorityClass?}}, portForwards: [{name?, ref, port}], protectedClusters: [clusterId]}`. Desktop persists it atomically (temp file + rename, mode 0600) to `os.UserConfigDir()/v8s/settings.json`; a corrupt file does not stop startup: it is renamed to `settings.json.corrupt-<unix>` and defaults are used; fake mode keeps it in memory unless `--settings` is given.
+`{groups: {name: [clusterId]}, links: {clusterId: writeContextId}, autoSwitchWrite: bool (default true), stars: [gvr], bookmarks: [{name, url}], selection: [clusterId], columnLayouts: {gvr: {...}}, problemPrefs: {}, acks: {}, uiPrefs: {sidebarPinned?: bool, sidebarWidth?: px}, nodeShell: {clusterId | "*": {image?, namespace?, priorityClass?}}, portForwards: [{name?, ref, port}], protectedClusters: [clusterId]}`. Desktop persists it atomically (temp file + rename, mode 0600) to `os.UserConfigDir()/v8s/settings.json`; a corrupt file does not stop startup: it is renamed to `settings.json.corrupt-<unix>` and defaults are used; fake mode keeps it in memory unless `--settings` is given.
 
 ## Streams
 

@@ -1,5 +1,6 @@
 import router from '@/router.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
+import { useSidebarStore } from '@/stores/sidebar.ts';
 import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -51,6 +52,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
     const handler = (e: KeyboardEvent) => {
         const ui = useUiStore();
         const clusters = useClustersStore();
+        const sidebar = useSidebarStore();
         if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
             e.preventDefault();
             if (ui.paletteOpen || clusters.anyConnected) ui.paletteOpen = !ui.paletteOpen;
@@ -69,6 +71,8 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
                 ui.shortcutsOpen = false;
             } else if (clusters.popoverOpen) {
                 clusters.close();
+            } else if (sidebar.open && !sidebar.pinned) {
+                sidebar.open = false;
             } else if (!escapeChain() && isEditable(e.target)) {
                 (e.target as HTMLElement).blur();
             }
@@ -85,6 +89,11 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         if (e.key === '/') {
             e.preventDefault();
             focusFilter();
+            return;
+        }
+        if (e.key === '[') {
+            e.preventDefault();
+            sidebar.togglePinned();
             return;
         }
         if (e.key === '?') {

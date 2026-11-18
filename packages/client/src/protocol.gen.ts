@@ -833,6 +833,10 @@ export interface Settings {
   problemPrefs: { [key: string]: unknown };
   acks: { [key: string]: unknown };
   /**
+   * UIPrefs holds UI layout preferences (sidebar pinned state and width); the UI validates the shape.
+   */
+  uiPrefs: { [key: string]: unknown };
+  /**
    * NodeShell configures node shell pods per cluster id; "*" is the default for every cluster.
    */
   nodeShell: { [key: string]: NodeShellSettings};

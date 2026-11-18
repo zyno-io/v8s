@@ -10,6 +10,8 @@ v8s is keyboard-first. Almost everything you can reach with the mouse is also re
 - **Table.** The current resource type across all selected clusters.
 - **Detail drawer.** Opens on the right when you select a row. See [Viewing and changing resources](/guide/resources).
 
+The sidebar can be **pinned** (part of the layout, the default) or **unpinned**. Click the pin button at the top of the sidebar, or press `[`, to unpin it: the sidebar hides and the content takes the full width. Hover the left edge of the window, or click the sidebar button next to the top bar's left edge, to open it as an overlay. It closes when the pointer leaves it, when you click outside, press `Esc`, or follow a link in it. While it is open, the pin button pins it back. Drag the sidebar's right edge to resize it (180 to 420 px), or focus the edge and use the arrow keys (16 px per press); double-click the edge to reset the width. Both settings are saved with your other settings.
+
 Below 900 px wide the sidebar becomes a bottom sheet, and below 640 px tables become cards. See [On a phone](/guide/mobile).
 
 ## Tables
@@ -42,6 +44,7 @@ Press `?` for the same list in the app.
 | `d`                | Describe: open the focused row, or the open object, on the Overview tab |
 | `Esc`              | Clear the filter, then the selection, then close the drawer             |
 | `Ctrl+K` / `Cmd+K` | Open the search palette                                                 |
+| `[`                | Pin or unpin the sidebar                                                |
 | `?`                | Show the shortcut list                                                  |
 
 `l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).

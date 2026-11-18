@@ -502,6 +502,8 @@ type Settings struct {
 	ColumnLayouts   map[string]any      `msgpack:"columnLayouts" json:"columnLayouts" tstype:"{ [key: string]: unknown }"`
 	ProblemPrefs    map[string]any      `msgpack:"problemPrefs" json:"problemPrefs" tstype:"{ [key: string]: unknown }"`
 	Acks            map[string]any      `msgpack:"acks" json:"acks" tstype:"{ [key: string]: unknown }"`
+	// UIPrefs holds UI layout preferences (sidebar pinned state and width); the UI validates the shape.
+	UIPrefs map[string]any `msgpack:"uiPrefs" json:"uiPrefs" tstype:"{ [key: string]: unknown }"`
 	// NodeShell configures node shell pods per cluster id; "*" is the default for every cluster.
 	NodeShell map[string]NodeShellSettings `msgpack:"nodeShell" json:"nodeShell"`
 	// PortForwards are the saved forwards (restorable with one click: stream.open type "portforward").

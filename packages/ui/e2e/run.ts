@@ -55,7 +55,10 @@ async function toast(page: Page, text: RegExp) {
 async function main() {
     const stack = await startStack(FAKE, 'e2e');
     const browser = await chromium.launch();
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const page = await browser.newPage({
+        viewport: { width: 1440, height: 900 },
+        colorScheme: process.env.E2E_COLOR_SCHEME === 'dark' ? 'dark' : 'light'
+    });
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => m.type() === 'error' && errors.push(m.text()));
@@ -809,6 +812,122 @@ async function main() {
             await sel.waitFor();
             await sel.getByRole('button', { name: 'Cancel' }).click();
             await sel.waitFor({ state: 'hidden' });
+        });
+
+        await step('sidebar: unpin, overlay by hover and click, Escape, pin back, resize persists', async () => {
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 20000 });
+            const panel = page.getByTestId('sidebar-panel');
+            const width = async (sel: string) => Math.round((await page.locator(sel).first().boundingBox())!.width);
+            const reload = async () => {
+                await page.reload();
+                const dialog = page.getByRole('dialog', { name: 'Choose clusters' });
+                const firstRow = page.locator('.scroller .row:not(.sk)').first();
+                await Promise.race([dialog.waitFor({ timeout: 20000 }), firstRow.waitFor({ timeout: 20000 })]);
+                if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Connect' }).click();
+                await firstRow.waitFor({ timeout: 20000 });
+            };
+            const panelWidth = async () => Math.round((await panel.boundingBox())!.width);
+            const shots = process.env.SIDEBAR_SHOTS;
+            const snap = async (name: string) =>
+                shots && (await page.waitForTimeout(250), await page.screenshot({ path: join(shots, `${name}.png`) }));
+
+            // Pinned by default.
+            await panel.waitFor();
+            assert.equal(await panelWidth(), 232);
+            const pinnedContent = await width('.content');
+            await snap('pinned');
+
+            // Unpin: the sidebar leaves the layout and the content grows by its width.
+            await page.getByTestId('sidebar-pin').click();
+            await panel.waitFor({ state: 'detached' });
+            assert.equal(await width('.content'), pinnedContent + 232, 'content takes the full width');
+            await snap('unpinned');
+
+            // Hover the left edge: the overlay floats over the content (content width unchanged).
+            await page.mouse.move(2, 400);
+            await panel.waitFor({ timeout: 3000 });
+            assert.equal(await width('.content'), pinnedContent + 232, 'overlay does not push the content');
+            assert.match((await panel.getAttribute('class')) ?? '', /overlay/);
+            await snap('overlay');
+            // Leaving the overlay closes it.
+            await page.mouse.move(900, 400);
+            await panel.waitFor({ state: 'detached', timeout: 3000 });
+
+            // The toggle opens it; Escape closes it.
+            await page.getByTestId('sidebar-toggle').click();
+            await panel.waitFor();
+            await page.keyboard.press('Escape');
+            await panel.waitFor({ state: 'detached' });
+
+            // Clicking outside closes it.
+            await page.getByTestId('sidebar-toggle').click();
+            await panel.waitFor();
+            await page.mouse.click(900, 23);
+            await panel.waitFor({ state: 'detached' });
+
+            // Following a link closes it.
+            await page.getByTestId('sidebar-toggle').click();
+            await panel.getByRole('link', { name: /^Deployments/ }).click();
+            await page.waitForURL(/\/r\/apps\/v1\/deployments/);
+            await panel.waitFor({ state: 'detached' });
+
+            // Unpinned survives a reload, even without the browser-side first-paint cache (settings are the source of truth).
+            await page.evaluate(() => localStorage.removeItem('v8s:sidebar'));
+            await page.mouse.move(900, 400); // a pointer resting on the left edge would open the overlay
+            await reload();
+            await page.getByTestId('sidebar-toggle').waitFor();
+            await panel.waitFor({ state: 'detached', timeout: 3000 }); // still unpinned after reload
+
+            // Pin back from the overlay.
+            await page.getByTestId('sidebar-toggle').click();
+            await page.getByTestId('sidebar-pin').click();
+            await page.getByTestId('sidebar-toggle').waitFor({ state: 'detached' });
+            assert.equal(await width('.content'), pinnedContent, 'content narrows again');
+
+            // Drag-resize: +100px. The separator exposes the width.
+            const handle = page.getByTestId('sidebar-resizer');
+            assert.equal(await handle.getAttribute('role'), 'separator');
+            assert.equal(await handle.getAttribute('aria-valuenow'), '232');
+            const hb = (await handle.boundingBox())!;
+            await page.mouse.move(hb.x + hb.width / 2, 400);
+            await page.mouse.down();
+            await page.mouse.move(hb.x + hb.width / 2 + 100, 400, { steps: 5 });
+            await page.mouse.up();
+            await page.waitForFunction(() => document.querySelector('[data-testid=sidebar-resizer]')?.getAttribute('aria-valuenow') === '332');
+            assert.equal(await panelWidth(), 332);
+            assert.equal(await width('.content'), pinnedContent - 100, 'content reflows');
+            await snap('resized');
+
+            // Keyboard: arrows move by 16px, and the width is clamped.
+            await handle.focus();
+            await page.keyboard.press('ArrowRight');
+            assert.equal(await panelWidth(), 348);
+            await page.keyboard.press('End');
+            assert.equal(await panelWidth(), 420);
+            await page.keyboard.press('Home');
+            assert.equal(await panelWidth(), 180);
+            await page.keyboard.press('ArrowLeft');
+            assert.equal(await panelWidth(), 180, 'not below the minimum');
+            await page.keyboard.press('ArrowRight');
+            await page.keyboard.press('ArrowRight'); // 212
+            await page.waitForTimeout(600); // the keyboard width is saved after a short pause
+
+            // The width persists across a reload (settings, not the cache).
+            await page.evaluate(() => localStorage.removeItem('v8s:sidebar'));
+            await reload();
+            await page.waitForFunction(() => document.querySelector('[data-testid=sidebar-resizer]')?.getAttribute('aria-valuenow') === '212');
+
+            // Double-click resets to the default, and `[` toggles pinned.
+            await page.getByTestId('sidebar-resizer').dblclick();
+            await page.waitForFunction(() => document.querySelector('[data-testid=sidebar-resizer]')?.getAttribute('aria-valuenow') === '232');
+            await page.locator('h1').click();
+            await page.keyboard.press('[');
+            await panel.waitFor({ state: 'detached' });
+            await page.keyboard.press('[');
+            await panel.waitFor();
+            assert.equal(await width('.content'), pinnedContent);
         });
 
         assert.deepEqual(errors, [], 'no console or page errors');
