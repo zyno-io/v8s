@@ -286,6 +286,7 @@ func (w *World) generate(c *Cluster) {
 			"status": map[string]any{"phase": "Active"}})
 		w.putLocked("v1/serviceaccounts", map[string]any{"metadata": objMeta(teamNS(i), "default", nil), "secrets": []any{}})
 	}
+	allocCPU, allocMem, allocPods := strconv.FormatInt(c.shape.cpu, 10)+"m", strconv.FormatInt(c.shape.memGi, 10)+"Gi", strconv.Itoa(c.shape.pods)
 	for i := 0; i < nodes; i++ {
 		labels := map[string]string{"kubernetes.io/hostname": "node-" + strconv.Itoa(i)}
 		if i < 3 {
@@ -310,7 +311,7 @@ func (w *World) generate(c *Cluster) {
 			"status": map[string]any{
 				"conditions":  []any{map[string]any{"type": "Ready", "status": ready}},
 				"addresses":   addrs,
-				"allocatable": map[string]any{"cpu": "15890m", "memory": "63Gi", "pods": "110"},
+				"allocatable": map[string]any{"cpu": allocCPU, "memory": allocMem, "pods": allocPods},
 				"nodeInfo": map[string]any{"kubeletVersion": "v1.31.4", "osImage": "Ubuntu 24.04 LTS", "kernelVersion": "6.8.0-51-generic",
 					"containerRuntimeVersion": "containerd://1.7.24"},
 			}})

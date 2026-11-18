@@ -215,6 +215,7 @@ type Cluster struct {
 	watchers map[*watcher]struct{}
 	cancel   context.CancelFunc
 	nodeSeq  [nodes]uint16 // pods created per node (pod IPs)
+	shape    nodeShape     // every node's allocatable, sized from the pods
 }
 
 // NewCluster generates a cluster of n pods and starts churn at rate events/s (0 = static).
@@ -225,6 +226,7 @@ func NewCluster(name string, n int, rate float64, seed uint64) *Cluster {
 		c.pods[i] = c.newPod(i%400, c.rng.IntN(100000))
 		c.pods[i].created = time.Now().UnixMilli() - int64(c.rng.IntN(30*86400))*1000
 	}
+	c.shape = shapeNodes(c.pods)
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	if rate > 0 {
@@ -232,6 +234,9 @@ func NewCluster(name string, n int, rate float64, seed uint64) *Cluster {
 	}
 	return c
 }
+
+// NodeAllocatable is the allocatable of each of the cluster's nodes: CPU in millicores, memory in MiB.
+func (c *Cluster) NodeAllocatable() (cpu, memMi int64) { return c.shape.cpu, c.shape.memGi << 10 }
 
 func (c *Cluster) Stop() {
 	c.cancel()

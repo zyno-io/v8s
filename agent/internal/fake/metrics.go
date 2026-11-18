@@ -112,6 +112,90 @@ func podCaps(p *fakePod) (cpu, mem float64, cpuBounded, memBounded bool) {
 	return
 }
 
+// podReqs is a pod's requested CPU (millicores) and memory (bytes), overhead included.
+func podReqs(p *fakePod) (cpu, mem int64) {
+	pr := p.app % 6
+	cpu, mem = mainProfiles[pr].cpuReq, mainProfiles[pr].memReq
+	for i := 1; i < int(p.nc); i++ {
+		cpu += sideProfiles[pr].cpuReq
+		mem += sideProfiles[pr].memReq
+	}
+	if hasNativeSidecar(p) {
+		cpu += nativeSidecar.cpuReq
+		mem += nativeSidecar.memReq
+	}
+	if hasOverhead(p) {
+		cpu += podOverhead.Cpu().MilliValue()
+		mem += podOverhead.Memory().Value()
+	}
+	return
+}
+
+// nodeShape is the allocatable of every fake node of one cluster.
+type nodeShape struct {
+	cpu   int64 // millicores
+	memGi int64
+	pods  int
+}
+
+var (
+	nodeCores   = []int64{2, 4, 8, 16, 32, 48, 64, 96, 128, 192} // general-purpose instance sizes
+	gibPerCore  = []int64{2, 4, 8}                               // compute, general, memory optimised
+	nodeBusyPct = int64(70)                                      // the busier of requests and usage
+)
+
+// nodeBaseCPU and nodeBaseMem are what every fake node uses besides its pods (kubelet, runtime, system).
+const (
+	nodeBaseCPU = 350        // millicores
+	nodeBaseMem = 1536 << 20 // bytes
+)
+
+// shapeNodes sizes the cluster's nodes from its pods, so the Overview reads like a real cluster: the smallest
+// instance that keeps the larger of requests and usage under nodeBusyPct of allocatable. A fixed node size put
+// 16k pods on 150 16-core nodes (requests near 190 %, usage over 200 %).
+func shapeNodes(pods []fakePod) nodeShape {
+	var reqC, reqM, useC, useM int64
+	running := 0
+	for i := range pods {
+		p := &pods[i]
+		if !reportsMetrics(p) {
+			continue
+		}
+		running++
+		rc, rm := podReqs(p)
+		uc, um := podUsage(p, 0)
+		reqC, reqM, useC, useM = reqC+rc, reqM+rm, useC+uc, useM+um
+	}
+	useC, useM = useC+nodes*nodeBaseCPU, useM+nodes*nodeBaseMem
+	needC := max(reqC, useC) * 100 / nodeBusyPct / nodes // millicores per node
+	needM := max(reqM, useM) * 100 / nodeBusyPct / nodes // bytes per node
+	cores := nodeCores[len(nodeCores)-1]
+	for _, c := range nodeCores {
+		if c*1000-reservedCPU(c) >= needC {
+			cores = c
+			break
+		}
+	}
+	gi := cores * gibPerCore[len(gibPerCore)-1]
+	for _, r := range gibPerCore {
+		if (cores*r-1)<<30 >= needM {
+			gi = cores * r
+			break
+		}
+	}
+	sh := nodeShape{cpu: cores*1000 - reservedCPU(cores), memGi: gi - 1, pods: 110}
+	switch perNode := running / nodes; {
+	case perNode > 220:
+		sh.pods = 512
+	case perNode > 90:
+		sh.pods = 250
+	}
+	return sh
+}
+
+// reservedCPU is the kubelet/system reservation (70m + 2.5 m per core: 16 cores → 15890m allocatable).
+func reservedCPU(cores int64) int64 { return 70 + cores*5/2 }
+
 func mix(x uint64) uint64 { // splitmix64
 	x += 0x9e3779b97f4a7c15
 	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
@@ -201,7 +285,7 @@ func (b *Backend) NodeMetrics(ctx context.Context) ([]usage.NodeSample, error) {
 	out := make([]usage.NodeSample, nodes)
 	for n := range out {
 		out[n] = usage.NodeSample{Name: "node-" + strconv.Itoa(n), At: at.UnixMilli(),
-			CPU: uint32(cpu[n] + 350), MemKi: uint32((mem[n] + 1536<<20) >> 10)}
+			CPU: uint32(cpu[n] + nodeBaseCPU), MemKi: uint32((mem[n] + nodeBaseMem) >> 10)}
 	}
 	return out, nil
 }

@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- Fake mode (`--fake`, the demo and screenshots): nodes are **sized from the pods**, so the Overview capacity card shows a plausible cluster (about 30–70 % CPU used) instead of over 200 % with the default 50,000 pods.
+
 ### Changed
 
 - Problems: the family chips are **one line that scrolls sideways** (like the Policies tabs) and share the row with the search box when there is room, instead of wrapping onto several lines.
