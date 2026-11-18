@@ -21,8 +21,7 @@ import (
 )
 
 const (
-	hubbleCtx        = "kind-v8s-e2e-cilium"
-	hubbleKubeconfig = "/Users/sean/Work/Signal24/OSS/v8s-g3/test/e2e/out/kubeconfig"
+	hubbleCtx = "kind-v8s-e2e-cilium"
 )
 
 type hubbleTransport struct {
@@ -77,7 +76,7 @@ func (h *hubbleTransport) flows() (n int, dropped int, rate *protocol.FlowRate) 
 func TestHubbleOnCiliumCluster(t *testing.T) {
 	path := os.Getenv("V8S_E2E_HUBBLE_KUBECONFIG")
 	if path == "" {
-		path = hubbleKubeconfig
+		t.Skip("V8S_E2E_HUBBLE_KUBECONFIG not set (test/e2e/cluster.sh cilium-up writes test/e2e/out/kubeconfig)")
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no cilium kubeconfig at %s (%v)", path, err)

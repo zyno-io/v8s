@@ -27,7 +27,7 @@ func TestPlatformProblems(t *testing.T) {
 		t.Skip("V8S_E2E_KUBECONFIG not set")
 	}
 	_ = os.Setenv("KUBE_FEATURE_WatchListClient", "true")
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	src := &cluster.KubeSource{Loader: kube.Loader{Path: path}}
 	cs := src.Clusters()
@@ -60,8 +60,9 @@ func TestPlatformProblems(t *testing.T) {
 		}
 		return false
 	}
-	waitFor(t, "flux.source-failed GitRepository platform", 90*time.Second, func() bool { return find("flux.source-failed", "GitRepository", "platform") })
-	waitFor(t, "flux.not-ready Kustomization platform", 30*time.Second, func() bool { return find("flux.not-ready", "Kustomization", "platform") })
+	// Fresh clusters (CI) need minutes for Flux to reconcile and fail; a settled one answers at once.
+	waitFor(t, "flux.source-failed GitRepository platform", 5*time.Minute, func() bool { return find("flux.source-failed", "GitRepository", "platform") })
+	waitFor(t, "flux.not-ready Kustomization platform", 5*time.Minute, func() bool { return find("flux.not-ready", "Kustomization", "platform") })
 
 	hasWatch := false
 	for _, w := range m.WatchInfo(id) {
@@ -70,10 +71,13 @@ func TestPlatformProblems(t *testing.T) {
 	if !hasWatch {
 		t.Error("the Helm release watch is not part of the baseline")
 	}
-	// no false positives: controllers are up, webhooks have endpoints, no APIService is down, releases are deployed
+	// test/e2e/cluster.sh installs broken-release with a bad image under `helm --wait --timeout 30s || true`: whether
+	// Helm records it failed depends on timing, so it may or may not be a problem; every other release must not be.
+	// no false positives: controllers are up, webhooks have endpoints, no APIService is down, the other releases are deployed
 	for _, p := range hub.Engine(id).Problems() {
-		switch p.Class {
-		case "flux.controller-down", "webhook.failing", "apiservice.unavailable", "helm.failed", "helm.stuck-pending":
+		switch {
+		case p.Class == "helm.failed" && p.Subject.Name == "broken-release":
+		case p.Class == "flux.controller-down", p.Class == "webhook.failing", p.Class == "apiservice.unavailable", p.Class == "helm.failed", p.Class == "helm.stuck-pending":
 			t.Errorf("unexpected %s: %s (%s)", p.Class, p.Title, p.Message)
 		}
 	}

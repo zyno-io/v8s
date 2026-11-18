@@ -16,6 +16,17 @@ export KUBECONFIG="$out/kubeconfig"
 KIND="${KIND:-kind}"
 name="v8s-e2e"
 
+# apply_retry applies a manifest, retrying while a freshly installed admission webhook is not answering yet.
+apply_retry() {
+    local i
+    for i in $(seq 1 30); do
+        kubectl apply -f "$1" && return 0
+        echo "apply $1 failed (attempt $i); retrying in 5 s" >&2
+        sleep 5
+    done
+    return 1
+}
+
 seed_broken() {
     kubectl create namespace payments --dry-run=client -o yaml | kubectl apply -f -
     kubectl create namespace search --dry-run=client -o yaml | kubectl apply -f -
@@ -42,7 +53,7 @@ seed_integrations() {
 
     # Kyverno with an audit policy that some fixtures violate.
     helm upgrade --install kyverno kyverno/kyverno -n kyverno --create-namespace --set admissionController.replicas=1 --wait
-    kubectl apply -f "$here/fixtures/kyverno.yaml"
+    apply_retry "$here/fixtures/kyverno.yaml" # Kyverno's own webhooks answer a little after `helm --wait`
 
     # Trivy Operator (scans images in the cluster; needs internet access).
     helm upgrade --install trivy-operator aqua/trivy-operator -n trivy-system --create-namespace \

@@ -28,7 +28,7 @@ func e2eProblems(t *testing.T) (context.Context, *cluster.Manager, *problems.Hub
 		t.Skip("V8S_E2E_KUBECONFIG not set")
 	}
 	_ = os.Setenv("KUBE_FEATURE_WatchListClient", "true")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	t.Cleanup(cancel)
 	src := &cluster.KubeSource{Loader: kube.Loader{Path: path}}
 	id := "kind-v8s-e2e"
@@ -110,7 +110,8 @@ func TestProblemsOnRealCluster(t *testing.T) {
 			}
 		}
 	})
-	waitFor(t, "problems", 60*time.Second, func() bool {
+	// On a fresh cluster (CI) the fixtures take minutes to fail: OOM restarts, a Job's backoff, image-pull backoff.
+	waitFor(t, "problems", 5*time.Minute, func() bool {
 		for _, w := range want {
 			if _, ok := hasProblem(hub, id, w.class, w.subject); !ok {
 				return false
