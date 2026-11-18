@@ -69,9 +69,11 @@ for t in "${targets[@]}"; do
   else
     dest=$out/${goos}_${goarch}
   fi
+  # --out may be absolute or relative to the repo root.
+  [[ $dest == /* ]] || dest=$root/$dest
   mkdir -p "$dest"
   echo "==> go build $goos/$goarch (v$version) -> $dest/$exe"
   (cd agent && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath \
     -ldflags "-s -w -X github.com/zyno-io/v8s/agent/internal/version.Version=$version" \
-    -o "$root/$dest/$exe" ./cmd/v8s)
+    -o "$dest/$exe" ./cmd/v8s)
 done

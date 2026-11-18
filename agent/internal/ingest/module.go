@@ -197,6 +197,24 @@ func Register(m *Module) {
 	}
 }
 
+// Unregister removes gvr's module and returns a func that puts it back as it was. The registry is process-wide,
+// so tests that need a kind to be unresolved use it to undo what earlier tests registered; the agent never calls it.
+func Unregister(gvr string) (restore func()) {
+	reg.Lock()
+	old, had := reg.mods[gvr]
+	delete(reg.mods, gvr)
+	reg.Unlock()
+	return func() {
+		reg.Lock()
+		defer reg.Unlock()
+		if had {
+			reg.mods[gvr] = old
+		} else {
+			delete(reg.mods, gvr)
+		}
+	}
+}
+
 // Lookup returns the module for a GVR, or nil.
 func Lookup(gvr string) *Module {
 	reg.RLock()
