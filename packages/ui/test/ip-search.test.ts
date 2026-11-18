@@ -1,9 +1,9 @@
-import type { IPSearch, Kind } from '@v8s/client';
+import type { IPSearch } from '@v8s/client';
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { ipItems, looksLikeIP, pendingText, skippedText } from '../src/lib/ip-search.ts';
+import { ipItems, kindPlural, looksLikeIP, pendingText, skippedText } from '../src/lib/ip-search.ts';
 
 // The same vectors the Go parser is tested against (agent/internal/ipx/testdata/detect.json).
 const vectors: { in: string; ip: boolean; mode: string; norm: string }[] = JSON.parse(
@@ -17,12 +17,6 @@ describe('looksLikeIP', () => {
     }
     it('rejects long input', () => expect(looksLikeIP('1'.repeat(101))).toBe(false));
 });
-
-const kinds = [
-    { gvr: 'v1/pods', kind: 'Pod', plural: 'pods' },
-    { gvr: 'v1/services', kind: 'Service', plural: 'services' },
-    { gvr: 'v1/nodes', kind: 'Node', plural: 'nodes' }
-] as Kind[];
 
 const ip: IPSearch = {
     query: '10.96.0.',
@@ -85,7 +79,7 @@ const ip: IPSearch = {
 };
 
 describe('ipItems', () => {
-    const items = ipItems(ip, kinds);
+    const items = ipItems(ip);
     it('puts a section per kind with its true total', () => {
         expect([...new Set(items.map(i => i.section))]).toEqual(['IP · Services (250)', 'IP · Nodes (1)', 'IP · Pods (1)']);
     });
@@ -103,7 +97,7 @@ describe('ipItems', () => {
         expect(hits[0].cluster).toBe('prod-us');
         expect(hits[1].value).toBe('10.96.0.0/23');
     });
-    it('is empty without groups', () => expect(ipItems({ query: 'x', mode: 'addr', groups: [] }, kinds)).toEqual([]));
+    it('is empty without groups', () => expect(ipItems({ query: 'x', mode: 'addr', groups: [] })).toEqual([]));
 });
 
 describe('pending and skipped text', () => {
@@ -112,5 +106,19 @@ describe('pending and skipped text', () => {
         expect(skippedText(ip)).toBe('Not searched: Gateway on prod-eu (forbidden)');
         expect(pendingText(undefined)).toBe('');
         expect(skippedText({ query: '', mode: 'addr', groups: [] })).toBe('');
+    });
+});
+
+describe('kindPlural', () => {
+    it('splits CamelCase and keeps acronyms', () => {
+        expect(kindPlural('IPAddressPool')).toBe('IP address pools');
+        expect(kindPlural('EndpointSlice')).toBe('endpoint slices');
+        expect(kindPlural('ServiceCIDR')).toBe('service CIDRs');
+        expect(kindPlural('BGPPeer')).toBe('BGP peers');
+        expect(kindPlural('NetworkAttachmentDefinition')).toBe('network attachment definitions');
+        expect(kindPlural('CiliumLoadBalancerIPPool')).toBe('cilium load balancer IP pools');
+        expect(kindPlural('Ingress')).toBe('ingresses');
+        expect(kindPlural('Pod')).toBe('pods');
+        expect(kindPlural('NetworkPolicy')).toBe('network policies');
     });
 });

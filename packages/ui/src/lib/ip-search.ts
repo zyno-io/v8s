@@ -1,4 +1,4 @@
-import type { IPGroup, IPHit, IPSearch, Kind, ObjectRef } from '@v8s/client';
+import type { IPGroup, IPHit, IPSearch, ObjectRef } from '@v8s/client';
 
 /*
  * Pure helpers of IP search. The agent decides what an IP query is (agent/internal/ipx, `Parse`) and answers
@@ -175,9 +175,33 @@ export interface IPItem {
 
 const MATCH_WORD: Record<string, string> = { contains: 'contains', within: 'in range', overlap: 'overlaps' };
 
-function plural(g: IPGroup, kinds: readonly Kind[]): string {
-    const k = kinds.find(x => x.gvr === g.gvr);
-    return k ? k.plural : g.kind.toLowerCase() + 's';
+/**
+ * A readable plural of a Kind for headings: `IPAddressPool` → `IP address pools`, `EndpointSlice` → `endpoint slices`,
+ * `ServiceCIDR` → `service CIDRs`. Acronyms keep their case; other words are lower-cased (the first is capitalized by
+ * the caller when it starts a heading).
+ */
+export function kindPlural(kind: string): string {
+    const words = kind
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .split(' ')
+        .filter(Boolean)
+        .map(w => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()));
+    if (!words.length) return kind;
+    const last = words[words.length - 1]!;
+    words[words.length - 1] =
+        last === last.toUpperCase() && last.length > 1
+            ? last + 's'
+            : /(s|x|ch|sh)$/.test(last)
+              ? last + 'es'
+              : /[^aeiou]y$/.test(last)
+                ? last.slice(0, -1) + 'ies'
+                : last + 's';
+    return words.join(' ');
+}
+
+function plural(g: IPGroup): string {
+    return kindPlural(g.kind);
 }
 
 function hitDetail(h: IPHit): string {
@@ -185,10 +209,10 @@ function hitDetail(h: IPHit): string {
 }
 
 /** The palette rows of an IP result: each group's hits, then a "Show all" row when the group has more. */
-export function ipItems(ip: IPSearch, kinds: readonly Kind[]): IPItem[] {
+export function ipItems(ip: IPSearch): IPItem[] {
     const out: IPItem[] = [];
     for (const g of ip.groups) {
-        const pl = plural(g, kinds);
+        const pl = plural(g);
         const section = `IP · ${pl.replace(/^./, c => c.toUpperCase())} (${g.total})`;
         for (const h of g.hits) {
             out.push({
