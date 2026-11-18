@@ -120,7 +120,11 @@ func parseNADConfig(cfg string) (set *ipx.Set, cni, ipam string, ok bool) {
 		c.IPAM.collect(&b)
 	}
 	for _, s := range strings.Split(c.Subnets, ",") {
-		b.Span(strings.TrimSpace(s), FNADRange)
+		s = strings.TrimSpace(s)
+		if strings.Count(s, "/") == 2 { // OVN-Kubernetes layer3: "10.128.0.0/16/24" is the network and the node prefix
+			s = s[:strings.LastIndexByte(s, '/')]
+		}
+		b.Span(s, FNADRange)
 	}
 	var types []string
 	for i := range c.Plugins { // a conflist: one level of plugins

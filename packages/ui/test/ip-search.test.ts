@@ -104,6 +104,14 @@ describe('pending and skipped text', () => {
     it('names what is loading and what was skipped', () => {
         expect(pendingText(ip)).toBe('Still loading one source…');
         expect(skippedText(ip)).toBe('Not searched: Gateway on prod-eu (forbidden)');
+        const more: IPSearch = {
+            ...ip,
+            skipped: [
+                { cluster: 'a', kind: 'Pool', reason: 'budget' },
+                { cluster: 'b', kind: 'NAD', reason: 'error' }
+            ]
+        };
+        expect(skippedText(more)).toBe('Not searched: Pool on a (watch limit reached), NAD on b (could not start)');
         expect(pendingText(undefined)).toBe('');
         expect(skippedText({ query: '', mode: 'addr', groups: [] })).toBe('');
     });

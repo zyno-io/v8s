@@ -21,17 +21,17 @@ const (
 // that is not ready by then is reported as pending and the search is asked again.
 var ipWait = 800 * time.Millisecond
 
-// touchIPSources acquires and at once releases every on-demand IP kind discovery lists on the cluster: a new
-// watch starts, an existing one restarts its linger. It returns the touched gvrs and the kinds that could not
-// start (budget exhausted, or another error). Discovery lists one version per resource; kinds are deduplicated
-// by group/resource anyway.
-func (r *runner) touchIPSources() ([]string, []protocol.IPSource) {
+// touchIPSources takes a reference on every on-demand IP kind discovery lists on the cluster: a new watch
+// starts, an existing one restarts its linger. The caller holds the references through its wait and scan (so
+// nothing it touched can expire or be evicted underneath it) and calls the returned release funcs afterwards.
+// It returns the touched gvrs, the kinds that could not start (watch budget exhausted, or another error) and
+// whether discovery was loaded (false: the sources are not known yet). Discovery lists one version per
+// resource; kinds are deduplicated by group/resource anyway.
+func (r *runner) touchIPSources() (touched []string, releases []func(), failed []protocol.IPSource, discovered bool) {
 	d := r.disc.Load()
 	if d == nil {
-		return nil, nil
+		return nil, nil, nil, false
 	}
-	var touched []string
-	var failed []protocol.IPSource
 	seen := map[string]bool{}
 	for _, res := range d.list {
 		if !res.Listable() || seen[res.Group+"/"+res.Resource] {
@@ -52,9 +52,9 @@ func (r *runner) touchIPSources() ([]string, []protocol.IPSource) {
 			continue
 		}
 		touched = append(touched, m.GVR)
-		rel()
+		releases = append(releases, rel)
 	}
-	return touched, failed
+	return touched, releases, failed, true
 }
 
 // settled reports whether the watch of gvr has listed (or is gone, or failed for good).
@@ -127,11 +127,22 @@ func (m *Manager) SearchIP(ctx context.Context, q *ipx.Query, perKind int) *prot
 	// Only a strong query (an address, CIDR, range or a prefix with two complete parts) starts on-demand
 	// sources: typing "1." or "10.4" never touches CRD watches.
 	touched := map[*runner][]string{}
+	noDisc := map[string]bool{} // clusters whose sources are unknown: pending whatever the scan sees later
 	if q.Strong() {
+		var releases []func()
+		defer func() {
+			for _, rel := range releases {
+				rel()
+			}
+		}()
 		for _, r := range runners {
-			t, failed := r.touchIPSources()
+			t, rels, failed, ok := r.touchIPSources()
 			touched[r] = t
+			releases = append(releases, rels...)
 			out.Skipped = append(out.Skipped, failed...)
+			if !ok {
+				noDisc[r.id] = true
+			}
 		}
 		for end := time.Now().Add(ipWait); time.Now().Before(end) && ctx.Err() == nil; time.Sleep(25 * time.Millisecond) {
 			all := true
@@ -149,7 +160,7 @@ func (m *Manager) SearchIP(ctx context.Context, q *ipx.Query, perKind int) *prot
 		// Before discovery has loaded, sources cannot be known: ask again shortly.
 		switch ph, _ := r.phase.Load().(protocol.ClusterPhase); ph {
 		case protocol.PhaseConnecting, protocol.PhaseSyncing, protocol.PhaseReady:
-			if r.disc.Load() == nil {
+			if r.disc.Load() == nil || noDisc[r.id] {
 				out.Pending = append(out.Pending, protocol.IPSource{Cluster: r.id})
 			}
 		}
@@ -160,17 +171,6 @@ func (m *Manager) SearchIP(ctx context.Context, q *ipx.Query, perKind int) *prot
 		}
 		r.mu.Unlock()
 		sort.Slice(ws, func(i, j int) bool { return ws[i].gvr < ws[j].gvr })
-		present := make(map[string]bool, len(ws))
-		for _, w := range ws {
-			present[w.gvr] = true
-		}
-		for _, g := range touched[r] { // started a moment ago, evicted before the scan: the budget is full
-			if !present[g] {
-				if mod := ingest.Lookup(g); mod != nil {
-					out.Skipped = append(out.Skipped, protocol.IPSource{Cluster: r.id, Kind: mod.Kind, Reason: "budget"})
-				}
-			}
-		}
 		for _, w := range ws {
 			if ctx.Err() != nil {
 				return out

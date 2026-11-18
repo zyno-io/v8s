@@ -183,3 +183,30 @@ func TestOtherServedVersionsResolve(t *testing.T) {
 		t.Error("an unknown version must not resolve")
 	}
 }
+
+func TestOVNLayer3SubnetsDropTheNodePrefix(t *testing.T) {
+	cfg := `{"cniVersion":"1.0.0","type":"ovn-k8s-cni-overlay","topology":"layer3","subnets":"10.128.0.0/16/24,fd00:10:244::/48/64"}`
+	set, cni, _, ok := parseNADConfig(cfg)
+	if !ok || cni != "ovn-k8s-cni-overlay" {
+		t.Fatalf("ok=%v cni=%q", ok, cni)
+	}
+	if got := spanCell(set); got != "10.128.0.0/16,fd00:10:244::/48" {
+		t.Fatalf("ranges = %q", got)
+	}
+	set, _, _, _ = parseNADConfig(`{"type":"ovn-k8s-cni-overlay","topology":"layer2","subnets":"10.100.200.0/24"}`)
+	if spanCell(set) != "10.100.200.0/24" {
+		t.Fatalf("layer2: %q", spanCell(set))
+	}
+}
+
+func TestOddNADConfigsHoldNothing(t *testing.T) {
+	for _, cfg := range []string{
+		`{"type":"macvlan","ipam":{"type":"host-local","subnet":"usePodCidr"}}`,
+		`{"type":"x","subnets":["10.0.0.0/8"]}`,
+		`{"type":"x","ipam":{"type":"static","addresses":["10.0.0.1/24"]}}`,
+	} {
+		if set, _, _, _ := parseNADConfig(cfg); set != nil && len(set.T) != 0 {
+			t.Errorf("%s: unexpected tokens %q", cfg, spanCell(set))
+		}
+	}
+}

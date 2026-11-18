@@ -47,6 +47,9 @@ func (s denySource) Backend(id string) (Backend, error) {
 
 // Regression: a generic kind the read context cannot list must fail fast, not hang view.subscribe for 20 s.
 func TestResolveModuleFailsFastWhenListForbidden(t *testing.T) {
+	if ingest.Lookup("v1/configmaps") != nil {
+		t.Skip("configmaps already has a module in this process (an earlier test or -count iteration registered it): nothing to resolve")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	eng := view.NewEngine()

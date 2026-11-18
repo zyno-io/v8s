@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -332,7 +333,7 @@ func TestWeakIPQueryStartsNothing(t *testing.T) {
 
 func TestStrongIPQueryTouchesSourcesAndTheyLinger(t *testing.T) {
 	m := ipManager(t, fake.Config{Clusters: 1, Pods: 200})
-	m.Linger = 400 * time.Millisecond
+	m.Linger = 2 * time.Second // long enough that scheduling noise cannot expire a source mid-test
 	if _, err := m.Select([]string{"prod-us"}); err != nil {
 		t.Fatal(err)
 	}
@@ -351,14 +352,15 @@ func TestStrongIPQueryTouchesSourcesAndTheyLinger(t *testing.T) {
 	}
 	ws := onDemandIPWatches(m, "prod-us")
 	for _, gvr := range []string{gvrPools, gvrNADs, "networking.k8s.io/v1/servicecidrs"} {
-		if w, ok := ws[gvr]; !ok || w.Tier0 || w.Refs != 0 {
+		if w, ok := ws[gvr]; !ok || w.Tier0 || w.Refs != 0 { // the search released its references
 			t.Fatalf("%s: %+v (%v)", gvr, w, ws)
 		}
 	}
-	// a later keystroke of the same query restarts the linger instead of starting anything new
-	time.Sleep(250 * time.Millisecond)
+	// a later keystroke of the same query restarts the linger instead of starting anything new: 1.2 s after the
+	// first search it resets the 2 s timer, so the sources are still there 2.4 s after the first one
+	time.Sleep(1200 * time.Millisecond)
 	searchIP(t, m, "192.168.100.10", 5)
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(1200 * time.Millisecond)
 	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; !ok {
 		t.Fatal("a repeated query must reset the linger")
 	}
@@ -432,7 +434,135 @@ func TestForbiddenOnDemandSourceIsSkipped(t *testing.T) {
 		}
 		return false
 	})
-	if group(res, "NetworkAttachmentDefinition") != nil && group(res, "IPAddressPool") != nil {
-		t.Fatalf("pools must be absent: %+v", res.Groups)
+	if group(res, "IPAddressPool") != nil {
+		t.Fatalf("a forbidden source has no group: %+v", res.Groups)
+	}
+}
+
+// Discovery that lands during the wait for sources must not silently drop the cluster's on-demand sources: the
+// cluster had no discovery when the search touched it, so the result says it is pending and the UI asks again.
+func TestDiscoveryLandingDuringWaitIsPending(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	release := make(chan struct{})
+	m := NewManager(ctx, slowSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100}), release}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	q, _ := ipx.Parse("192.168.50.7")
+	done := make(chan *protocol.IPSearch, 1)
+	go func() { done <- m.SearchIP(ctx, q, 5) }()
+	time.Sleep(50 * time.Millisecond) // the search has touched (found no discovery) and is waiting
+	close(release)                    // discovery lands now
+	res := <-done
+	for _, p := range res.Pending {
+		if p.Cluster == "prod-us" && p.Kind == "" {
+			return
+		}
+	}
+	t.Fatalf("no pending cluster in %+v", res)
+}
+
+type countBackend struct{ kube.Backend }
+
+var apiOpens atomic.Int64
+
+func (b countBackend) API(gvr string, m *ingest.Module) (ingest.API, error) {
+	if mod := ingest.Lookup(gvr); mod != nil && mod.IPOnDemand {
+		apiOpens.Add(1)
+	}
+	return b.Backend.API(gvr, m)
+}
+
+type countSource struct{ *fake.Source }
+
+func (s countSource) Backend(id string) (Backend, error) {
+	b, err := s.Source.Backend(id)
+	if err != nil {
+		return nil, err
+	}
+	return countBackend{b}, nil
+}
+
+// Near the watch budget, repeated strong queries must not evict and restart the same sources: the references
+// held through a search protect what it touched, so the kind that fits is opened once and the rest are
+// skipped as "budget" every time.
+func TestBudgetNearCapDoesNotThrash(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	m := NewManager(ctx, countSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100})}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	waitFor(t, "baseline watches", func() bool {
+		n := len(m.WatchInfo("prod-us"))
+		time.Sleep(200 * time.Millisecond)
+		return n == len(m.WatchInfo("prod-us"))
+	})
+	m.Budget = len(m.WatchInfo("prod-us")) + 1 // room for exactly one on-demand watch
+	apiOpens.Store(0)
+	q, _ := ipx.Parse("192.168.100.10")
+	for i := 0; i < 4; i++ {
+		res := m.SearchIP(ctx, q, 5)
+		budget := 0
+		for _, s := range res.Skipped {
+			if s.Reason == "budget" {
+				budget++
+			}
+		}
+		if budget == 0 {
+			t.Fatalf("keystroke %d: nothing skipped for the budget: %+v", i, res.Skipped)
+		}
+		if got := len(onDemandIPWatches(m, "prod-us")); got != 1 {
+			t.Fatalf("keystroke %d: %d on-demand watches, want 1", i, got)
+		}
+	}
+	if n := apiOpens.Load(); n != 1 {
+		t.Fatalf("on-demand watches opened %d times, want once", n)
+	}
+}
+
+// A linger timer that already fired (and waits for r.mu) when the watch is touched again must not stop it.
+func TestStaleLingerTimerDoesNotStopTouchedWatch(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 50})
+	m.Linger = time.Hour
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	m.mu.Lock()
+	r := m.runners["prod-us"]
+	m.mu.Unlock()
+	rel, err := r.acquire(gvrPools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel() // arms a linger timer: generation g1
+	r.mu.Lock()
+	w := r.watches[gvrPools]
+	g1 := w.gen
+	r.mu.Unlock()
+	rel2, err := r.acquire(gvrPools) // the touch the stale timer races with
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel2()          // a new timer, a newer generation
+	r.expire(w, g1) // the old timer fires late
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; !ok {
+		t.Fatal("a stale linger timer stopped a watch that was touched since")
+	}
+	r.mu.Lock()
+	g2 := w.gen
+	r.mu.Unlock()
+	r.expire(w, g2) // the current timer still works
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; ok {
+		t.Fatal("the current linger timer must stop the watch")
 	}
 }

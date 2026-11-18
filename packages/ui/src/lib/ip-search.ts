@@ -247,10 +247,12 @@ export function pendingText(ip: IPSearch | undefined): string {
     return n ? `Still loading ${n === 1 ? 'one source' : `${n} sources`}…` : '';
 }
 
+const SKIP_REASON: Record<string, string> = { budget: 'watch limit reached', error: 'could not start' };
+
 /** A muted line naming what was not searched, or '' when everything was. */
 export function skippedText(ip: IPSearch | undefined): string {
     const s = ip?.skipped ?? [];
     if (!s.length) return '';
-    const parts = s.slice(0, 3).map(x => `${x.kind || 'cluster'} on ${x.cluster}${x.reason ? ` (${x.reason})` : ''}`);
+    const parts = s.slice(0, 3).map(x => `${x.kind || 'cluster'} on ${x.cluster}${x.reason ? ` (${SKIP_REASON[x.reason] ?? x.reason})` : ''}`);
     return `Not searched: ${parts.join(', ')}${s.length > 3 ? ` and ${s.length - 3} more` : ''}`;
 }
