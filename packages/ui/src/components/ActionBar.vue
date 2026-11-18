@@ -141,6 +141,7 @@ function go(a: ActionDef) {
             current: props.currentReplicas ?? null,
             phrase: phraseFor(needsTypeToConfirm(confirmInput)),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async n => finish(a.id, await runAction(targets, 'scale', 'Scaled', { replicas: n }))
         };
@@ -153,6 +154,7 @@ function go(a: ActionDef) {
             current: props.currentRevision ?? 0,
             phrase: phraseFor(needsTypeToConfirm(confirmInput)),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async rev => finish(a.id, await runAction(targets, 'rollback', 'Rolled back', { revision: rev }))
         };
@@ -168,6 +170,7 @@ function go(a: ActionDef) {
             danger: true,
             phrase: phraseFor(typed),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async () => finish(a.id, await runDelete(targets))
         };
@@ -189,6 +192,7 @@ function go(a: ActionDef) {
             hold,
             phrase: phraseFor(typed),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: doIt
         };

@@ -8,7 +8,7 @@ A phone needs [hosted mode](/guide/hosted): the web app talks to a `v8s server` 
 
 Browse to your v8s URL and sign in. v8s opens on **Problems**. The bottom bar has Problems, Clusters, Search, Starred, and More.
 
-- **Pick clusters** with the group chips. One tap selects a group such as `production`. Protected clusters show a lock and keep their typed confirmations on a phone.
+- **Pick clusters** with the group chips. One tap selects a group such as `production`. Protected clusters show a lock in the selector and keep their typed confirmations on a phone.
 - **Read Problems.** Each card shows severity, cluster, what is wrong, and for how long. Tap a card for the evidence and quick actions.
 - **Acknowledge or snooze** a problem you have handled.
 - **Search** for an object by name across the selected clusters.

@@ -53,7 +53,9 @@ On a phone, group chips are the fast way to pick clusters. See [On a phone](/gui
 
 ## Protected clusters
 
-Click the lock at the end of a cluster's row in the selector to **protect** it. A protected cluster shows a small lock beside its name wherever the name appears. Destructive actions on a protected cluster always require typing the object name (or the count) to confirm, even for a single object, and the confirm dialog says so.
+Click the lock at the end of a cluster's row in the selector to **protect** it. A protected cluster shows a small lock beside its name in the selector, tables, the detail drawer, Problems and search.
+
+On a protected cluster, these actions require typing to confirm, even for a single object (the object name, or the count for several): delete, scale, roll back, drain (the node name), Helm release actions (the release name, plus the namespace for uninstall), Kyverno policy mode changes (the policy name), Trivy report rescans (the report name), Kubescape scans (the cluster name), and the Problems quick actions. Restart, cordon, uncordon, suspend, resume, trigger, and the Flux actions on a single object show a confirm dialog that names the protected cluster, without typing. Bulk and cross-cluster actions always type the count, protected or not.
 
 Click the lock again to unprotect the cluster. The flag belongs to the cluster, not to a group, and is saved with your settings. For a [linked read/write pair](#linked-read-and-write-contexts), protect the read cluster (the one the selector lists); actions that run through its write context are protected too.
 

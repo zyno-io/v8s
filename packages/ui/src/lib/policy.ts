@@ -61,6 +61,7 @@ export interface ConfirmText {
     danger: boolean;
     phrase?: string;
     note?: string;
+    locked?: boolean;
 }
 
 export function failText(fails: number | null, partial = false): string {
@@ -79,7 +80,8 @@ export function setModeConfirm(i: ModeConfirmInput): ConfirmText {
             confirmLabel: 'Enforce',
             danger: true,
             phrase: i.protected ? i.policy : undefined,
-            note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined
+            note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined,
+            locked: i.protected
         };
     }
     return {
@@ -88,7 +90,8 @@ export function setModeConfirm(i: ModeConfirmInput): ConfirmText {
         confirmLabel: 'Switch to Audit',
         danger: false,
         phrase: i.protected ? i.policy : undefined,
-        note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined
+        note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined,
+        locked: i.protected
     };
 }
 

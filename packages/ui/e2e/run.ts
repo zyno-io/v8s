@@ -217,7 +217,7 @@ async function main() {
             assert.ok(await dlg.getByLabel('Confirmation text').isVisible(), 'protected: the object name is typed');
             await dlg.getByText(/Protected cluster/).waitFor();
             await dlg.getByRole('button', { name: 'Cancel' }).click();
-            await page.getByTestId('drawer').getByRole('img', { name: 'Protected' }).waitFor();
+            await page.getByTestId('drawer').getByRole('img', { name: 'Protected' }).first().waitFor();
             await closeDrawer();
 
             await toggleAll(false);

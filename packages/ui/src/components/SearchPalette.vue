@@ -4,6 +4,7 @@ import type { IPSearch, SearchHit, SearchResult } from '@v8s/client';
 import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
@@ -283,8 +284,9 @@ const multi = computed(() => clusters.activeIds.length > 1);
                     @mousemove="sel = i"
                 >
                     <span v-if="it.cluster && multi" class="tag"
-                        ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ it.cluster }}</span
-                    >
+                        ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ it.cluster
+                        }}<ProtectedMark :cluster="it.cluster"
+                    /></span>
                     <span class="lab">{{ it.label }}</span>
                     <span v-if="it.value" class="val mono" :class="{ strong: it.strong }">{{ it.value }}</span>
                     <span class="muted detail">{{ it.detail }}</span>

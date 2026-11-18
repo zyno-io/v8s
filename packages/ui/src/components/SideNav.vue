@@ -89,7 +89,8 @@ async function saveBookmark() {
     if (!name) return;
     adding.value = false;
     try {
-        await settings.patch({ bookmarks: [...settings.bookmarks, { name, url: route.fullPath }] });
+        const url = route.fullPath;
+        await settings.patch(d => ({ bookmarks: [...d.bookmarks, { name, url }] }));
     } catch (e) {
         ui.toast('danger', e instanceof Error ? e.message : String(e));
     }

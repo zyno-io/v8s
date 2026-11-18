@@ -151,7 +151,8 @@ export async function rescanReport(ref: ObjectRef, label: string): Promise<boole
         confirmLabel: 'Delete report',
         hold: true,
         phrase: clusters.isProtected(ref.cluster) ? ref.name : undefined,
-        note: clusters.isProtected(ref.cluster) ? 'Protected cluster: type the report name to confirm.' : undefined
+        note: clusters.isProtected(ref.cluster) ? 'Protected cluster: type the report name to confirm.' : undefined,
+        locked: clusters.isProtected(ref.cluster)
     });
     if (!ok) return false;
     try {
@@ -174,7 +175,8 @@ export async function kubescapeScanNow(cluster: string): Promise<boolean> {
         body: `Creates a Job from each of the Kubescape operator's scan CronJobs on ${name}. The scan uses cluster resources while it runs.`,
         confirmLabel: 'Scan now',
         phrase: clusters.isProtected(cluster) ? name : undefined,
-        note: clusters.isProtected(cluster) ? 'Protected cluster: type the cluster name to confirm.' : undefined
+        note: clusters.isProtected(cluster) ? 'Protected cluster: type the cluster name to confirm.' : undefined,
+        locked: clusters.isProtected(cluster)
     });
     if (!ok) return false;
     try {

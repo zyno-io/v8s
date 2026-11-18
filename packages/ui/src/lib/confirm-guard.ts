@@ -8,7 +8,7 @@ import { useClustersStore } from '@/stores/clusters.ts';
  * note naming the protected clusters. Actions started from places other than the ActionBar (the Problems quick actions) use it so
  * a protected cluster is never one click away.
  */
-export function confirmGuard(targets: readonly Pick<ObjectRef, 'cluster' | 'name'>[]): { phrase?: string; note?: string } {
+export function confirmGuard(targets: readonly Pick<ObjectRef, 'cluster' | 'name'>[]): { phrase?: string; note?: string; locked?: boolean } {
     const clusters = useClustersStore();
     const ids = [...new Set(targets.map(t => t.cluster))];
     const prod = ids.filter(c => clusters.isProtected(c)).map(c => clusters.nameById.get(c) ?? c);
@@ -19,6 +19,7 @@ export function confirmGuard(targets: readonly Pick<ObjectRef, 'cluster' | 'name
     });
     return {
         phrase: typed ? confirmPhrase(targets.length, targets[0]?.name ?? '') : undefined,
-        note: prod.length ? `Protected cluster: ${prod.join(', ')}.` : undefined
+        note: prod.length ? `Protected cluster: ${prod.join(', ')}.` : undefined,
+        locked: prod.length > 0
     };
 }

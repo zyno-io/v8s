@@ -5,7 +5,7 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
-- Replaced the Production flag on cluster groups with a per-cluster Protected flag. Groups are now purely for organizing clusters. Click the lock at the end of a cluster's row in the selector to protect it: destructive actions on a protected cluster still ask you to type the name (or the count) to confirm, and a small lock marks the cluster wherever its name appears. A group's old Production setting is ignored, so mark the clusters you want protected again.
+- Replaced the Production flag on cluster groups with a per-cluster Protected flag. Groups are now purely for organizing clusters. Click the lock at the end of a cluster's row in the selector to protect it. On a protected cluster, delete, scale, roll back, drain, Helm actions, Kyverno mode changes, Trivy rescans, Kubescape scans and the Problems quick actions ask you to type the name to confirm; restart, cordon, suspend, trigger and Flux actions on a single object show a confirm naming the cluster. A small lock marks the cluster in the selector, tables, the drawer, Problems and search. Clusters in a group named `production` used to get typed confirmations by default (that was the default production list) and no longer do: protect them with the lock. The old setting is ignored, with no migration.
 
 - IP search also reads IP-only CRDs when you search for a full address, CIDR or range: Service CIDRs, MetalLB pools and BGP peers, Multus NetworkAttachmentDefinitions, Cilium pools and nodes, and Calico IP pools. They are watched only while a search needs them and then stop after a few minutes; a short prefix such as `10.` never starts them.
 

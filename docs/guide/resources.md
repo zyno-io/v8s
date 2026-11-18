@@ -104,11 +104,12 @@ These send small targeted patches that touch only their own field, so they do no
 
 Every destructive action asks first. How hard it asks depends on the blast radius:
 
-| Situation                                                               | Confirmation                                   |
-| ----------------------------------------------------------------------- | ---------------------------------------------- |
-| One object in a cluster that is not protected                           | A confirm dialog                               |
-| More than one object, or objects in more than one cluster               | Type the count to confirm                      |
-| Any object in a [protected cluster](/guide/clusters#protected-clusters) | Type the object name (or the count) to confirm |
+| Situation                                                                                             | Confirmation                                      |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| One object in a cluster that is not protected                                                         | A confirm dialog                                  |
+| One object, restart, cordon, suspend, resume, trigger, or Flux action, in a protected cluster         | A confirm dialog that names the protected cluster |
+| More than one object, or objects in more than one cluster                                             | Type the count to confirm                         |
+| One object, delete, scale, or roll back, in a [protected cluster](/guide/clusters#protected-clusters) | Type the object name to confirm                   |
 
 Bulk dialogs list the exact objects and clusters. A selection always resolves to the objects you chose when you press confirm, even if the list moved underneath you. Retrying after a reconnect cannot apply an action twice.
 

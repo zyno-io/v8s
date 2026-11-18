@@ -21,6 +21,8 @@ export interface ConfirmDialog {
     /** The user must type this exactly before the button enables. */
     phrase?: string;
     note?: string;
+    /** The note is a protected-cluster notice: DialogHost shows a lock before it. */
+    locked?: boolean;
     /** Phones confirm by holding the button (state-changing, not necessarily destructive actions). */
     hold?: boolean;
     /** "Runs as <write context>": which context will perform the action; shown in the dialog body. */
@@ -34,6 +36,8 @@ export interface ConfirmDialog {
 interface DialogExtras {
     phrase?: string;
     note?: string;
+    /** The note is a protected-cluster notice: DialogHost shows a lock before it. */
+    locked?: boolean;
     runAs?: string;
 }
 

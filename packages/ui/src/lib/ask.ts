@@ -12,6 +12,8 @@ export interface AskOptions {
     /** The user must type this exactly before the button enables. */
     phrase?: string;
     note?: string;
+    /** The note is a protected-cluster notice (shows a lock). */
+    locked?: boolean;
     runAs?: string;
     /** On a phone the confirm button is a hold-to-confirm (restart, trigger, scale, rollback). */
     hold?: boolean;
@@ -48,6 +50,7 @@ export function ask(opts: AskOptions): Promise<boolean> {
             danger: !!opts.danger,
             phrase: opts.phrase,
             note: opts.note,
+            locked: opts.locked,
             runAs: opts.runAs,
             hold: opts.hold,
             run: () => resolve(true),

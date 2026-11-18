@@ -35,12 +35,12 @@ export const useClustersStore = defineStore('clusters', () => {
     const writeContextOf = (id: string): string => byId.value.get(id)?.writeContext ?? '';
     /**
      * Protected clusters ask for a typed confirmation. The flag is keyed by the listed (read) cluster id; the write context linked to it
-     * is protected too, so selecting that context directly cannot sidestep the flag.
+     * is protected too, and so is a cluster whose own write context is protected, so no linked id can sidestep the flag.
      */
     const isProtected = (id: string): boolean => {
         const s = useSettingsStore();
         const set = s.protectedClusters;
-        return set.includes(id) || set.some(p => s.links[p] === id);
+        return set.includes(id) || set.includes(s.links[id] ?? '') || set.some(p => s.links[p] === id);
     };
 
     /** Re-reads the list (groups and linked write contexts come from settings, so call this after changing them). */

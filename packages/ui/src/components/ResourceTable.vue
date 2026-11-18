@@ -658,7 +658,7 @@ function metricText(c: ColPlan, row: Row): string {
                         <div class="sub">
                             <template v-if="showCluster"
                                 ><span class="dot" :style="{ background: clusterColor(s(it.row[plan.clusterIdx])) }"></span
-                                >{{ it.row[plan.clusterIdx] }}<span>·</span></template
+                                >{{ it.row[plan.clusterIdx] }}<ProtectedMark :cluster="s(it.row[plan.clusterIdx])" /><span>·</span></template
                             ><template v-if="plan.nsIdx >= 0">{{ it.row[plan.nsIdx] }}<span>·</span></template
                             ><template v-if="ageCol">{{ formatAge(n(it.row[ageCol.idx]), nowMs) }}</template>
                         </div>

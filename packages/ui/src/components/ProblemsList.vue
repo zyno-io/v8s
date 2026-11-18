@@ -758,7 +758,7 @@ defineExpose({ scroller });
                         <span class="c" role="cell"><span class="tag" :class="severityTone(it.r.severity)">{{ it.r.severity }}</span></span>
                         <span class="c clus" role="cell">
                             <span v-for="c in it.clusters.slice(0, it.clusters.length > 2 ? 1 : 2)" :key="c" class="tag"
-                                ><span class="dot" :style="{ background: clusterColor(c) }"></span>{{ nameOf(c) }}</span
+                                ><span class="dot" :style="{ background: clusterColor(c) }"></span>{{ nameOf(c) }}<ProtectedMark :cluster="c" /></span
                             ><span v-if="it.clusters.length > 2" class="tag">+{{ it.clusters.length - 1 }}</span>
                         </span>
                         <span class="c mono muted" role="cell">{{ it.r.class }}</span>

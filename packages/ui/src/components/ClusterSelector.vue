@@ -229,8 +229,12 @@ const suggestions = computed(() =>
                             :class="{ on: isProt(c.id) }"
                             type="button"
                             :aria-pressed="isProt(c.id)"
-                            :aria-label="isProt(c.id) ? `Unprotect ${c.name}` : `Protect ${c.name}`"
-                            title="Destructive actions on a protected cluster ask you to type the name to confirm."
+                            :aria-label="`Protect ${c.name}`"
+                            :title="
+                                isProt(c.id)
+                                    ? 'Protected: destructive actions ask you to type the name to confirm. Click to unprotect.'
+                                    : 'Destructive actions on a protected cluster ask you to type the name to confirm.'
+                            "
                             data-testid="protect-toggle"
                             @click="toggleProtect(c.id)"
                         >
@@ -400,6 +404,12 @@ const suggestions = computed(() =>
 .lock.on,
 .lock.on:hover {
     color: var(--danger);
+}
+@media (pointer: coarse) {
+    .lock {
+        width: 44px;
+        height: 44px;
+    }
 }
 .lock:focus-visible {
     outline: 2px solid var(--focus);

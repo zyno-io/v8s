@@ -111,7 +111,7 @@ async function run(fromHold = false) {
                 </label>
             </template>
             <p v-if="d.runAs" class="runas" data-testid="runas">{{ d.runAs }}</p>
-            <p v-if="d.note" class="note tag warning"><LockIcon :size="12" />{{ d.note }}</p>
+            <p v-if="d.note" class="note tag warning"><LockIcon v-if="d.locked" :size="12" />{{ d.note }}</p>
             <label v-if="d.phrase" class="phrase"
                 >Type <b class="mono">{{ d.phrase }}</b> to confirm
                 <span class="field"><input v-model="typed" type="text" autocomplete="off" spellcheck="false" aria-label="Confirmation text" /></span>
