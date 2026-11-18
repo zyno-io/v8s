@@ -536,6 +536,19 @@ func (m *Manager) reconcileAll() {
 	}
 }
 
+// reconcileScopes re-runs reconcile for every open scope: it only acquires what a scope is missing.
+func (m *Manager) reconcileScopes() {
+	m.mu.Lock()
+	scopes := make([]*Scope, 0, len(m.scopes))
+	for s := range m.scopes {
+		scopes = append(scopes, s)
+	}
+	m.mu.Unlock()
+	for _, s := range scopes {
+		m.reconcile(s)
+	}
+}
+
 func (m *Manager) reconcile(s *Scope) {
 	m.reconcileMu.Lock()
 	defer m.reconcileMu.Unlock()

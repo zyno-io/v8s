@@ -124,7 +124,7 @@ const isIP = computed(() => looksLikeIP(input.value));
 
 const ipRows = computed<Item[]>(() =>
     ipRes.value
-        ? ipItems(ipRes.value, kinds.value).map(it => ({
+        ? ipItems(ipRes.value).map(it => ({
               key: it.key,
               section: it.section,
               label: it.label,

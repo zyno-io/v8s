@@ -21,6 +21,10 @@ seed_broken() {
     kubectl create namespace search --dry-run=client -o yaml | kubectl apply -f -
     kubectl create namespace reporting --dry-run=client -o yaml | kubectl apply -f -
     kubectl apply -f "$here/fixtures/broken.yaml"
+    # IP-only CRDs for the IP search e2e: apply the CRDs, wait until they are served, then the objects.
+    kubectl apply -f "$here/fixtures/ipcrds.yaml" || true
+    kubectl wait --for=condition=established --timeout=60s crd/ipaddresspools.metallb.io crd/network-attachment-definitions.k8s.cni.cncf.io
+    kubectl apply -f "$here/fixtures/ipcrds.yaml"
 }
 
 seed_integrations() {

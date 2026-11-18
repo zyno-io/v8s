@@ -2,7 +2,9 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"sort"
+	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/ipx"
@@ -14,6 +16,54 @@ const (
 	ipPerKindDefault = 5
 	ipPerKindMax     = 50
 )
+
+// ipWait bounds how long a strong IP search waits for the on-demand sources it started to list; a source
+// that is not ready by then is reported as pending and the search is asked again.
+var ipWait = 800 * time.Millisecond
+
+// touchIPSources takes a reference on every on-demand IP kind discovery lists on the cluster: a new watch
+// starts, an existing one restarts its linger. The caller holds the references through its wait and scan (so
+// nothing it touched can expire or be evicted underneath it) and calls the returned release funcs afterwards.
+// It returns the touched gvrs, the kinds that could not start (watch budget exhausted, or another error) and
+// whether discovery was loaded (false: the sources are not known yet). Discovery lists one version per
+// resource; kinds are deduplicated by group/resource anyway.
+func (r *runner) touchIPSources() (touched []string, releases []func(), failed []protocol.IPSource, discovered bool) {
+	d := r.disc.Load()
+	if d == nil {
+		return nil, nil, nil, false
+	}
+	seen := map[string]bool{}
+	for _, res := range d.list {
+		if !res.Listable() || seen[res.Group+"/"+res.Resource] {
+			continue
+		}
+		m := ingest.ResolveDiscovered(res.Group, res.Version, res.Resource, res.Kind, res.Namespaced)
+		if m == nil || !m.IPOnDemand {
+			continue
+		}
+		seen[res.Group+"/"+res.Resource] = true
+		rel, err := r.acquire(m.GVR)
+		if err != nil {
+			reason := "error"
+			if errors.Is(err, ErrBudget) {
+				reason = "budget"
+			}
+			failed = append(failed, protocol.IPSource{Cluster: r.id, Kind: m.Kind, Reason: reason})
+			continue
+		}
+		touched = append(touched, m.GVR)
+		releases = append(releases, rel)
+	}
+	return touched, releases, failed, true
+}
+
+// settled reports whether the watch of gvr has listed (or is gone, or failed for good).
+func (r *runner) settled(gvr string) bool {
+	r.mu.Lock()
+	w := r.watches[gvr]
+	r.mu.Unlock()
+	return w == nil || w.st.Synced() || w.lastErr() != nil
+}
 
 // SearchAll answers a search request: the name search, plus an IP search when the text reads as an IP query.
 func (m *Manager) SearchAll(ctx context.Context, p protocol.SearchParams) protocol.SearchResult {
@@ -73,11 +123,49 @@ func (m *Manager) SearchIP(ctx context.Context, q *ipx.Query, perKind int) *prot
 	perKind = min(perKind, ipPerKindMax)
 	out := &protocol.IPSearch{Query: q.Text, Mode: protocol.IPQueryMode(q.Mode.String()), Groups: []protocol.IPGroup{}}
 	groups := map[string]*ipGroup{}
-	for _, r := range m.selectedRunners() {
+	runners := m.selectedRunners()
+	// Only a strong query (an address, CIDR, range or a prefix with two complete parts) starts on-demand
+	// sources: typing "1." or "10.4" never touches CRD watches.
+	touched := map[*runner][]string{}
+	noDisc := map[string]bool{} // clusters whose sources are unknown: pending whatever the scan sees later
+	if q.Strong() {
+		var releases []func()
+		defer func() {
+			for _, rel := range releases {
+				rel()
+			}
+			// While the sources were held, a view opened on a full budget may have been refused its watch
+			// (ErrBudget is only logged). Now that they linger and can be evicted, give open scopes another go.
+			if len(releases) > 0 {
+				m.reconcileScopes()
+			}
+		}()
+		for _, r := range runners {
+			t, rels, failed, ok := r.touchIPSources()
+			touched[r] = t
+			releases = append(releases, rels...)
+			out.Skipped = append(out.Skipped, failed...)
+			if !ok {
+				noDisc[r.id] = true
+			}
+		}
+		for end := time.Now().Add(ipWait); time.Now().Before(end) && ctx.Err() == nil; time.Sleep(25 * time.Millisecond) {
+			all := true
+			for r, ts := range touched {
+				for _, g := range ts {
+					all = all && r.settled(g)
+				}
+			}
+			if all {
+				break
+			}
+		}
+	}
+	for _, r := range runners {
 		// Before discovery has loaded, sources cannot be known: ask again shortly.
 		switch ph, _ := r.phase.Load().(protocol.ClusterPhase); ph {
 		case protocol.PhaseConnecting, protocol.PhaseSyncing, protocol.PhaseReady:
-			if r.disc.Load() == nil {
+			if r.disc.Load() == nil || noDisc[r.id] {
 				out.Pending = append(out.Pending, protocol.IPSource{Cluster: r.id})
 			}
 		}

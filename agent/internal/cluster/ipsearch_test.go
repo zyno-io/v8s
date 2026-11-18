@@ -2,7 +2,9 @@ package cluster
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
 	"github.com/zyno-io/v8s/agent/internal/fake"
@@ -75,7 +77,7 @@ func TestSearchIPPodEndpointNode(t *testing.T) {
 		t.Fatalf("mode/query: %s %s", res.Mode, res.Query)
 	}
 	// exact groups come before the node's contains match
-	if res.Groups[len(res.Groups)-1].Kind != "Node" {
+	if last := res.Groups[len(res.Groups)-1]; last.Hits[0].Match != protocol.IPMatchContains {
 		t.Fatalf("group order: %+v", res.Groups)
 	}
 
@@ -294,5 +296,299 @@ func TestSearchAllNameAndIP(t *testing.T) {
 	// a wrong detection costs nothing: "1.2" is a prefix, and the name search finds nothing
 	if r := m.SearchAll(context.Background(), protocol.SearchParams{Text: "1.2", Limit: 5}); r.IP == nil || r.IP.Mode != protocol.IPQueryPrefix {
 		t.Fatalf("1.2: %+v", r.IP)
+	}
+}
+
+const (
+	gvrPools = "metallb.io/v1beta1/ipaddresspools"
+	gvrNADs  = "k8s.cni.cncf.io/v1/network-attachment-definitions"
+)
+
+// onDemandIPWatches lists the running watches of on-demand IP kinds.
+func onDemandIPWatches(m *Manager, cl string) map[string]WatchInfo {
+	out := map[string]WatchInfo{}
+	for _, w := range m.WatchInfo(cl) {
+		if mod := ingest.Lookup(w.GVR); mod != nil && mod.IPOnDemand {
+			out[w.GVR] = w
+		}
+	}
+	return out
+}
+
+func TestWeakIPQueryStartsNothing(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 200})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	for _, text := range []string{"10.", "1.2", "10.96", "fd00::"} {
+		if res := searchIP(t, m, text, 5); res.Mode != protocol.IPQueryPrefix {
+			t.Fatalf("%s: %+v", text, res)
+		}
+	}
+	if w := onDemandIPWatches(m, "prod-us"); len(w) != 0 {
+		t.Fatalf("a weak query started watches: %+v", w)
+	}
+}
+
+func TestStrongIPQueryTouchesSourcesAndTheyLinger(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 200})
+	m.Linger = 2 * time.Second // long enough that scheduling noise cannot expire a source mid-test
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	res := searchIP(t, m, "192.168.100.10", 5)
+	// the MetalLB pool `public` (192.168.100.0/24) contains the address; the Service holds it
+	pool := group(res, "IPAddressPool")
+	if pool == nil || pool.Hits[0].Name != "public" || pool.Hits[0].Match != protocol.IPMatchContains || pool.Hits[0].Label != "Pool range" || pool.Hits[0].Value != "192.168.100.0/24" {
+		t.Fatalf("pool group: %+v (all: %+v)", pool, res.Groups)
+	}
+	if svc := group(res, "Service"); svc == nil || svc.Hits[0].Match != protocol.IPMatchExact {
+		t.Fatalf("service group: %+v", res.Groups)
+	}
+	if res.Groups[0].Kind != "Service" && res.Groups[0].Kind != "Ingress" {
+		t.Fatalf("exact matches first: %+v", res.Groups)
+	}
+	ws := onDemandIPWatches(m, "prod-us")
+	for _, gvr := range []string{gvrPools, gvrNADs, "networking.k8s.io/v1/servicecidrs"} {
+		if w, ok := ws[gvr]; !ok || w.Tier0 || w.Refs != 0 { // the search released its references
+			t.Fatalf("%s: %+v (%v)", gvr, w, ws)
+		}
+	}
+	// a later keystroke of the same query restarts the linger instead of starting anything new: 1.2 s after the
+	// first search it resets the 2 s timer, so the sources are still there 2.4 s after the first one
+	time.Sleep(1200 * time.Millisecond)
+	searchIP(t, m, "192.168.100.10", 5)
+	time.Sleep(1200 * time.Millisecond)
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; !ok {
+		t.Fatal("a repeated query must reset the linger")
+	}
+	// and they stop after the linger
+	waitFor(t, "sources stop", func() bool { return len(onDemandIPWatches(m, "prod-us")) == 0 })
+}
+
+func TestNADHitAndOddEvenClusters(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 2, Pods: 200})
+	if _, err := m.Select([]string{"prod-us", "prod-eu"}); err != nil {
+		t.Fatal(err)
+	}
+	// 192.168.50.7 is in team-1/macvlan-conf's range (and may be a pod's secondary address)
+	res := searchIP(t, m, "192.168.50.7", 5)
+	nad := group(res, "NetworkAttachmentDefinition")
+	if nad == nil || nad.Total != 2 || nad.Hits[0].Name != "macvlan-conf" || nad.Hits[0].Namespace != "team-1" || nad.Hits[0].Match != protocol.IPMatchContains {
+		t.Fatalf("nad: %+v", res.Groups)
+	}
+	// Calico runs on the odd-index cluster only, Cilium on the even-index one
+	res = searchIP(t, m, "10.64.1.5", 5)
+	if g := group(res, "IPPool"); g == nil || g.Total != 1 || g.Hits[0].Cluster != "prod-eu" {
+		t.Fatalf("calico pool: %+v", res.Groups)
+	}
+	res = searchIP(t, m, "172.18.250.9", 5)
+	if g := group(res, "CiliumLoadBalancerIPPool"); g == nil || g.Total != 1 || g.Hits[0].Cluster != "prod-us" {
+		t.Fatalf("cilium lb pool: %+v", res.Groups)
+	}
+}
+
+func TestStrongQueryReportsBudgetSkips(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 100})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	m.Budget = len(m.WatchInfo("prod-us")) // exactly the baseline: nothing lingering can be evicted
+	res := searchIP(t, m, "192.168.100.10", 5)
+	budget := 0
+	for _, s := range res.Skipped {
+		if s.Reason == "budget" {
+			budget++
+		}
+	}
+	if budget == 0 || len(onDemandIPWatches(m, "prod-us")) != 0 {
+		t.Fatalf("skipped=%+v watches=%v", res.Skipped, onDemandIPWatches(m, "prod-us"))
+	}
+	if group(res, "Service") == nil {
+		t.Fatal("the baseline kinds are still searched")
+	}
+}
+
+func TestForbiddenOnDemandSourceIsSkipped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	m := NewManager(ctx, denyKindSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100}), gvrPools}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	q, _ := ipx.Parse("192.168.100.10")
+	var res *protocol.IPSearch
+	waitFor(t, "forbidden pools skipped", func() bool {
+		res = m.SearchIP(ctx, q, 5)
+		for _, s := range res.Skipped {
+			if s.Kind == "IPAddressPool" && s.Reason == "forbidden" {
+				return true
+			}
+		}
+		return false
+	})
+	if group(res, "IPAddressPool") != nil {
+		t.Fatalf("a forbidden source has no group: %+v", res.Groups)
+	}
+}
+
+// Discovery that lands during the wait for sources must not silently drop the cluster's on-demand sources: the
+// cluster had no discovery when the search touched it, so the result says it is pending and the UI asks again.
+func TestDiscoveryLandingDuringWaitIsPending(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	release := make(chan struct{})
+	m := NewManager(ctx, slowSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100}), release}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	q, _ := ipx.Parse("192.168.50.7")
+	done := make(chan *protocol.IPSearch, 1)
+	go func() { done <- m.SearchIP(ctx, q, 5) }()
+	time.Sleep(50 * time.Millisecond) // the search has touched (found no discovery) and is waiting
+	close(release)                    // discovery lands now
+	res := <-done
+	for _, p := range res.Pending {
+		if p.Cluster == "prod-us" && p.Kind == "" {
+			return
+		}
+	}
+	t.Fatalf("no pending cluster in %+v", res)
+}
+
+type countBackend struct{ kube.Backend }
+
+var apiOpens atomic.Int64
+
+func (b countBackend) API(gvr string, m *ingest.Module) (ingest.API, error) {
+	if mod := ingest.Lookup(gvr); mod != nil && mod.IPOnDemand {
+		apiOpens.Add(1)
+	}
+	return b.Backend.API(gvr, m)
+}
+
+type countSource struct{ *fake.Source }
+
+func (s countSource) Backend(id string) (Backend, error) {
+	b, err := s.Source.Backend(id)
+	if err != nil {
+		return nil, err
+	}
+	return countBackend{b}, nil
+}
+
+// Near the watch budget, repeated strong queries must not evict and restart the same sources: the references
+// held through a search protect what it touched, so the kind that fits is opened once and the rest are
+// skipped as "budget" every time.
+func TestBudgetNearCapDoesNotThrash(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	m := NewManager(ctx, countSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100})}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	waitFor(t, "baseline watches", func() bool {
+		n := len(m.WatchInfo("prod-us"))
+		time.Sleep(200 * time.Millisecond)
+		return n == len(m.WatchInfo("prod-us"))
+	})
+	m.Budget = len(m.WatchInfo("prod-us")) + 1 // room for exactly one on-demand watch
+	apiOpens.Store(0)
+	q, _ := ipx.Parse("192.168.100.10")
+	for i := 0; i < 4; i++ {
+		res := m.SearchIP(ctx, q, 5)
+		budget := 0
+		for _, s := range res.Skipped {
+			if s.Reason == "budget" {
+				budget++
+			}
+		}
+		if budget == 0 {
+			t.Fatalf("keystroke %d: nothing skipped for the budget: %+v", i, res.Skipped)
+		}
+		if got := len(onDemandIPWatches(m, "prod-us")); got != 1 {
+			t.Fatalf("keystroke %d: %d on-demand watches, want 1", i, got)
+		}
+	}
+	if n := apiOpens.Load(); n != 1 {
+		t.Fatalf("on-demand watches opened %d times, want once", n)
+	}
+}
+
+// A linger timer that already fired (and waits for r.mu) when the watch is touched again must not stop it.
+func TestStaleLingerTimerDoesNotStopTouchedWatch(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 50})
+	m.Linger = time.Hour
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	m.mu.Lock()
+	r := m.runners["prod-us"]
+	m.mu.Unlock()
+	rel, err := r.acquire(gvrPools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel() // arms a linger timer: generation g1
+	r.mu.Lock()
+	w := r.watches[gvrPools]
+	g1 := w.gen
+	r.mu.Unlock()
+	rel2, err := r.acquire(gvrPools) // the touch the stale timer races with
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel2()          // a new timer, a newer generation
+	r.expire(w, g1) // the old timer fires late
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; !ok {
+		t.Fatal("a stale linger timer stopped a watch that was touched since")
+	}
+	r.mu.Lock()
+	g2 := w.gen
+	r.mu.Unlock()
+	r.expire(w, g2) // the current timer still works
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; ok {
+		t.Fatal("the current linger timer must stop the watch")
+	}
+}
+
+// A view opened while a strong search holds the only evictable slot is refused its watch (ErrBudget); once the
+// search releases its sources the view gets the watch, without waiting for the next discovery.
+func TestViewRefusedDuringHeldSearchRecovers(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 100})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	time.Sleep(300 * time.Millisecond)
+	gvr := "v1/configmaps"
+	if _, ok := watchOf(m, "prod-us", gvr); ok {
+		t.Fatal("configmaps already watched")
+	}
+	m.Budget = len(m.WatchInfo("prod-us")) + 1
+	q, _ := ipx.Parse("192.168.100.10")
+	done := make(chan struct{})
+	go func() { m.SearchIP(context.Background(), q, 5); close(done) }()
+	time.Sleep(10 * time.Millisecond) // the search holds its touched source and waits for it to list
+	s := m.OpenScope(gvr, nil)
+	defer s.Close()
+	<-done
+	if _, ok := watchOf(m, "prod-us", gvr); !ok {
+		t.Fatal("the view's watch did not start after the search released its sources")
 	}
 }

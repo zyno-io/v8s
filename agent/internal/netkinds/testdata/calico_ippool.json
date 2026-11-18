@@ -1,0 +1,16 @@
+{
+    "apiVersion": "crd.projectcalico.org/v1",
+    "kind": "IPPool",
+    "metadata": {
+        "name": "default",
+        "uid": "u-default",
+        "resourceVersion": "7",
+        "creationTimestamp": "2026-01-01T00:00:00Z"
+    },
+    "spec": {
+        "cidr": "10.64.0.0/10",
+        "ipipMode": "Never",
+        "vxlanMode": "Always",
+        "disabled": false
+    }
+}

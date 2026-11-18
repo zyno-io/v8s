@@ -92,4 +92,27 @@ func TestIPSearch(t *testing.T) {
 	if svc.Name != "kubernetes" || svc.Namespace != "default" || svc.Match != protocol.IPMatchExact {
 		t.Fatalf("%s: %+v", apiIP, svc)
 	}
+
+	// Phase 2: a strong query starts the on-demand IP sources (the CRDs of test/e2e/fixtures/ipcrds.yaml), so
+	// the pool and the NAD range that contain the address are found once those watches have listed.
+	for addr, want := range map[string]struct{ kind, name string }{
+		"192.168.100.10": {"IPAddressPool", "e2e-pool"},
+		"192.168.77.9":   {"NetworkAttachmentDefinition", "e2e-macvlan"},
+	} {
+		var g *protocol.IPGroup
+		waitFor(t, "IP search "+addr, 30*time.Second, func() bool {
+			q, _ := ipx.Parse(addr)
+			res := m.SearchIP(ctx, q, 5)
+			g = find(res, want.kind)
+			return len(res.Pending) == 0 && g != nil
+		})
+		if g.Hits[0].Name != want.name || g.Hits[0].Match != protocol.IPMatchContains {
+			t.Fatalf("%s: %+v", addr, g.Hits)
+		}
+	}
+	// the API server's ClusterIP is also contained in the ServiceCIDR where the cluster serves it
+	res = search(apiIP, func(*protocol.IPSearch) bool { return true })
+	if g := find(res, "ServiceCIDR"); g != nil {
+		t.Logf("ServiceCIDR: %+v", g.Hits[0])
+	}
 }

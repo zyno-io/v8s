@@ -48,6 +48,7 @@ type watchEntry struct {
 	tier0   bool
 	lastUse time.Time
 	linger  *time.Timer
+	gen     uint64 // bumped on every acquire and linger arm: a timer that fired for an older gen is stale
 	// part is set for an object-events watch (docs/protocol.md "Events of one object"): its rows live in the
 	// runner's shared oev store, st stays nil, and synced closes after the first list.
 	part   *store.Part
@@ -414,6 +415,7 @@ func (r *runner) acquireKey(key string, linger time.Duration, start func() (*wat
 		}
 	}
 	w.refs++
+	w.gen++
 	w.lastUse = time.Now()
 	if w.linger != nil {
 		w.linger.Stop()
@@ -430,16 +432,18 @@ func (r *runner) acquireKey(key string, linger time.Duration, start func() (*wat
 			w.refs--
 			w.lastUse = time.Now()
 			if w.refs == 0 && !w.tier0 {
-				w.linger = time.AfterFunc(linger, func() { r.expire(w) })
+				w.gen++
+				gen := w.gen
+				w.linger = time.AfterFunc(linger, func() { r.expire(w, gen) })
 			}
 		})
 	}, nil
 }
 
-func (r *runner) expire(w *watchEntry) {
+func (r *runner) expire(w *watchEntry, gen uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.watches[w.gvr] == w && w.refs == 0 && !w.tier0 {
+	if r.watches[w.gvr] == w && w.refs == 0 && !w.tier0 && w.gen == gen {
 		r.stopLocked(w)
 	}
 }

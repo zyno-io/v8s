@@ -29,6 +29,21 @@ Kinds with IPs keep the addresses of each object next to its row (IP search, the
 
 At most 1024 tokens are kept per row.
 
+On-demand sources (read only while an IP search needs them, see performance.md §4):
+
+| Kind | Fields |
+| --- | --- |
+| ServiceCIDR (`networking.k8s.io` v1, v1beta1) | `spec.cidrs` |
+| MetalLB IPAddressPool (`metallb.io/v1beta1`) | `spec.addresses` (CIDR or `a-b`, v4 and v6) |
+| MetalLB BGPPeer (`metallb.io` v1beta2, v1beta1) | `peerAddress`; `sourceAddress` (ranks lower) |
+| Multus NetworkAttachmentDefinition (`k8s.cni.cncf.io/v1`) | `spec.config` JSON (up to 64 KiB): host-local `subnet`, `rangeStart`/`rangeEnd`, `ranges[][]`, static `addresses[]`, whereabouts `range`, `range_start`/`range_end`, `ipRanges[]`, ovn-k8s `subnets`, one level of conflist `plugins[]`; gateways rank lower. An invalid config shows `invalid config` and holds no addresses |
+| CiliumLoadBalancerIPPool (`cilium.io` v2, v2alpha1) | `spec.blocks[]` (`cidr` or `start`/`stop`) and the legacy `spec.cidrs[].cidr` |
+| CiliumPodIPPool (`cilium.io` v2alpha1, v2) | `spec.ipv4.cidrs`, `spec.ipv6.cidrs` |
+| CiliumNode (`cilium.io/v2`) | `CiliumInternalIP` addresses only (InternalIP and ExternalIP duplicate the Node), `spec.ipam.podCIDRs`, `spec.ipam.pools.allocated[].cidrs` |
+| Calico IPPool (`crd.projectcalico.org/v1`) | `spec.cidr` |
+
+Once these CRDs have curated modules, their list pages show the curated columns (including a range column) instead of printer columns. Not indexed on purpose: v1 Endpoints, `networking.k8s.io` IPAddress, CiliumEndpoint, Kube-OVN IP, Calico IPAMBlock and `projectcalico.org/v3` (they duplicate pod, Service or pool addresses).
+
 ## Resource tiers
 
 Each resource type has a **view spec** (columns, projection, sort keys, actions, detail tabs). Types without one get the generic CRD treatment from `additionalPrinterColumns`.
