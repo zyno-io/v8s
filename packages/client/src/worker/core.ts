@@ -1,5 +1,5 @@
 import type { ClusterStates, DictAdd, Hello, JobFrame, Response, StreamOpenResult, ViewPatch, ViewSubscribeResult } from '../protocol.gen.ts';
-import type { Column, MainToWorker, ObjectFrameWire, Row, WorkerToMain } from '../types.ts';
+import type { Column, MainToWorker, ObjectFrameWire, Row, ViewQuery, Window, WorkerToMain } from '../types.ts';
 
 import {
     decodeFrame,
@@ -25,6 +25,19 @@ export const CHUNK_ROWS = 500;
 export const FLUSH_MS = 16;
 /** Wire request ids allocated by the worker itself (subscribe/update/unsubscribe); main-thread ids stay below this. */
 const INTERNAL_RID_BASE = 0x80000000;
+/** Reconnect backoff: 0.5 s doubling to a 15 s cap, then jittered down by up to 25 %. */
+export const RECONNECT_BASE_MS = 500;
+export const RECONNECT_MAX_MS = 15_000;
+/** A reconnect attempt that has not completed its handshake by then is abandoned (a half-open network). */
+export const RECONNECT_ATTEMPT_MS = 10_000;
+/** After a resubscribe, a view that received no patch this long after its response is empty: clear what the page still shows. */
+export const RESYNC_EMPTY_MS = 2000;
+
+/** Delay before reconnect attempt number `attempt` (0-based). `rand` is in [0, 1). Never above RECONNECT_MAX_MS. */
+export function backoffMs(attempt: number, rand: number): number {
+    const base = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.min(attempt, 10));
+    return Math.round(base * (0.75 + 0.25 * rand));
+}
 
 export interface CoreIO {
     /** Writes one binary frame to the socket. */
@@ -39,6 +52,13 @@ export interface CoreIO {
     schedule(fn: () => void, ms: number): unknown;
     cancel(handle: unknown): void;
     now(): number;
+    /** Random number in [0, 1) for backoff jitter (default Math.random). */
+    random?(): number;
+    /**
+     * Hosted mode only (no token): resolves true when the session has ended (`/api/me` answers 401). The browser hides a 401
+     * on the WebSocket upgrade, so this is how the worker tells "sign in again" from "network down".
+     */
+    sessionEnded?(): Promise<boolean>;
 }
 
 interface View {
@@ -46,6 +66,12 @@ interface View {
     gen: number;
     columns: Column[] | null;
     dictCols: number[];
+    /** The query and window as the page last set them: what a resubscribe after a reconnect sends. */
+    query: ViewQuery;
+    window: Window;
+    /** Resubscribed after a reconnect and no patch received yet. */
+    fresh: boolean;
+    resync: unknown;
     rows: Map<number, Row>;
     dirty: Set<number>;
     removed: Set<number>;
@@ -83,6 +109,15 @@ export class DataCore {
     private ready = false;
     private queued: MainToWorker[] = [];
     private endpoint = { url: '', token: '' };
+    /** Whether a handshake ever completed: only then does a close lead to reconnecting. */
+    private everReady = false;
+    /** Closed on purpose (page asked, or protocol mismatch): never reconnect. */
+    private stopped = false;
+    private reconnecting = false;
+    private attempt = 0;
+    private socketLive = false;
+    private retryTimer: unknown = null;
+    private attemptTimer: unknown = null;
     private logs = new Map<number, LogSession>();
     private cancelledLogs = new Set<number>();
     private flows = new Map<number, FlowSession>();
@@ -96,14 +131,26 @@ export class DataCore {
         if (msg.t === 'connect') {
             this.endpoint = { url: msg.url, token: msg.token };
             this.io.post({ t: 'status', status: 'connecting' });
+            this.socketLive = true;
             this.io.connect(msg.url, msg.token);
             return;
         }
         if (msg.t === 'close') {
-            this.io.closeSocket();
+            this.stopped = true;
+            const waiting = this.reconnecting && !this.socketLive;
+            this.clearTimers();
+            if (waiting) {
+                this.reconnecting = false;
+                this.io.post({ t: 'status', status: 'closed', message: 'closed' });
+            } else this.io.closeSocket();
+            return;
+        }
+        if (msg.t === 'nudge') {
+            this.reconnectNow();
             return;
         }
         if (!this.ready) {
+            if (this.everReady && this.localOnly(msg)) return;
             this.queued.push(msg);
             return;
         }
@@ -113,7 +160,7 @@ export class DataCore {
                 this.sendRequest(msg.rid, msg.method, msg.params);
                 break;
             case 'subscribe': {
-                const view = this.newView(msg.qid, msg.gen);
+                const view = this.newView(msg.qid, msg.gen, msg.query, msg.window);
                 this.views.set(msg.qid, view);
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'subscribe', qid: msg.qid });
@@ -123,12 +170,7 @@ export class DataCore {
             case 'update': {
                 const view = this.views.get(msg.qid);
                 if (!view) break;
-                if (msg.gen > view.gen) {
-                    view.gen = msg.gen;
-                    // Anything computed for the old query must not reach the screen after the bump.
-                    view.ids = null;
-                    view.early.length = 0;
-                }
+                this.noteUpdate(view, msg);
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'ignore' });
                 this.sendRequest(rid, 'view.update', { qid: msg.qid, gen: msg.gen, query: msg.query, window: msg.window });
@@ -194,7 +236,7 @@ export class DataCore {
             }
             case 'unsubscribe': {
                 const view = this.views.get(msg.qid);
-                if (view?.timer) this.io.cancel(view.timer);
+                if (view) this.dropView(view);
                 this.views.delete(msg.qid);
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'ignore' });
@@ -204,10 +246,67 @@ export class DataCore {
         }
     }
 
-    private newView(qid: number, gen: number): View {
+    /** Records a view.update on the worker's copy: gen bump, and the query/window a resubscribe would need. */
+    private noteUpdate(view: View, msg: { gen: number; query?: ViewQuery; window?: Window }): void {
+        if (msg.gen > view.gen) {
+            view.gen = msg.gen;
+            // Anything computed for the old query must not reach the screen after the bump.
+            view.ids = null;
+            view.early.length = 0;
+        }
+        if (msg.query) view.query = msg.query;
+        if (msg.window) view.window = msg.window;
+    }
+
+    /**
+     * Handles a message while the socket is down after having been up. Requests and stream opens fail at once (replaying a
+     * stale mutation minutes later would be wrong); view bookkeeping is applied locally and sent on resubscribe. True: done.
+     */
+    private localOnly(msg: MainToWorker): boolean {
+        const unavailable = { code: 'unavailable', message: 'reconnecting to the agent' };
+        switch (msg.t) {
+            case 'request':
+                this.io.post({ t: 'response', rid: msg.rid, error: unavailable });
+                return true;
+            case 'log.open':
+                this.io.post({ t: 'log.error', sid: msg.sid, error: unavailable });
+                return true;
+            case 'flow.open':
+                this.io.post({ t: 'flow.error', sid: msg.sid, error: unavailable });
+                return true;
+            case 'subscribe':
+                this.views.set(msg.qid, this.newView(msg.qid, msg.gen, msg.query, msg.window));
+                return true;
+            case 'update': {
+                const view = this.views.get(msg.qid);
+                if (view) this.noteUpdate(view, msg);
+                return true;
+            }
+            case 'unsubscribe': {
+                const view = this.views.get(msg.qid);
+                if (view) this.dropView(view);
+                this.views.delete(msg.qid);
+                return true;
+            }
+            default:
+                return false; // log/flow session controls act on local sessions
+        }
+    }
+
+    private dropView(view: View): void {
+        if (view.timer) this.io.cancel(view.timer);
+        if (view.resync) this.io.cancel(view.resync);
+        view.timer = view.resync = null;
+    }
+
+    private newView(qid: number, gen: number, query: ViewQuery, window: Window): View {
         return {
             qid,
             gen,
+            query,
+            window,
+            fresh: false,
+            resync: null,
             columns: null,
             dictCols: [],
             rows: new Map(),
@@ -235,11 +334,20 @@ export class DataCore {
                 const hello = f.payload as Hello;
                 if (!hello || hello.version !== Version) {
                     this.io.post({ t: 'status', status: 'error', message: `protocol version mismatch (agent ${hello?.version}, client ${Version})` });
+                    this.stopped = true;
+                    this.clearTimers();
                     this.io.closeSocket();
                     return;
                 }
                 this.ready = true;
+                this.everReady = true;
+                this.reconnecting = false;
+                this.attempt = 0;
+                this.clearTimers();
+                // Dictionary ids and wire view ids are per connection: nothing from the previous socket carries over.
+                this.dict = [];
                 this.io.post({ t: 'status', status: 'open', agentVersion: hello.agentVersion, mode: hello.mode });
+                for (const view of this.views.values()) this.resubscribe(view);
                 const q = this.queued;
                 this.queued = [];
                 for (const m of q) this.handleMain(m);
@@ -271,8 +379,57 @@ export class DataCore {
         }
     }
 
+    /** A view lives on across a reconnect: same qid and gen, fresh row table, one new view.subscribe; the page keeps showing its rows until the new snapshot's id list replaces them. */
+    private resubscribe(view: View): void {
+        this.dropView(view);
+        view.columns = null;
+        view.dictCols = [];
+        view.rows.clear();
+        view.dirty.clear();
+        view.removed.clear();
+        view.ids = null;
+        view.early = [];
+        view.fresh = true;
+        const rid = this.nextRid++;
+        this.pending.set(rid, { kind: 'subscribe', qid: view.qid });
+        this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window: view.window });
+    }
+
+    private clearTimers(): void {
+        if (this.retryTimer) this.io.cancel(this.retryTimer);
+        if (this.attemptTimer) this.io.cancel(this.attemptTimer);
+        this.retryTimer = this.attemptTimer = null;
+    }
+
+    /** Network came back or the tab became visible: skip the wait and try now. */
+    private reconnectNow(): void {
+        if (!this.reconnecting || this.stopped || this.socketLive) return;
+        this.clearTimers();
+        this.attemptConnect();
+    }
+
+    private attemptConnect(): void {
+        this.retryTimer = null;
+        this.socketLive = true;
+        this.io.connect(this.endpoint.url, this.endpoint.token);
+        // A socket stuck connecting (dead network) would block every later attempt: give up on it.
+        this.attemptTimer = this.io.schedule(() => {
+            this.attemptTimer = null;
+            this.io.closeSocket();
+        }, RECONNECT_ATTEMPT_MS);
+    }
+
+    private scheduleRetry(): void {
+        const rand = this.io.random ? this.io.random() : Math.random();
+        const delay = backoffMs(this.attempt++, rand);
+        this.retryTimer = this.io.schedule(() => this.attemptConnect(), delay);
+    }
+
     handleClosed(message?: string): void {
         this.ready = false;
+        this.socketLive = false;
+        if (this.attemptTimer) this.io.cancel(this.attemptTimer);
+        this.attemptTimer = null;
         for (const [, p] of this.pending) {
             if (p.kind === 'passthrough') {
                 this.io.post({ t: 'response', rid: p.rid, error: { code: 'unavailable', message: 'connection closed' } });
@@ -284,8 +441,31 @@ export class DataCore {
             }
         }
         this.pending.clear();
-        for (const v of this.views.values()) if (v.timer) this.io.cancel(v.timer);
-        this.io.post({ t: 'status', status: 'closed', message });
+        for (const v of this.views.values()) this.dropView(v);
+        if (this.stopped || !this.everReady) {
+            this.reconnecting = false;
+            this.clearTimers();
+            this.io.post({ t: 'status', status: 'closed', message });
+            return;
+        }
+        this.queued = [];
+        this.reconnecting = true;
+        this.io.post({ t: 'status', status: 'reconnecting', message });
+        this.scheduleRetry();
+        // Hosted: an ended session is not a network problem; stop instead of knocking on a door that answers 401.
+        if (!this.endpoint.token && this.io.sessionEnded) {
+            void this.io.sessionEnded().then(
+                ended => {
+                    if (!ended || !this.reconnecting || this.ready || this.stopped) return;
+                    this.stopped = true;
+                    this.reconnecting = false;
+                    this.clearTimers();
+                    if (this.socketLive) this.io.closeSocket();
+                    else this.io.post({ t: 'status', status: 'closed', message: 'session ended' });
+                },
+                () => {}
+            );
+        }
     }
 
     private handleResponse(rid: number, res: Response): void {
@@ -360,6 +540,18 @@ export class DataCore {
             view.dictCols = [];
             columns.forEach((c, i) => c.type === ColDict && view.dictCols.push(i + 2));
             this.io.post({ t: 'columns', qid: p.qid, columns });
+            if (view.fresh) {
+                view.resync = this.io.schedule(() => {
+                    view.resync = null;
+                    if (!view.fresh) return;
+                    // The new snapshot is empty (no patch comes for an empty view): drop what the page still shows from before.
+                    view.fresh = false;
+                    view.total = 0;
+                    view.offset = 0;
+                    view.ids = new Uint32Array(0);
+                    this.scheduleFlush(view);
+                }, RESYNC_EMPTY_MS);
+            }
             const early = view.early;
             view.early = [];
             for (const patch of early) this.applyPatch(view, patch);
@@ -379,6 +571,11 @@ export class DataCore {
 
     private applyPatch(view: View, patch: ViewPatch): void {
         if (patch.gen < view.gen) return;
+        if (view.fresh) {
+            view.fresh = false;
+            if (view.resync) this.io.cancel(view.resync);
+            view.resync = null;
+        }
         const dictCols = view.dictCols;
         const dict = this.dict;
         const rows = patch.rows;

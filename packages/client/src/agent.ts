@@ -148,6 +148,10 @@ export interface LogFileTarget {
 
 export interface Agent {
     readonly status: ShallowRef<ConnectionStatus>;
+    /** Bumped every time the connection comes back after a drop (views are already resubscribed by then). */
+    readonly reconnects: ShallowRef<number>;
+    /** Skips the reconnect backoff and tries now (the "Retry now" button). No effect unless reconnecting. */
+    reconnectNow(): void;
     readonly statusMessage: ShallowRef<string>;
     readonly agentInfo: ShallowRef<{ version: string; mode: string } | null>;
     readonly clusterStates: ShallowRef<ClusterState[]>;
@@ -216,11 +220,14 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
     const worker = (opts.workerFactory ?? defaultWorker)();
     const status = shallowRef<ConnectionStatus>('connecting');
     const statusMessage = shallowRef('');
+    const reconnects = shallowRef(0);
+    let wasOpen = false;
     const agentInfo = shallowRef<{ version: string; mode: string } | null>(null);
     const clusterStates = shallowRef<ClusterState[]>([]);
     const calls = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
     const views = new Map<number, InternalView>();
     const objects = new Map<number, (frame: ObjectFrameWire) => void>();
+    const objectRefs = new Map<number, ObjectRef>();
     const jobs = shallowRef<readonly JobFrame[]>([]);
     const jobMap = new Map<string, JobFrame>();
     let jobTimer: ReturnType<typeof setTimeout> | undefined;
@@ -271,9 +278,15 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 statusMessage.value = m.message ?? '';
                 if (m.status === 'open') {
                     agentInfo.value = { version: m.agentVersion ?? '', mode: m.mode ?? '' };
+                    if (wasOpen) {
+                        // Back after a drop: the worker resubscribed the views; object subscriptions are ours to restore.
+                        for (const [oid, ref] of objectRefs) call('object.subscribe', { oid, ref }).catch(() => {});
+                        reconnects.value++;
+                    }
+                    wasOpen = true;
                     void agent.refreshJobs();
                     onOpen?.();
-                } else if (m.status === 'error' || m.status === 'closed') {
+                } else if (m.status === 'error' || m.status === 'closed' || m.status === 'reconnecting') {
                     onFail?.(new Error(m.message ?? 'connection failed'));
                     for (const [, c] of calls) c.reject(new RpcError('unavailable', m.message ?? 'connection closed'));
                     calls.clear();
@@ -373,6 +386,8 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
 
     const agent: Agent = {
         status,
+        reconnects,
+        reconnectNow: () => post({ t: 'nudge' }),
         statusMessage,
         agentInfo,
         clusterStates,
@@ -387,16 +402,19 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         async subscribeObject(ref, onFrame) {
             const oid = nextOid++;
             objects.set(oid, onFrame);
+            objectRefs.set(oid, ref);
             try {
                 await call('object.subscribe', { oid, ref });
             } catch (e) {
                 objects.delete(oid);
+                objectRefs.delete(oid);
                 throw e;
             }
             return {
                 oid,
                 close() {
                     if (!objects.delete(oid)) return;
+                    objectRefs.delete(oid);
                     call('object.unsubscribe', { oid }).catch(() => {});
                 }
             };
@@ -459,6 +477,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             await downloadLog(params, filename, target ?? null);
         },
         close() {
+            removeNudgers();
             post({ t: 'close' });
             worker.terminate();
             status.value = 'closed';
@@ -634,6 +653,19 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         document.body.appendChild(a);
         a.click();
         a.remove();
+    }
+
+    // The network came back or the tab was foregrounded (laptop wake, Wi-Fi roam): do not wait out the backoff.
+    const nudge = () => post({ t: 'nudge' });
+    const onVisible = () => document.visibilityState === 'visible' && nudge();
+    function removeNudgers() {
+        if (typeof window === 'undefined') return;
+        window.removeEventListener('online', nudge);
+        document.removeEventListener('visibilitychange', onVisible);
+    }
+    if (typeof window !== 'undefined') {
+        window.addEventListener('online', nudge);
+        document.addEventListener('visibilitychange', onVisible);
     }
 
     return new Promise<Agent>((resolve, reject) => {

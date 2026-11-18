@@ -60,6 +60,10 @@ type Options struct {
 	Log           *slog.Logger
 	// Tick is the per-subscription patch interval (default 100 ms).
 	Tick time.Duration
+	// PingInterval is how often each data and stream socket is pinged (default 25 s, below common proxy idle timeouts);
+	// a ping not answered within PingTimeout (default 10 s) closes the socket.
+	PingInterval time.Duration
+	PingTimeout  time.Duration
 }
 
 // Server is the HTTP handler for /ws, /healthz and the static UI.
@@ -73,6 +77,12 @@ type Server struct {
 func NewServer(opt Options) *Server {
 	if opt.Tick <= 0 {
 		opt.Tick = 100 * time.Millisecond
+	}
+	if opt.PingInterval <= 0 {
+		opt.PingInterval = 25 * time.Second
+	}
+	if opt.PingTimeout <= 0 {
+		opt.PingTimeout = 10 * time.Second
 	}
 	if opt.Log == nil {
 		opt.Log = slog.New(slog.DiscardHandler)
@@ -174,6 +184,29 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	newConn(s, ws).run(r.Context())
 }
 
+// keepalive pings ws every PingInterval until ctx ends; a failed or unanswered ping drops the socket (which unblocks
+// its reader). One ticker per socket; the pong is read by the socket's own reader, so a reader must be running.
+func (s *Server) keepalive(ctx context.Context, ws *websocket.Conn) {
+	t := time.NewTicker(s.opt.PingInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pctx, cancel := context.WithTimeout(ctx, s.opt.PingTimeout)
+			err := ws.Ping(pctx)
+			cancel()
+			if err != nil {
+				if ctx.Err() == nil {
+					_ = ws.CloseNow()
+				}
+				return
+			}
+		}
+	}
+}
+
 func staticHandler(dir string) http.Handler {
 	fs := http.FileServer(http.Dir(dir))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +275,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(1 << 20)
 	defer ws.CloseNow()
+	kctx, stop := context.WithCancel(r.Context())
+	defer stop()
+	go s.keepalive(kctx, ws)
 	_ = s.opt.Streams.Serve(r.Context(), id, wsTransport{ws})
 }
 

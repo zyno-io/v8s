@@ -152,6 +152,7 @@ func (c *conn) run(ctx context.Context) {
 	}()
 
 	go c.readLoop(ctx, cancel)
+	go c.s.keepalive(ctx, c.ws)
 
 	c.timer = time.NewTimer(time.Hour)
 	c.timer.Stop()

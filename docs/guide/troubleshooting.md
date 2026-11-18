@@ -81,6 +81,16 @@ v8s limits itself to 20 reads per second (burst 40) and at most 96 watches per c
 - Behind a gateway, every request is authorized and recorded, which adds latency. Long-lived watches are re-established about every 30 minutes.
 - Fewer clusters at once means less work. Deselect the ones you are not using.
 
+## "Reconnecting…" banner
+
+**Symptom.** A grey **Reconnecting…** bar appears under the top bar, and the tables stop updating. After a minute it becomes **Can't reach the agent** with **Retry now** and **Reload** buttons.
+
+**Cause.** The connection between the page and the agent dropped: the server restarted or was redeployed, a proxy (for example `tailscale serve` or a load balancer) closed an idle connection, the laptop slept, or the network changed. v8s reconnects on its own, trying again after 0.5 s, then 1 s, 2 s and so on up to every 15 s, and immediately when the network comes back or the tab becomes visible. Short blips are not shown at all.
+
+**What to expect.** Tables keep their last rows while it reconnects, then refresh in place; you do not need to reload. Requests made meanwhile (an apply, a scale) fail with "unavailable" and are not replayed, so repeat them once the bar is gone. Open log and flow panes that lost their stream offer **Reconnect**. A terminal session (exec, node shell) ends and must be reopened.
+
+**Fix.** Usually none. If **Can't reach the agent** stays, press **Retry now**, then check that the agent or `v8s server` is running and reachable at the same address. In hosted mode, if your session ended, v8s sends you to sign in again instead of retrying.
+
 ## A cluster is unreachable
 
 Check VPN and network access to the API server address, that `proxy-url` or `HTTPS_PROXY` is right if you use a proxy, and the server certificate and CA in your kubeconfig. v8s retries with backoff and keeps the last-known rows, greyed out, until it reconnects.

@@ -38,7 +38,7 @@ export interface AgentEndpoint {
     token: string;
 }
 
-export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error';
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 /** The KindObject payload on the wire: ObjectPayload fields inline (Go embeds the struct) plus `deleted` / `error`. */
 export type ObjectFrameWire = ObjectPayload & { deleted?: boolean; error?: ErrorBody };
@@ -132,6 +132,8 @@ export type MainToWorker =
     | { t: 'flow.pause'; sid: number; paused: boolean }
     | { t: 'flow.clear'; sid: number }
     | { t: 'flow.close'; sid: number }
+    /** The network is back or the tab is visible again: reconnect now instead of waiting out the backoff. */
+    | { t: 'nudge' }
     | { t: 'close' };
 
 export type WorkerToMain =

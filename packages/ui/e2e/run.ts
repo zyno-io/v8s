@@ -952,6 +952,20 @@ async function main() {
             assert.ok(inside, 'the drawer is above the pinned sidebar near its left edge');
             await page.keyboard.press('Escape');
             await drawer.waitFor({ state: 'hidden' });
+
+        await step('agent restart: reconnects by itself, no reload, views recover', async () => {
+            await page.evaluate(() => ((window as unknown as { __noReload: boolean }).__noReload = true));
+            const seen = errors.length;
+            await stack.restartAgent(); // new process on the same port: every socket drops, in-memory selection is gone
+            // The table keeps its last rows meanwhile; a view opened after the restart proves the new connection works.
+            await page.getByRole('link', { name: /^Services/ }).click();
+            await page.waitForURL(/\/r\/v1\/services/);
+            await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 30000 });
+            await page.getByTestId('agent-reconnecting').waitFor({ state: 'hidden', timeout: 30000 });
+            assert.equal(await page.getByTestId('agent-unreachable').count(), 0);
+            assert.equal(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload), true, 'the page did not reload');
+            // Failed reconnect attempts log socket errors; they are expected here.
+            errors.length = seen;
         });
 
         assert.deepEqual(errors, [], 'no console or page errors');
