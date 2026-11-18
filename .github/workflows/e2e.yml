@@ -6,6 +6,13 @@ on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
+  # Changes to the e2e tests or their setup run it too.
+  pull_request:
+    paths:
+      - 'agent/test/e2e/**'
+      - 'test/e2e/**'
+      - '.github/workflows/e2e.yml'
+      - '.github/scripts/install-e2e-tools.sh'
 
 permissions:
   contents: read
