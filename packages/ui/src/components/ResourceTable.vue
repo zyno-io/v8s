@@ -594,13 +594,7 @@ function metricText(c: ColPlan, row: Row): string {
                 >
                     <template v-if="it.ver >= 0">
                         <span role="cell"><input class="cb" type="checkbox" tabindex="-1" aria-label="Select row" :checked="it.sel" /></span>
-                        <span
-                            v-for="(c, ci) in plan.cols"
-                            :key="c.key"
-                            class="c"
-                            :class="cellClass(c, it.row, it.dc?.[ci])"
-                            role="cell"
-                        >
+                        <span v-for="(c, ci) in plan.cols" :key="c.key" class="c" :class="cellClass(c, it.row, it.dc?.[ci])" role="cell">
                             <template v-if="it.dc?.[ci]"
                                 ><span v-if="it.dc[ci]!.tag" class="tag" :class="it.dc[ci]!.tag!.tone" :title="it.dc[ci]!.title">{{
                                     it.dc[ci]!.tag!.text
