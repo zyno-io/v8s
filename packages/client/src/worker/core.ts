@@ -69,6 +69,8 @@ interface View {
     /** The query and window as the page last set them: what a resubscribe after a reconnect sends. */
     query: ViewQuery;
     window: Window;
+    /** Whether the page wants usage columns filled; a resubscribe after a reconnect must carry it. */
+    usage: boolean;
     /** Resubscribed after a reconnect: the next flush first tells the page that wire ids restarted. */
     reset: boolean;
     rows: Map<number, Row>;
@@ -174,11 +176,17 @@ export class DataCore {
                 this.sendRequest(msg.rid, msg.method, msg.params);
                 break;
             case 'subscribe': {
-                const view = this.newView(msg.qid, msg.gen, msg.query, msg.window);
+                const view = this.newView(msg.qid, msg.gen, msg.query, msg.window, !!msg.usage);
                 this.views.set(msg.qid, view);
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'subscribe', qid: msg.qid });
-                this.sendRequest(rid, 'view.subscribe', { qid: msg.qid, gen: msg.gen, query: msg.query, window: msg.window });
+                this.sendRequest(rid, 'view.subscribe', {
+                    qid: msg.qid,
+                    gen: msg.gen,
+                    query: msg.query,
+                    window: msg.window,
+                    ...(view.usage ? { usage: true } : {})
+                });
                 break;
             }
             case 'update': {
@@ -189,7 +197,13 @@ export class DataCore {
                 this.noteUpdate(view, { ...msg, window });
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'ignore' });
-                this.sendRequest(rid, 'view.update', { qid: msg.qid, gen: msg.gen, query: msg.query, window });
+                this.sendRequest(rid, 'view.update', {
+                    qid: msg.qid,
+                    gen: msg.gen,
+                    query: msg.query,
+                    window,
+                    ...(msg.usage !== undefined ? { usage: msg.usage } : {})
+                });
                 break;
             }
             case 'log.open': {
@@ -263,7 +277,7 @@ export class DataCore {
     }
 
     /** Records a view.update on the worker's copy: gen bump, and the query/window a resubscribe would need. */
-    private noteUpdate(view: View, msg: { gen: number; query?: ViewQuery; window?: Window }): void {
+    private noteUpdate(view: View, msg: { gen: number; query?: ViewQuery; window?: Window; usage?: boolean }): void {
         if (msg.gen > view.gen) {
             view.gen = msg.gen;
             // Anything computed for the old query must not reach the screen after the bump.
@@ -272,6 +286,7 @@ export class DataCore {
         }
         if (msg.query) view.query = msg.query;
         if (msg.window) view.window = msg.window;
+        if (msg.usage !== undefined) view.usage = msg.usage;
     }
 
     /**
@@ -291,7 +306,7 @@ export class DataCore {
                 this.io.post({ t: 'flow.error', sid: msg.sid, error: unavailable });
                 return true;
             case 'subscribe':
-                this.views.set(msg.qid, this.newView(msg.qid, msg.gen, msg.query, msg.window));
+                this.views.set(msg.qid, this.newView(msg.qid, msg.gen, msg.query, msg.window, !!msg.usage));
                 return true;
             case 'update': {
                 const view = this.views.get(msg.qid);
@@ -314,12 +329,13 @@ export class DataCore {
         view.timer = null;
     }
 
-    private newView(qid: number, gen: number, query: ViewQuery, window: Window): View {
+    private newView(qid: number, gen: number, query: ViewQuery, window: Window, usage = false): View {
         return {
             qid,
             gen,
             query,
             window,
+            usage,
             reset: false,
             columns: null,
             dictCols: [],
@@ -420,7 +436,8 @@ export class DataCore {
         const window = { offset: view.window.anchorId ? view.offset : view.window.offset, limit: view.window.limit };
         const rid = this.nextRid++;
         this.pending.set(rid, { kind: 'subscribe', qid: view.qid });
-        this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window });
+        // The usage flag is part of the subscription: without it a reconnect would silently drop the metrics columns.
+        this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window, ...(view.usage ? { usage: true } : {}) });
     }
 
     /** Reselects this page's clusters if none are live, then resubscribes every view in order. */

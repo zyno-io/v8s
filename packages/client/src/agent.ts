@@ -63,7 +63,9 @@ export interface ViewHandle {
     readonly gen: number;
     readonly query: ViewQuery;
     readonly window: Window;
-    update(patch: { query?: ViewQuery; window?: Window }): void;
+    /** Whether the agent polls metrics.k8s.io for this view and fills the metrics columns (cpuUse, %CPU/L, …). */
+    readonly usage: boolean;
+    update(patch: { query?: ViewQuery; window?: Window; usage?: boolean }): void;
     close(): void;
 }
 
@@ -167,7 +169,7 @@ export interface Agent {
     call<T = unknown>(method: string, params?: unknown): Promise<T>;
     /** Subscribes to one object. The promise resolves once the agent accepted the subscription. */
     subscribeObject(ref: ObjectRef, onFrame: (frame: ObjectFrameWire) => void): Promise<ObjectSubscription>;
-    subscribeView(query: ViewQuery, window: Window): ViewHandle;
+    subscribeView(query: ViewQuery, window: Window, opts?: { usage?: boolean }): ViewHandle;
     /** Opens a log stream in the Data Worker. Rejects with RpcError (`write_confirm` etc.) when `stream.open` is refused. */
     openStream(type: 'logs', params: LogOpenOptions): Promise<LogStreamHandle>;
     /** Opens a Hubble flows stream in the Data Worker. Rejects with RpcError (`bad_request` for an unscoped follow, `unavailable`, …). */
@@ -255,6 +257,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         gen: number;
         query: ViewQuery;
         window: Window;
+        usage: boolean;
         ids: Uint32Array;
     }
 
@@ -433,7 +436,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 }
             };
         },
-        subscribeView(query, window) {
+        subscribeView(query, window, opts) {
             const qid = nextQid++;
             const handle: InternalView = markRaw({
                 qid,
@@ -448,6 +451,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 gen: 1,
                 query,
                 window,
+                usage: !!opts?.usage,
                 update(patch) {
                     if (!views.has(qid)) return;
                     const msg: MainToWorker = { t: 'update', qid, gen: handle.gen };
@@ -461,7 +465,11 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                         handle.window = patch.window;
                         msg.window = patch.window;
                     }
-                    post(msg);
+                    if (patch.usage !== undefined && patch.usage !== handle.usage) {
+                        handle.usage = patch.usage;
+                        msg.usage = patch.usage;
+                    }
+                    if (msg.query || msg.window || msg.usage !== undefined) post(msg);
                 },
                 close() {
                     if (!views.delete(qid)) return;
@@ -469,7 +477,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 }
             });
             views.set(qid, handle);
-            post({ t: 'subscribe', qid, gen: handle.gen, query, window });
+            post({ t: 'subscribe', qid, gen: handle.gen, query, window, usage: handle.usage || undefined });
             return handle;
         },
         jobs,

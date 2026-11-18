@@ -86,6 +86,20 @@ describe('connectAgent', () => {
         expect(h.total.value).toBe(0);
     });
 
+    it('sends the usage flag on subscribe and on a usage-only update (no gen bump), and skips an unchanged one', async () => {
+        const { agent, sent } = await open();
+        const h = agent.subscribeView(Q, { offset: 0, limit: 10 }, { usage: true });
+        expect(sent.at(-1)).toMatchObject({ t: 'subscribe', usage: true });
+        expect(h.usage).toBe(true);
+        h.update({ usage: true });
+        expect(sent.filter(m => m.t === 'update')).toHaveLength(0);
+        h.update({ usage: false });
+        expect(sent.at(-1)).toMatchObject({ t: 'update', gen: 1, usage: false });
+        expect(sent.at(-1)).not.toHaveProperty('query');
+        expect(h.gen).toBe(1);
+        expect(h.usage).toBe(false);
+    });
+
     it('exposes the subscribe error on the handle and clears it with the columns', async () => {
         const { agent, emit } = await open();
         const h = agent.subscribeView(Q, { offset: 0, limit: 10 });

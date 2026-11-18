@@ -19,7 +19,13 @@ type Resource struct {
 	Namespaced                     bool
 	ShortNames                     []string
 	Verbs                          []string
+	// Stale is the aggregated-discovery freshness of the resource's version: its aggregated API server is not answering.
+	Stale bool
 }
+
+// Placeholder reports whether r stands for a group-version that is listed but not answering (a placeholder with no
+// resource name: see the aggregated and legacy parsers). It is never listable and never matches a kind.
+func (r Resource) Placeholder() bool { return r.Resource == "" }
 
 // GVR returns "v1/pods" for the core group, "apps/v1/deployments" otherwise.
 func (r Resource) GVR() string {
@@ -61,6 +67,7 @@ type aggList struct {
 		} `json:"metadata"`
 		Versions []struct {
 			Version   string `json:"version"`
+			Freshness string `json:"freshness"`
 			Resources []struct {
 				Resource     string `json:"resource"`
 				ResponseKind struct {
@@ -92,6 +99,11 @@ func parseAggBody(b []byte, out *[]Resource, seen map[string]bool) error {
 	for _, g := range l.Items {
 		group := g.Metadata.Name
 		for _, v := range g.Versions { // preference order: first version wins
+			if v.Freshness == "Stale" && len(v.Resources) == 0 {
+				// listed, but its server is not answering and no resource is known: keep the group-version, so a
+				// consumer can tell "down" from "not installed"
+				*out = append(*out, Resource{Group: group, Version: v.Version, Stale: true})
+			}
 			for _, r := range v.Resources {
 				if r.Resource == "" || strings.Contains(r.Resource, "/") {
 					continue
@@ -104,6 +116,7 @@ func parseAggBody(b []byte, out *[]Resource, seen map[string]bool) error {
 				*out = append(*out, Resource{
 					Group: group, Version: v.Version, Resource: r.Resource, Kind: r.ResponseKind.Kind,
 					Namespaced: r.Scope == "Namespaced", ShortNames: r.ShortNames, Verbs: r.Verbs,
+					Stale: v.Freshness == "Stale",
 				})
 			}
 		}
@@ -154,7 +167,12 @@ type apiResourceList struct {
 	} `json:"resources"`
 }
 
+// addLegacy parses one resource list; a nil body is a group-version that failed to answer (kept as a placeholder).
 func addLegacy(group, version string, body []byte, out *[]Resource, seen map[string]bool) error {
+	if body == nil {
+		*out = append(*out, Resource{Group: group, Version: version, Stale: true})
+		return nil
+	}
 	var l apiResourceList
 	if err := json.Unmarshal(body, &l); err != nil {
 		return fmt.Errorf("decode resource list %s/%s: %w", group, version, err)
@@ -194,7 +212,7 @@ func ParseLegacy(core, groups []byte, resourceLists map[string][]byte) ([]Resour
 			return nil, fmt.Errorf("decode /api: %w", err)
 		}
 		for _, ver := range v.Versions {
-			if b, ok := resourceLists[legacyKey("", ver)]; ok && !blank(b) {
+			if b, ok := resourceLists[legacyKey("", ver)]; ok && (b == nil || !blank(b)) {
 				if err := addLegacy("", ver, b, &out, seen); err != nil {
 					return nil, err
 				}
@@ -217,7 +235,7 @@ func ParseLegacy(core, groups []byte, resourceLists map[string][]byte) ([]Resour
 				}
 			}
 			for _, ver := range order {
-				if b, ok := resourceLists[legacyKey(g.Name, ver)]; ok && !blank(b) {
+				if b, ok := resourceLists[legacyKey(g.Name, ver)]; ok && (b == nil || !blank(b)) {
 					if err := addLegacy(g.Name, ver, b, &out, seen); err != nil {
 						return nil, err
 					}
@@ -280,7 +298,8 @@ func fetchLegacy(ctx context.Context, c rest.Interface) ([]Resource, error) {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return nil // tolerate a broken group (e.g. unavailable APIService)
+			lists[legacyKey(group, version)] = nil // a broken group (e.g. unavailable APIService): kept as a placeholder
+			return nil
 		}
 		lists[legacyKey(group, version)] = b
 		return nil

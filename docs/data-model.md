@@ -111,7 +111,20 @@ See [integrations.md](integrations.md). Flux and Helm in P2; Kyverno and Trivy i
 
 ## Metrics
 
-Node and pod CPU/memory usage come from `metrics.k8s.io` (metrics-server) when present: polled every 30 s, only while a visible view shows usage columns, and only for the visible window; never watched (it has no watch). Usage columns appear only when metrics are available. Prometheus integration (history, sparklines) is a P5 option, not MVP.
+Pod CPU/memory usage comes from `metrics.k8s.io` (metrics-server) when present: LISTed every 30 s (it has no watch), only while a visible view shows usage columns or sorts by one, for the namespaces of the views that want it (a sort needs every row's value, so never just the visible window). The agent joins each poll to the rows when it sorts and encodes; rows themselves are not updated. Usage columns are dropped (and listed disabled in the Columns menu) when no selected cluster has metrics-server. Prometheus integration (history, sparklines) is a P5 option, not MVP.
+
+Pod columns (all integers; CPU in millicores, memory in MiB, percentages in per-mille):
+
+| Columns | Meaning |
+| --- | --- |
+| `cpuUse`, `memUse` | usage: CPU is `ceil(sum of container nanocores / 1e6)` as `kubectl top`; memory is floored to MiB |
+| `cpuReq`, `cpuLim`, `memReq`, `memLim` | the pod's effective requests and limits, from the spec (not in-place resize status), hidden by default |
+| `cpuPctReq`, `cpuPctLim`, `memPctReq`, `memPctLim` | usage over request / limit |
+| `cpuPctNode`, `memPctNode` | usage over the allocatable of the pod's node (hidden by default; the node is always named in the tooltip) |
+
+Requests and limits follow Kubernetes: regular containers are summed, init containers are the maximum of the sum so far (plus the restartable ones before them), restartable init containers (native sidecars) count as running, a pod-level `resources` block overrides, and `overhead` is added to requests and to non-zero limits. A limit exists only when every regular container and every sidecar has one (or the pod has a pod-level limit); otherwise the pod is unbounded and shows `n/a`. Node percentages use the node's **allocatable**, not capacity (it is what the scheduler packs against).
+
+Cells: `null` means no data (no metrics yet, a pod metrics-server does not report such as Pending or Completed, or a sample older than the pod), `-1` means n/a (no request, no limit or no node to divide by). Missing values sort last in both directions.
 
 ## Generic CRD support
 

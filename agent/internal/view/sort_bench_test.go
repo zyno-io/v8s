@@ -44,10 +44,10 @@ func BenchmarkSort50k(b *testing.B) {
 	e := NewEngine()
 	e.names = []string{"c"}
 	n, _ := Normalize(protocolQuery())
-	c := e.buildCmp(n)
+	c := e.buildCmp(n, &View{})
 	src := synthEntries(50000)
 	work := make([]entry, len(src))
-	key := e.buildKey(n)
+	key := e.buildKey(n, &View{})
 	for _, par := range []int{1, 0, 2} {
 		b.Run(fmt.Sprint("mode=", par), func(b *testing.B) {
 			var cpu int64

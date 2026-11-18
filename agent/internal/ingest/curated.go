@@ -110,12 +110,32 @@ func init() {
 	registerPolicyKinds()
 }
 
+// hide marks a column hidden until the user shows it from the Columns menu.
+func hide(c Col) Col { c.Hidden = true; return c }
+
+func narrow(c Col, w int) Col { c.Width = w; return c }
+
 func registerPods() {
 	m := &Module{GVR: PodsGVR, Kind: "Pod", Namespaced: true, Short: []string{"po"}, Tier0: true,
-		Cols: []Col{cCluster(), cName(), cNS(),
-			cInt("ready", "Ready", 64), cInt("containers", "Containers", 84), cDict("status", "Status", 140),
-			cTone(), cInt("restarts", "Restarts", 76), cDict("node", "Node", 160), cIP("ip", "IP", 130, FPodIP), cAge()},
-		IPs: true, IPOrder: 10}
+		Cols: []Col{cCluster(), cName(), narrow(cNS(), 120),
+			cInt("ready", "Ready", 64), cInt("containers", "Containers", 84), cDict("status", "Status", 120),
+			cTone(), cInt("restarts", "Restarts", 68),
+			// Usage block: the schema order below is the visible order; the UI draws the visible ones as one block.
+			cUse("cpuUse", "CPU", "", UseCPU, "millicores", 44, false),
+			cRes("cpuReq", "CPU req", "req", ResCPUReq, "millicores", 44, true),
+			cRes("cpuLim", "CPU lim", "lim", ResCPULim, "millicores", 44, true),
+			cUse("cpuPctReq", "%CPU/R", "%R", UseCPUPctReq, "permille", 36, false),
+			cUse("cpuPctLim", "%CPU/L", "%L", UseCPUPctLim, "permille", 36, false),
+			cUse("cpuPctNode", "%CPU/N", "%N", UseCPUPctNode, "permille", 36, true),
+			cUse("memUse", "MEM", "", UseMem, "MiB", 48, false),
+			cRes("memReq", "MEM req", "req", ResMemReq, "MiB", 48, true),
+			cRes("memLim", "MEM lim", "lim", ResMemLim, "MiB", 48, true),
+			cUse("memPctReq", "%MEM/R", "%R", UseMemPctReq, "permille", 36, false),
+			cUse("memPctLim", "%MEM/L", "%L", UseMemPctLim, "permille", 36, false),
+			cUse("memPctNode", "%MEM/N", "%N", UseMemPctNode, "permille", 36, true),
+			cDict("node", "Node", 120), hide(cIP("ip", "IP", 120, FPodIP)), narrow(cAge(), 56)},
+		Usage: "pods",
+		IPs:   true, IPOrder: 10}
 	typed(m, func(l *corev1.PodList) []corev1.Pod { return l.Items }, Project)
 }
 
@@ -441,6 +461,7 @@ func registerClusterKinds() {
 			r.putN(pods.Value())
 			r.putN(int64(len(n.Spec.Taints)))
 			r.tone = tone
+			r.res = Res{CPUReq: clampU32(cpu.MilliValue()), MemReq: clampU64(mem.Value())} // allocatable, not capacity
 			setFacts(r, nodeFacts(n))
 			r.ips = nodeIPs(n)
 			return r

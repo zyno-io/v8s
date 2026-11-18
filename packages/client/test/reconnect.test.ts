@@ -287,6 +287,29 @@ describe('DataCore resubscribe', () => {
         expect(new Set(subs.map(s => s.channel)).size).toBe(2);
     });
 
+    it('keeps the usage flag across a resubscribe, including a change made while the socket was down', () => {
+        const h = harness();
+        h.open();
+        h.main({ t: 'subscribe', qid: 1, gen: 1, query: QUERY, window: { offset: 0, limit: 50 }, usage: true });
+        h.main({ t: 'subscribe', qid: 2, gen: 1, query: QUERY, window: { offset: 0, limit: 50 } });
+        const first = h.sent
+            .map(s => s.payload as { method: string; params: { qid: number; usage?: boolean } })
+            .filter(p => p.method === 'view.subscribe');
+        expect(first.map(p => p.params.usage)).toEqual([true, undefined]);
+        h.main({ t: 'update', qid: 2, gen: 1, usage: true });
+        h.main({ t: 'update', qid: 1, gen: 1, usage: false });
+        const before = h.sent.length;
+        h.dropAndReconnect();
+        const subs = h.sent
+            .slice(before)
+            .map(s => s.payload as { method: string; params: { qid: number; usage?: boolean } })
+            .filter(p => p.method === 'view.subscribe');
+        expect(subs.map(p => [p.params.qid, p.params.usage])).toEqual([
+            [1, undefined],
+            [2, true]
+        ]);
+    });
+
     it('accepts a fresh full snapshot with new wire ids and a new dictionary, dropping the old row table', () => {
         const h = harness();
         h.open();

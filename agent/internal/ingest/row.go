@@ -26,7 +26,15 @@ const (
 const (
 	flagDeleting uint8 = 1 << iota
 	flagInitialEventsEnd
+	flagTerminal // pod phase Succeeded/Failed (capacity skips these)
 )
+
+// Res holds the CPU/memory amounts usage columns divide by. Pods: effective requests (CPUReq, MemReq) and
+// limits (CPULim, MemLim). Nodes: allocatable in CPUReq/MemReq (limits unused). 0 = none (the percentage shows n/a).
+type Res struct {
+	CPUReq, CPULim uint32 // millicores
+	MemReq, MemLim uint64 // bytes
+}
 
 // Str is an interned string.
 type Str = unique.Handle[string]
@@ -54,6 +62,7 @@ type Row struct {
 	ver           uint32
 	tone          uint8
 	flags         uint8
+	res           Res
 	cells         []Cell
 	facts         any      // kind-specific facts for the problems engine (see facts.go)
 	ips           *ipx.Set // addresses the object holds (see ips.go); set at projection only
@@ -180,16 +189,31 @@ func (r *Row) putH(s Str)      { r.cells = append(r.cells, Cell{S: s}) }
 func (r *Row) putN(n int64)    { r.cells = append(r.cells, Cell{S: emptyStr, N: n}) }
 func (r *Row) setTone(t uint8) { r.tone = t }
 
-func (r *Row) UID() string             { return r.uid }
-func (r *Row) Name() string            { return r.name }
-func (r *Row) NS() Str                 { return r.ns }
-func (r *Row) OwnerKind() Str          { return r.ownerKind }
-func (r *Row) OwnerName() Str          { return r.ownerName }
-func (r *Row) CreatedMs() int64        { return r.created }
-func (r *Row) Ver() uint32             { return r.ver }
-func (r *Row) SetVer(v uint32)         { r.ver = v }
-func (r *Row) Tone() uint8             { return r.tone }
-func (r *Row) Deleting() bool          { return r.flags&flagDeleting != 0 }
+func (r *Row) UID() string      { return r.uid }
+func (r *Row) Name() string     { return r.name }
+func (r *Row) NS() Str          { return r.ns }
+func (r *Row) OwnerKind() Str   { return r.ownerKind }
+func (r *Row) OwnerName() Str   { return r.ownerName }
+func (r *Row) CreatedMs() int64 { return r.created }
+func (r *Row) Ver() uint32      { return r.ver }
+func (r *Row) SetVer(v uint32)  { r.ver = v }
+func (r *Row) Tone() uint8      { return r.tone }
+func (r *Row) Deleting() bool   { return r.flags&flagDeleting != 0 }
+func (r *Row) Terminal() bool   { return r.flags&flagTerminal != 0 }
+
+// Requests returns the pod's effective CPU (millicores) and memory (bytes) requests; 0 = none.
+func (r *Row) Requests() (uint32, uint64) { return r.res.CPUReq, r.res.MemReq }
+
+// Limits returns the pod's effective CPU and memory limits; 0 = the pod is unbounded for that resource.
+func (r *Row) Limits() (uint32, uint64) { return r.res.CPULim, r.res.MemLim }
+
+// Allocatable returns a node row's allocatable CPU (millicores) and memory (bytes).
+func (r *Row) Allocatable() (uint32, uint64) { return r.res.CPUReq, r.res.MemReq }
+
+// SetAllocatable records a node's allocatable amounts; projection only.
+func (r *Row) SetAllocatable(cpuMilli uint32, memBytes uint64) {
+	r.res = Res{CPUReq: cpuMilli, MemReq: memBytes}
+}
 func (r *Row) ResourceVersion() string { return r.rv }
 
 // Cell returns kind-specific cell i (zero Cell when out of range).
@@ -261,7 +285,7 @@ func (r *Row) FirstIP(f ipx.Field) (ipx.U128, bool) {
 func (r *Row) CellsEqual(o *Row) bool {
 	if r.name != o.name || r.ns != o.ns || r.tone != o.tone || r.created != o.created ||
 		r.ownerKind != o.ownerKind || r.ownerName != o.ownerName ||
-		r.flags&flagDeleting != o.flags&flagDeleting || len(r.cells) != len(o.cells) || !factsEqual(r.facts, o.facts) {
+		r.flags&(flagDeleting|flagTerminal) != o.flags&(flagDeleting|flagTerminal) || r.res != o.res || len(r.cells) != len(o.cells) || !factsEqual(r.facts, o.facts) {
 		return false
 	}
 	for i := range r.cells {

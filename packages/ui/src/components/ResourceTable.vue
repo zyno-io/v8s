@@ -6,7 +6,7 @@ import { TONE_NAMES } from '@v8s/client';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import type { ColPlan, TablePlan } from '@/lib/columns.ts';
+import type { ColPlan, TablePlan, UsageSub } from '@/lib/columns.ts';
 import type { DrawerTab } from '@/lib/route.ts';
 import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
@@ -14,9 +14,10 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
-import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
+import { formatAge, formatUsage, OLD_AGE_MS, usageTone } from '@/lib/format.ts';
 import { setPageKeyHandler } from '@/lib/keys.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
+import { usageCardLine, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
@@ -487,6 +488,18 @@ function onResizeKey(e: KeyboardEvent, c: ColPlan) {
     emit('resize', c.key, Math.max(48, w + (e.key === 'ArrowRight' ? 16 : -16)));
 }
 
+/** One cell of the usage block: muted for no data and n/a, warning and danger by the limit and node rules. */
+function usageClass(u: UsageSub, v: unknown) {
+    const t = usageTone(u.tone, v);
+    return { m: v == null || (v as number) < 0, w: t === 'warning', d: t === 'danger' };
+}
+/** The phone card's usage line as a zero-or-one item list, so the template can bind it once. */
+const cardUse = (row: Row) => {
+    const u = props.plan.usage;
+    const l = u ? usageCardLine(u, row) : null;
+    return l ? [l] : [];
+};
+
 const s = (c: unknown) => c as string;
 const n = (c: unknown) => c as number;
 const toneName = (row: Row) => (props.plan.toneIdx >= 0 ? TONE_NAMES[n(row[props.plan.toneIdx])] : 'neutral') ?? 'neutral';
@@ -513,7 +526,8 @@ defineExpose({ scroller });
 
 // The cluster column/tag only earns its width when more than one cluster is connected.
 const showCluster = computed(() => props.plan.clusterIdx >= 0 && props.plan.cols.some(c => c.kind === 'cluster'));
-const planKey = computed(() => props.plan.grid + props.plan.cols.length);
+// Which usage sub-columns are shown matters too: two blocks of the same width with different columns must re-render the rows.
+const planKey = computed(() => props.plan.grid + props.plan.cols.length + props.plan.cols.map(c => c.subs?.map(u => u.key).join() ?? '').join('|'));
 
 const emptyKind = computed(() => {
     if (!clusters.activeIds.length) return 'no-clusters';
@@ -552,34 +566,50 @@ function metricText(c: ColPlan, row: Row): string {
             <span role="columnheader"
                 ><input class="cb" type="checkbox" aria-label="Select all loaded rows" :checked="allSelected" @change="toggleAll"
             /></span>
-            <span
-                v-for="c in plan.cols"
-                :key="c.key"
-                role="columnheader"
-                :aria-sort="c.sortable ? sortInfo(c.key).aria : undefined"
-                class="c hd"
-                :class="{ r: c.align === 'right' }"
-            >
-                <button
-                    v-if="c.sortable"
-                    class="th-btn"
-                    type="button"
-                    :title="`Sort by ${c.label.toLowerCase()} (shift-click adds a secondary key)`"
-                    @click="table.sortBy(gvr, c.key, $event.shiftKey)"
-                >
-                    {{ c.label }}<span aria-hidden="true">{{ sortInfo(c.key).arrow }}</span>
-                </button>
-                <template v-else>{{ c.label }}</template>
+            <template v-for="c in plan.cols" :key="c.key">
+                <span v-if="c.kind === 'usage'" class="c hd r" role="presentation">
+                    <span class="ub" :style="{ gridTemplateColumns: c.subGrid }">
+                        <span v-for="u in c.subs" :key="u.key" role="columnheader" :aria-sort="sortInfo(u.key).aria" class="ubh">
+                            <button
+                                class="th-btn"
+                                type="button"
+                                :aria-label="`Sort by ${u.label}`"
+                                :title="`Sort by ${u.label.toLowerCase()} (shift-click adds a secondary key)`"
+                                @click="table.sortBy(gvr, u.key, $event.shiftKey)"
+                            >
+                                {{ u.text }}<span class="u" aria-hidden="true">{{ sortInfo(u.key).arrow || u.suffix }}</span>
+                            </button>
+                        </span>
+                    </span>
+                </span>
                 <span
-                    class="rz"
-                    role="separator"
-                    tabindex="0"
-                    :aria-label="`Resize ${c.label} column`"
-                    aria-orientation="vertical"
-                    @pointerdown="startResize($event, c)"
-                    @keydown="onResizeKey($event, c)"
-                ></span>
-            </span>
+                    v-else
+                    role="columnheader"
+                    :aria-sort="c.sortable ? sortInfo(c.key).aria : undefined"
+                    class="c hd"
+                    :class="{ r: c.align === 'right' }"
+                >
+                    <button
+                        v-if="c.sortable"
+                        class="th-btn"
+                        type="button"
+                        :title="`Sort by ${c.label.toLowerCase()} (shift-click adds a secondary key)`"
+                        @click="table.sortBy(gvr, c.key, $event.shiftKey)"
+                    >
+                        {{ c.label }}<span aria-hidden="true">{{ sortInfo(c.key).arrow }}</span>
+                    </button>
+                    <template v-else>{{ c.label }}</template>
+                    <span
+                        class="rz"
+                        role="separator"
+                        tabindex="0"
+                        :aria-label="`Resize ${c.label} column`"
+                        aria-orientation="vertical"
+                        @pointerdown="startResize($event, c)"
+                        @keydown="onResizeKey($event, c)"
+                    ></span>
+                </span>
+            </template>
         </div>
         <div
             class="sizer"
@@ -613,6 +643,16 @@ function metricText(c: ColPlan, row: Row): string {
                                 }}</span
                                 ><span v-if="it.dc[ci]!.text" :title="it.dc[ci]!.title">{{ it.dc[ci]!.text }}</span
                                 ><template v-if="!it.dc[ci]!.tag && !it.dc[ci]!.text">—</template></template
+                            >
+                            <template v-else-if="c.kind === 'usage'"
+                                ><span
+                                    class="ub"
+                                    :style="{ gridTemplateColumns: c.subGrid }"
+                                    :title="plan.usage ? usageTitle(plan.usage, it.row) : undefined"
+                                    ><span v-for="u in c.subs" :key="u.key" :class="usageClass(u, it.row[u.idx])">{{
+                                        formatUsage(u.unit, u.pctNode, it.row[u.idx])
+                                    }}</span></span
+                                ></template
                             >
                             <template v-else-if="c.kind === 'cluster'"
                                 ><span class="tag"
@@ -671,6 +711,13 @@ function metricText(c: ColPlan, row: Row): string {
                         </div>
                         <div class="pc-meta">
                             <span v-for="c in cardMetrics" :key="c.key" class="c">{{ c.label.toLowerCase() }} {{ metricText(c, it.row) }}</span>
+                            <span
+                                v-for="cu in cardUse(it.row)"
+                                :key="0"
+                                class="c ucard"
+                                :class="{ w: cu.tone === 'warning', d: cu.tone === 'danger' }"
+                                >{{ cu.text }}</span
+                            >
                         </div>
                     </div>
                     <div v-else class="pc-main"><i style="width: 70%"></i><i style="width: 45%"></i><i style="width: 55%"></i></div>

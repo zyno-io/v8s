@@ -74,19 +74,25 @@ export function moveStar(stars: readonly string[], from: number, to: number): st
 export interface ColumnLayout {
     /** px width overrides by column key */
     widths?: Record<string, number>;
-    /** hidden column keys */
+    /** column keys the user hid */
     hidden?: string[];
+    /** default-hidden column keys (Column.hidden, decor defaults) the user showed from the Columns menu */
+    shown?: string[];
 }
 
 export function layoutFor(s: Settings, gvr: string): ColumnLayout {
     const raw = s.columnLayouts?.[gvr];
     if (!raw || typeof raw !== 'object') return {};
     const l = raw as ColumnLayout;
-    return { widths: l.widths && typeof l.widths === 'object' ? l.widths : undefined, hidden: Array.isArray(l.hidden) ? l.hidden : undefined };
+    return {
+        widths: l.widths && typeof l.widths === 'object' ? l.widths : undefined,
+        hidden: Array.isArray(l.hidden) ? l.hidden : undefined,
+        shown: Array.isArray(l.shown) ? l.shown : undefined
+    };
 }
 
 export function layoutPatch(gvr: string, layout: ColumnLayout): Record<string, unknown> {
-    return { columnLayouts: { [gvr]: { widths: layout.widths ?? {}, hidden: layout.hidden ?? [] } } };
+    return { columnLayouts: { [gvr]: { widths: layout.widths ?? {}, hidden: layout.hidden ?? [], shown: layout.shown ?? [] } } };
 }
 
 // ---- groups ----

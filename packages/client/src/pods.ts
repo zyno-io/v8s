@@ -10,9 +10,21 @@ export const POD = {
     status: 7,
     statusTone: 8,
     restarts: 9,
-    node: 10,
-    ip: 11,
-    createdAt: 12
+    cpuUse: 10,
+    cpuReq: 11,
+    cpuLim: 12,
+    cpuPctReq: 13,
+    cpuPctLim: 14,
+    cpuPctNode: 15,
+    memUse: 16,
+    memReq: 17,
+    memLim: 18,
+    memPctReq: 19,
+    memPctLim: 20,
+    memPctNode: 21,
+    node: 22,
+    ip: 23,
+    createdAt: 24
 } as const;
 
 export const POD_COLUMN_KEYS = [
@@ -24,6 +36,18 @@ export const POD_COLUMN_KEYS = [
     'status',
     'statusTone',
     'restarts',
+    'cpuUse',
+    'cpuReq',
+    'cpuLim',
+    'cpuPctReq',
+    'cpuPctLim',
+    'cpuPctNode',
+    'memUse',
+    'memReq',
+    'memLim',
+    'memPctReq',
+    'memPctLim',
+    'memPctNode',
     'node',
     'ip',
     'createdAt'

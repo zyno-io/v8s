@@ -472,7 +472,7 @@ To v8s, [Warpgate](https://github.com/warp-tech/warpgate) is an ordinary Kuberne
 - **One target per cluster and role.** A read-only `operator` target and a writable `cluster-admin` target are two contexts. [Link them](/guide/clusters#linked-read-and-write-contexts) so writes switch to the admin target.
 - **Elevation is Warpgate's.** Time-boxed elevated sessions are granted in Warpgate. If the write target rejects a request, v8s reports "write context rejected" and the read context keeps working. See [Troubleshooting](/guide/troubleshooting#write-context-rejected).
 - **Attribution.** Warpgate records the person and the session. The Kubernetes audit log shows Warpgate's target role identity. That is Warpgate's design.
-- **Lean traffic.** Warpgate checks every request, so v8s keeps traffic modest: protobuf where possible, no polling, and no connections while nobody has v8s open. Long watches are re-established at least every 30 minutes, so each is re-authorized at least that often.
+- **Lean traffic.** Warpgate checks every request, so v8s keeps traffic modest: protobuf where possible, no polling except metrics.k8s.io while usage columns are on screen, and no connections while nobody has v8s open. Long watches are re-established at least every 30 minutes, so each is re-authorized at least that often.
 
 ## Related
 

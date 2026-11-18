@@ -101,6 +101,7 @@ type ClientConn struct {
 	authz authv1.SelfSubjectAccessReviewInterface
 	cs    *kubernetes.Clientset
 	cfg   *rest.Config
+	mc    metricsClient
 }
 
 func (c *ClientConn) Dynamic() dynamic.Interface                     { return c.dyn }

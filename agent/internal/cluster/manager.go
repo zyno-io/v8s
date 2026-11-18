@@ -43,6 +43,18 @@ type Manager struct {
 	// ForbiddenRetry is how long an unreferenced watch whose LIST was refused (Forbidden, NotFound)
 	// stays stopped before it is retried (default DefaultForbiddenRetry).
 	ForbiddenRetry time.Duration
+	// Usage polling (docs/performance.md §5): the poll interval, the interval for cluster-wide pod lists over
+	// BigPods items, how long the last snapshot is kept once nothing wants usage, the minimum gap between
+	// attempts and the backoff cap. Tests shorten them.
+	UsageInterval    time.Duration
+	UsageBigInterval time.Duration
+	UsageKeep        time.Duration
+	UsageMinGap      time.Duration
+	UsageMaxBackoff  time.Duration
+
+	umu     sync.Mutex // guards demands
+	usageMu sync.Mutex // serializes reconcileUsage (compute + apply)
+	demands map[*UsageDemand]struct{}
 
 	problems *problems.Hub
 
@@ -64,7 +76,9 @@ func NewManager(ctx context.Context, src Source, eng *view.Engine, log *slog.Log
 	}
 	return &Manager{src: src, eng: eng, log: log, runners: map[string]*runner{}, listeners: map[chan struct{}]struct{}{},
 		ctx: ctx, selected: []string{}, scopes: map[*Scope]struct{}{},
-		Linger: DefaultLinger, EventsLinger: DefaultEventsLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery, ForbiddenRetry: DefaultForbiddenRetry}
+		Linger: DefaultLinger, EventsLinger: DefaultEventsLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery, ForbiddenRetry: DefaultForbiddenRetry,
+		UsageInterval: DefaultUsageInterval, UsageBigInterval: DefaultUsageBigInterval, UsageKeep: DefaultUsageKeep,
+		UsageMinGap: DefaultUsageMinGap, UsageMaxBackoff: DefaultUsageMaxBackoff}
 }
 
 func (m *Manager) Source() Source { return m.src }
@@ -252,6 +266,7 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 		}
 	}
 	m.reconcileAll()
+	m.reconcileUsage()
 	m.kick()
 	return m.States(), nil
 }
@@ -317,7 +332,10 @@ func (m *Manager) start(id string) (*runner, error) {
 		r.wg.Add(1)
 		go func() { defer r.wg.Done(); r.pe.Run(ctx) }()
 	}
+	r.usage = newUsageState(r) // before startTier0: the discovery loop kicks it
 	r.startTier0()
+	r.wg.Add(1)
+	go r.usage.loop()
 	return r, nil
 }
 

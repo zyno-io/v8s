@@ -12,6 +12,21 @@ Custom resources and everything else get a generic view built from the type's pr
 
 With several clusters selected, a table merges them and adds a cluster column. Sorting, filtering, and counts cover the merged set.
 
+### CPU and memory
+
+Pod tables show CPU and memory as one dense block, in the style of k9s: right-aligned integers with the unit in the header, so a row stays readable at a glance. By default it holds **CPU** (millicores), **%R** and **%L** (usage as a percentage of the pod's request and limit), then **MEM** (MiB), **%R** and **%L**. Choose more from **Columns**: the requests and limits themselves, and usage as a percentage of the pod's node.
+
+- `—` means there is no data: metrics-server does not report the pod (Pending, Completed, just started), or the numbers have not arrived yet. `n/a` means there is nothing to divide by: the pod has no request or no limit. A pod only has a limit when every container has one, as in `kubectl`.
+- Percentages of a limit turn amber from 90 % and red from 100 %; percentages of a node turn amber from 90 %. Requests are never coloured: running above a request is normal for burstable pods.
+- Sort by any of them from its header. A value sorts before `n/a`, which sorts before `—`, in both directions, so the busiest pods are on top whichever way you sort.
+- Hover the block for the full picture: used, requested and limit with percentages, and the share of the node's allocatable, in cores or GiB from a core or a GiB up.
+- Requests and limits come from the pod spec, as in `kubectl`, not from an in-place resize status.
+- On a phone, each card gets a `cpu 16m · mem 163Mi` line.
+
+Usage needs [metrics-server](https://github.com/kubernetes-sigs/metrics-server) in the cluster, and permission to read `metrics.k8s.io`. v8s asks for it only while a table shows usage (or sorts by it), every 30 seconds, for the namespaces on screen; a tab hidden for 30 seconds stops asking. Without metrics-server the usage columns are not shown, and **Columns** says why; a cluster where it is missing or refusing shows a small "no metrics" tag next to the sync tag.
+
+Columns you hide or show are remembered per resource type. Resizing a column no longer reveals the columns that are hidden by default (the IP column, the requests and limits).
+
 ## The detail drawer
 
 Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page.

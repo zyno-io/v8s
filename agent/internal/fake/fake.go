@@ -35,6 +35,8 @@ type Config struct {
 	// RBAC makes the second cluster read-only for mutations and adds the context "<name>-admin" that can
 	// be linked to it as its write context (settings.links).
 	RBAC bool
+	// NoMetrics removes metrics.k8s.io from discovery (and answers NotFound), for the metrics-server-absent state.
+	NoMetrics bool
 }
 
 // ParseConfig parses "clusters=3,pods=50000,churn=200".
@@ -60,6 +62,8 @@ func ParseConfig(s string) (Config, error) {
 			c.RBAC = n != 0
 		case "lograte":
 			c.LogRate = n
+		case "metrics":
+			c.NoMetrics = n == 0
 		default:
 			return c, fmt.Errorf("unknown --fake option %q", k)
 		}
@@ -135,7 +139,8 @@ func (s *Source) Backend(id string) (kube.Backend, error) {
 			w = NewWorld(c)
 			s.worlds[base] = w
 		}
-		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}, rate: s.cfg.LogRate}, nil
+		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}, rate: s.cfg.LogRate,
+			noMetrics: s.cfg.NoMetrics}, nil
 	}
 	return nil, fmt.Errorf("unknown fake cluster %q", id)
 }
@@ -308,14 +313,30 @@ func (c *Cluster) pod(p *fakePod) *corev1.Pod {
 		if i > 0 {
 			name = "sidecar-" + strconv.Itoa(i)
 		}
-		pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: name, Image: "registry.example.com/" + ns + "/" + app + ":latest"})
+		prof := &mainProfiles[p.app%6]
+		if i > 0 {
+			prof = &sideProfiles[p.app%6]
+		}
+		pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: name, Image: "registry.example.com/" + ns + "/" + app + ":latest",
+			Resources: corev1.ResourceRequirements{Requests: prof.req, Limits: prof.lim}}) // the shared, read-only lists
 		cs := corev1.ContainerStatus{Name: name, Ready: true, RestartCount: p.restarts / int32(p.nc), State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}
 		if i == 0 {
 			cs.RestartCount = p.restarts - (p.restarts/int32(p.nc))*int32(p.nc-1)
 		}
 		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, cs)
 	}
+	if hasOverhead(p) {
+		pod.Spec.Overhead = podOverhead
+	}
 	st := &pod.Status
+	if hasNativeSidecar(p) { // a native sidecar: a restartable init container, counted in ready/containers
+		always := corev1.ContainerRestartPolicyAlways
+		started := true
+		pod.Spec.InitContainers = []corev1.Container{{Name: "proxy", Image: "registry.example.com/mesh/proxy:1", RestartPolicy: &always,
+			Resources: corev1.ResourceRequirements{Requests: nativeSidecar.req, Limits: nativeSidecar.lim}}}
+		st.InitContainerStatuses = []corev1.ContainerStatus{{Name: "proxy", Ready: true, Started: &started,
+			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}
+	}
 	st.Phase = corev1.PodRunning
 	ready := corev1.ConditionTrue
 	setFirst := func(cs corev1.ContainerStatus) { st.ContainerStatuses[0] = cs }

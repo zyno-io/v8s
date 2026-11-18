@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/usage"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
@@ -157,7 +158,7 @@ func dir(c int, desc bool) int {
 }
 
 // buildCmp compiles the query's total order: sort keys, then name, namespace, cluster, handle.
-func (e *Engine) buildCmp(n *Norm) cmpFn {
+func (e *Engine) buildCmp(n *Norm, v *View) cmpFn {
 	var keys []cmpFn
 	for _, k := range n.sort {
 		desc := k.desc
@@ -193,6 +194,21 @@ func (e *Engine) buildCmp(n *Norm) cmpFn {
 					return 1
 				}
 				return 0
+			})
+		case ingest.SrcUsage, ingest.SrcRes:
+			// Missing values sort last in both directions: rank (value, n/a, none) ascending, then the value by direction.
+			uk, res := c.Use, c.Src == ingest.SrcRes
+			keys = append(keys, func(a, b *entry) int {
+				var sa, sb *usage.Slot
+				if !res {
+					sa, sb = v.slot(a), v.slot(b)
+				}
+				va, ra := usageOrd(uk, a.row, sa)
+				vb, rb := usageOrd(uk, b.row, sb)
+				if ra != rb {
+					return cmp.Compare(ra, rb)
+				}
+				return dir(cmp.Compare(va, vb), desc)
 			})
 		case ingest.SrcCell:
 			idx := c.Idx
@@ -307,13 +323,32 @@ func sortSerial(es []entry, c cmpFn) {
 // fall through to the full comparison. Only the default order and plain name order have one.
 type keyFn func(e *entry) uint64
 
-func (e *Engine) buildKey(n *Norm) keyFn {
+func (e *Engine) buildKey(n *Norm, v *View) keyFn {
 	def := len(n.sort) == 2 && n.sort[0] == sortKey{col: "statusTone"} && n.sort[1] == sortKey{col: "name"}
 	if def {
 		return func(e *entry) uint64 { return uint64(e.rank)<<56 | e.pfx>>8 }
 	}
 	if len(n.sort) == 1 && n.sort[0] == (sortKey{col: "name"}) {
 		return func(e *entry) uint64 { return e.pfx }
+	}
+	if len(n.sort) >= 1 {
+		if c := n.Mod.Col(n.sort[0].col); c != nil && (c.Src == ingest.SrcUsage || c.Src == ingest.SrcRes) {
+			// key = rank<<62 | value (inverted when descending): ranks ascend either way, so missing values stay last.
+			uk, res, desc := c.Use, c.Src == ingest.SrcRes, n.sort[0].desc
+			const lim = 1<<62 - 1
+			return func(en *entry) uint64 {
+				var sl *usage.Slot
+				if !res {
+					sl = v.slot(en)
+				}
+				val, rank := usageOrd(uk, en.row, sl)
+				val = min(val, lim)
+				if desc {
+					val = lim - val
+				}
+				return uint64(rank)<<62 | val
+			}
+		}
 	}
 	return nil
 }

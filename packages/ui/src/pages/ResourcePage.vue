@@ -8,13 +8,13 @@ import NamespaceMenu from '@/components/NamespaceMenu.vue';
 import ResourceTable from '@/components/ResourceTable.vue';
 import { getPodsAll, kinds } from '@/lib/agent.ts';
 import { phaseColor } from '@/lib/colors.ts';
-import { planColumns } from '@/lib/columns.ts';
+import { guessPodsUsage, planColumns } from '@/lib/columns.ts';
 import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
 import { decorFor } from '@/lib/table-decor.ts';
-import { isPhone } from '@/lib/viewport.ts';
+import { isPhone, usePageVisible } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { isFiltered, useTableStore } from '@/stores/table.ts';
@@ -27,7 +27,13 @@ const clusters = useClustersStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
 const state = table.of(props.gvr);
-const { handle, counts, chips, hasTone } = useResourceView(props.gvr);
+// Pods subscribe with a guess of the usage flag (known keys, saved layout, sort), so the first rows already carry usage.
+const { handle, counts, chips, hasTone } = useResourceView(props.gvr, {
+    usage:
+        props.gvr === PODS_GVR &&
+        !(clusters.states.length > 0 && clusters.states.every(s => s.metrics === 'absent')) &&
+        guessPodsUsage(settings.layout(props.gvr), state.sort)
+});
 const podsAll = props.gvr === PODS_GVR ? getPodsAll() : null;
 
 onMounted(() => (table.currentGvr = props.gvr));
@@ -42,8 +48,34 @@ const starred = computed(() => settings.isStarred(props.gvr));
 
 const showCluster = computed(() => clusters.activeIds.length > 1);
 const decor = decorFor(props.gvr);
+// Every active cluster without a metrics API: the metrics columns are dropped (the Columns menu lists them disabled).
+const metricsOff = computed(() => clusters.states.length > 0 && clusters.states.every(s => s.metrics === 'absent'));
 const plan = computed(() =>
-    planColumns(handle.columns.value, { gvr: props.gvr, showCluster: showCluster.value, layout: settings.layout(props.gvr), decor })
+    planColumns(handle.columns.value, {
+        gvr: props.gvr,
+        showCluster: showCluster.value,
+        layout: settings.layout(props.gvr),
+        decor,
+        metricsOff: metricsOff.value
+    })
+);
+
+// Usage is polled by the agent only while this page needs it: a metrics column on screen or a sort by one (sorting needs a
+// value for every row, not just the visible ones), and the tab not hidden for 30 s.
+const pageVisible = usePageVisible(30_000);
+const sortsMetric = computed(() => state.sort.some(s => plan.value.metricKeys.includes(s.col)));
+const usageWanted = computed(() => !metricsOff.value && (plan.value.hasMetrics || sortsMetric.value) && pageVisible.value);
+watch(usageWanted, v => handle.update({ usage: v }), { immediate: true });
+const metricTags = computed(() =>
+    usageWanted.value
+        ? clusters.states
+              .filter(s => s.metrics && s.metrics !== 'ok')
+              .map(s => ({
+                  id: s.id,
+                  text: `${clusters.nameById.get(s.id) ?? s.id} · ${s.metrics === 'absent' ? 'no metrics' : s.metrics === 'forbidden' ? 'metrics not allowed' : 'metrics unavailable'}`,
+                  title: s.metricsMessage ?? ''
+              }))
+        : []
 );
 const unavailable = computed(() => handle.columns.value !== null && handle.columns.value.length === 0);
 
@@ -68,10 +100,12 @@ const syncTags = computed(() =>
     })
 );
 
+// Words are lowercased in the sentence; metric labels (%CPU/L, MEM) are names and stay as they are.
+const sortName = (label: string) => (/^[%A-Z/]+$/.test(label) ? label : label.toLowerCase());
 const colLabel = (key: string) => plan.value.all.find(c => c.key === key)?.label ?? key;
 const sortLabel = computed(() =>
     state.sort.length
-        ? 'Sorted by ' + state.sort.map(s => colLabel(s.col).toLowerCase() + (s.desc ? ' (desc)' : '')).join(', then ')
+        ? 'Sorted by ' + state.sort.map(s => sortName(colLabel(s.col)) + (s.desc ? ' (desc)' : '')).join(', then ')
         : hasTone.value
           ? 'Sorted by status, then name'
           : 'Default order'
@@ -96,14 +130,20 @@ function saveWidth(key: string, width: number) {
 function toggleColumn(key: string) {
     const cur = settings.layout(props.gvr);
     const hidden = new Set(cur.hidden ?? []);
-    if (!hidden.delete(key)) hidden.add(key);
-    void settings.saveLayout(props.gvr, { ...cur, hidden: [...hidden] }).catch(() => {});
+    const shown = new Set(cur.shown ?? []);
+    if (plan.value.visibleKeys.has(key)) {
+        hidden.add(key);
+        shown.delete(key);
+    } else {
+        hidden.delete(key);
+        if (plan.value.defaultHidden.has(key)) shown.add(key); // a default-hidden column is shown by listing it, not by un-hiding it
+    }
+    void settings.saveLayout(props.gvr, { ...cur, hidden: [...hidden], shown: [...shown] }).catch(() => {});
 }
 function resetLayout() {
     void settings.saveLayout(props.gvr, {}).catch(() => {});
 }
 const colsOpen = ref(false);
-const hiddenSet = computed(() => new Set(settings.layout(props.gvr).hidden ?? []));
 
 function star() {
     void settings.toggleStarred(props.gvr).catch(e => ui.toast('danger', String(e)));
@@ -137,6 +177,7 @@ function star() {
             </button>
             <span class="muted summary">{{ summary }}</span>
             <div class="grow"></div>
+            <span v-for="t in metricTags" :key="'m' + t.id" class="tag sync warning" :title="t.title" data-testid="metrics-tag">{{ t.text }}</span>
             <span v-for="t in syncTags" :key="t.id" class="tag sync" :class="t.tone" :title="t.title"
                 ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}</span
             >
@@ -145,12 +186,13 @@ function star() {
                 <template v-if="colsOpen">
                     <div class="back" @mousedown="colsOpen = false"></div>
                     <div class="floating colmenu" role="dialog" aria-label="Columns">
+                        <p v-if="metricsOff" class="cnote muted">CPU and memory usage need metrics-server, which is not installed.</p>
                         <label v-for="c in plan.all" :key="c.key" class="copt">
                             <input
                                 class="cb"
                                 type="checkbox"
-                                :checked="!hiddenSet.has(c.key)"
-                                :disabled="!c.hideable"
+                                :checked="plan.visibleKeys.has(c.key) && !c.note"
+                                :disabled="!c.hideable || !!c.note"
                                 @change="toggleColumn(c.key)"
                             />{{ c.label }}
                         </label>
@@ -320,6 +362,11 @@ h1 {
     border-radius: 5px;
     font-size: 13px;
     cursor: pointer;
+}
+.cnote {
+    margin: 2px 6px 6px;
+    font-size: 12px;
+    line-height: 1.35;
 }
 .copt:hover {
     background: var(--hover);

@@ -14,6 +14,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/hosted/config"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	"github.com/zyno-io/v8s/agent/internal/usage"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	authv1 "k8s.io/api/authorization/v1"
@@ -235,6 +236,20 @@ func (b readOnlyBackend) API(gvr string, m *ingest.Module) (ingest.API, error) {
 }
 func (b readOnlyBackend) Discover(ctx context.Context) ([]disco.Resource, error) {
 	return b.inner.Discover(ctx)
+}
+
+// PodMetrics and NodeMetrics forward the read-only metrics.k8s.io lists (reads are allowed for a kiosk).
+func (b readOnlyBackend) PodMetrics(ctx context.Context, namespace string) ([]usage.PodSample, error) {
+	if m, ok := kube.MetricsOf(b.inner); ok {
+		return m.PodMetrics(ctx, namespace)
+	}
+	return nil, apierrors.NewNotFound(schema.GroupResource{Group: "metrics.k8s.io", Resource: "pods"}, "")
+}
+func (b readOnlyBackend) NodeMetrics(ctx context.Context) ([]usage.NodeSample, error) {
+	if m, ok := kube.MetricsOf(b.inner); ok {
+		return m.NodeMetrics(ctx)
+	}
+	return nil, apierrors.NewNotFound(schema.GroupResource{Group: "metrics.k8s.io", Resource: "nodes"}, "")
 }
 
 type roDynamic struct{ dynamic.Interface }

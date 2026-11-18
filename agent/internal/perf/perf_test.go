@@ -264,6 +264,30 @@ func BenchmarkProject10k(b *testing.B) {
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/1e6, "ms/10k-pods")
 }
 
+// BenchmarkProject10kNoResources is BenchmarkProject10k over the same pods with their requests, limits and overhead
+// stripped: the cost of the wider row alone, without podRes work (what main's resource-less fake pods measure).
+func BenchmarkProject10kNoResources(b *testing.B) {
+	c := fake.NewCluster("p", 10000, 0, 1)
+	defer c.Stop()
+	pods := listPods(b, c)
+	for i := range pods {
+		p := &pods[i]
+		p.Spec.Overhead, p.Spec.InitContainers = nil, nil
+		p.Spec.Containers = slices.Clone(p.Spec.Containers)
+		for j := range p.Spec.Containers {
+			p.Spec.Containers[j].Resources = corev1.ResourceRequirements{}
+		}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := range pods {
+			_ = ingest.Project(&pods[j])
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/1e6, "ms/10k-pods")
+}
+
 // BenchmarkReflectorIngest10k: fake API -> ListerWatcher (projection) -> client-go reflector -> store.
 func BenchmarkReflectorIngest10k(b *testing.B) {
 	c := fake.NewCluster("r", 10000, 0, 1)

@@ -322,6 +322,52 @@ async function main() {
             await page.getByTestId('drawer').waitFor();
         });
 
+        // ---- pod usage (metrics.k8s.io through the fake agent) ----
+        await step('pods: CPU/MEM usage shows; sorting %CPU/L desc orders numerically with n/a last; hover title says "requested"', async () => {
+            await page.keyboard.press('Escape');
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            const rows = page.locator('.scroller .row:not(.sk)');
+            await rows.first().waitFor({ timeout: 30000 });
+            // The usage block is one set of header buttons; its cells fill in once the first poll lands.
+            for (const label of ['CPU', '%CPU/R', '%CPU/L', 'MEM', '%MEM/R', '%MEM/L'])
+                await page.getByRole('button', { name: `Sort by ${label}`, exact: true }).waitFor();
+            await page.locator('.scroller .row .ub').filter({ hasText: /\d/ }).first().waitFor({ timeout: 30000 });
+            // The default-hidden columns are not on screen.
+            assert.equal(await page.getByRole('button', { name: 'Sort by CPU req', exact: true }).count(), 0);
+
+            const lim = page.getByRole('button', { name: 'Sort by %CPU/L', exact: true });
+            await lim.click();
+            await lim.click();
+            await page.getByText('Sorted by %CPU/L (desc)').waitFor();
+            // One synchronous read: the third sub-column of every rendered usage block.
+            await page.waitForFunction(() => {
+                const v = [...document.querySelectorAll('.scroller .row .ub')].map(e => e.children[2]?.textContent?.trim() ?? '');
+                return v.length > 5 && /^\d+$/.test(v[0]) && Number(v[0]) >= 90; // the re-sorted patch, not the ascending one before it
+            });
+            const cells = await page.evaluate(() =>
+                [...document.querySelectorAll('.scroller .row:not(.sk) .ub')].map(e => e.children[2].textContent!.trim())
+            );
+            const nums = cells.filter(c => /^\d+$/.test(c)).map(Number);
+            assert.ok(nums.length >= 5, `numeric %CPU/L cells: ${cells.join(' ')}`);
+            for (let i = 1; i < nums.length; i++) assert.ok(nums[i - 1] >= nums[i], `%CPU/L not in descending numeric order: ${nums.join(' ')}`);
+            const firstMissing = cells.findIndex(c => !/^\d+$/.test(c));
+            if (firstMissing >= 0)
+                assert.ok(
+                    cells.slice(firstMissing).every(c => !/^\d+$/.test(c)),
+                    `a number after n/a or a dash: ${cells.join(' ')}`
+                );
+            assert.ok(nums[0] >= 90, 'the busiest pod is at least 90 % of its limit in the fake');
+            assert.ok((await page.locator('.scroller .row:not(.sk) .ub .w, .scroller .row:not(.sk) .ub .d').count()) > 0, 'hot pods are coloured');
+            const title = await rows.first().locator('.ub').getAttribute('title');
+            assert.match(title ?? '', /requested/);
+            assert.match(title ?? '', /limit/);
+            await page.screenshot({ path: shot('pods-usage') });
+            // Back to the default order for the steps that follow.
+            await lim.click();
+            await lim.click();
+        });
+
         // ---- IP search ----
         const openPalette = async (text: string) => {
             await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
@@ -337,6 +383,11 @@ async function main() {
             await page.waitForURL(/\/pods/);
             const rows = page.locator('.scroller .row:not(.sk)');
             await rows.first().waitFor({ timeout: 30000 });
+            // The IP column is hidden until shown from the Columns menu.
+            await page.getByRole('button', { name: 'Columns', exact: true }).click();
+            await page.getByRole('dialog', { name: 'Columns' }).getByLabel('IP', { exact: true }).check();
+            await page.keyboard.press('Escape');
+            await page.getByRole('dialog', { name: 'Columns' }).waitFor({ state: 'hidden' });
             let podName = '';
             let podIP = '';
             for (const row of await rows.all()) {
@@ -572,6 +623,20 @@ async function main() {
             await p.locator('.lrow').first().waitFor({ timeout: 20000 });
             await p.screenshot({ path: shot('phone-logs') });
             assert.deepEqual(perr, [], 'no page errors on the phone');
+            await ctx.close();
+        });
+
+        await step('phone: the pod card shows cpu and memory', async () => {
+            const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+            const p = await ctx.newPage();
+            await p.goto(stack.url);
+            await connectIfAsked(p);
+            await p.goto(`http://127.0.0.1:${stack.previewPort}/pods`);
+            await p.locator('.pcard:not(.sk)').first().waitFor({ timeout: 30000 });
+            const line = p.locator('.pcard .ucard').first();
+            await line.waitFor({ timeout: 30000 });
+            assert.match(await line.innerText(), /^cpu \d+m · mem \d+Mi$/);
+            await p.screenshot({ path: shot('phone-pods-usage') });
             await ctx.close();
         });
 

@@ -28,6 +28,26 @@ const (
 	SrcCell  // Row.cells[Idx]
 	SrcOwner // the controlling owner's name (dict)
 	SrcIP    // the row's IP tokens of Col.IPField, formatted at encode time (not a cell)
+	SrcUsage // derived from the row and the view's usage snapshot slot (not a cell); Col.Use says which
+	SrcRes   // read from the row's Res (requests, limits, allocatable); Col.Use says which (not a cell)
+)
+
+// UseKind says which value a SrcUsage or SrcRes column shows.
+type UseKind uint8
+
+const (
+	UseCPU       UseKind = iota + 1 // CPU in use (millicores)
+	UseMem                          // memory in use (bytes on the slot, MiB on the wire)
+	UseCPUPctReq                    // CPU usage / CPU request
+	UseCPUPctLim
+	UseCPUPctNode // CPU usage / allocatable CPU of the pod's node (nodes: of the node itself)
+	UseMemPctReq
+	UseMemPctLim
+	UseMemPctNode
+	ResCPUReq // pods: requests; nodes: allocatable
+	ResCPULim
+	ResMemReq
+	ResMemLim
 )
 
 // Col is one column of a kind's view: the wire schema plus how to read, sort and filter it.
@@ -36,6 +56,7 @@ type Col struct {
 	Src        ColSrc
 	Idx        int       // cell index for SrcCell
 	IPField    ipx.Field // SrcIP: the field whose tokens the column shows
+	Use        UseKind   // SrcUsage / SrcRes: the value shown
 	Sortable   bool
 	Filterable bool
 }
@@ -72,6 +93,8 @@ type Module struct {
 	IPOrder int
 	// IPDetailCol names the cell column whose value is shown as the hit's detail (EndpointSlice: service).
 	IPDetailCol string
+	// Usage says which usage source feeds the module's SrcUsage columns: "pods", "nodes", "capacity", or "" (none).
+	Usage string
 	// NoWatchList forces a paginated LIST + watch (no streaming list) for kinds whose list is not a plain API list.
 	NoWatchList bool
 	// NewAPI builds the list/watch source on a real REST client (mode B and virtual kinds). Nil: typed or Table.
@@ -166,6 +189,19 @@ func cStr(key, label string, w int) Col {
 // cIP is the IP column of tokens with field f: sortable numerically, filterable by text.
 func cIP(key, label string, w int, f ipx.Field) Col {
 	return Col{Column: protocol.Column{Key: key, Type: protocol.ColStr, Label: label, Width: w}, Src: SrcIP, IPField: f, Sortable: true, Filterable: true}
+}
+
+// cUse is a usage column (derived from the view's usage snapshot). Not filterable (usage filters are not offered).
+// Unit is the wire unit ("millicores" | "MiB" | "permille"); metrics marks values that need metrics.k8s.io.
+func cUse(key, label, short string, k UseKind, unit string, w int, hidden bool) Col {
+	return Col{Column: protocol.Column{Key: key, Type: protocol.ColInt, Label: label, Short: short, Width: w, Align: "right",
+		Unit: unit, Metrics: true, Hidden: hidden}, Src: SrcUsage, Use: k, Sortable: true}
+}
+
+// cRes is a requests / limits / allocatable column read from the row (no metrics needed).
+func cRes(key, label, short string, k UseKind, unit string, w int, hidden bool) Col {
+	return Col{Column: protocol.Column{Key: key, Type: protocol.ColInt, Label: label, Short: short, Width: w, Align: "right",
+		Unit: unit, Hidden: hidden}, Src: SrcRes, Use: k, Sortable: true}
 }
 
 func cInt(key, label string, w int) Col {

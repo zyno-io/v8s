@@ -31,7 +31,7 @@ The UI holds only the rows around what you are looking at, usually a few hundred
 
 ## 4. v8s is gentle on your API servers
 
-v8s must never be the reason a cluster is slow. It uses streaming lists (WatchList) where the cluster supports them, so the API server serves the initial state from cache without a big allocation. It honors rate limits and `429` responses, and it caps its concurrent requests and watches per cluster. Large objects such as vulnerability reports are watched as tiny table rows and fetched in full only when you open one. Deselected clusters release their memory.
+v8s must never be the reason a cluster is slow. It uses streaming lists (WatchList) where the cluster supports them, so the API server serves the initial state from cache without a big allocation. It honors rate limits and `429` responses, and it caps its concurrent requests and watches per cluster. Large objects such as vulnerability reports are watched as tiny table rows and fetched in full only when you open one. Deselected clusters release their memory. CPU and memory usage is read from metrics-server only while a visible table shows usage columns (or sorts by one), every 30 seconds, and only for the namespaces on screen.
 
 ## The budgets
 

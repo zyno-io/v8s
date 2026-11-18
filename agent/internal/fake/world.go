@@ -513,6 +513,10 @@ func Discovery() []disco.Resource {
 		out = append(out, disco.Resource{Group: d.group(), Version: d.version(), Resource: d.resource, Kind: d.kind, Namespaced: d.namespaced,
 			ShortNames: d.short, Verbs: []string{"create", "delete", "get", "list", "patch", "update", "watch"}})
 	}
+	// metrics.k8s.io: served by an aggregated API with no watch, so it is never listed as a kind.
+	out = append(out,
+		disco.Resource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods", Kind: "PodMetrics", Namespaced: true, Verbs: []string{"get", "list"}},
+		disco.Resource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes", Kind: "NodeMetrics", Verbs: []string{"get", "list"}})
 	sort.Slice(out, func(i, j int) bool { return out[i].GVR() < out[j].GVR() })
 	return out
 }
