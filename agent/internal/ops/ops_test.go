@@ -1019,6 +1019,11 @@ func TestReadContextCannotCheck(t *testing.T) {
 		if err != nil || r.ViaWrite || r.ContextID != "c1" {
 			t.Fatalf("%+v %v", r, err)
 		}
+		// A port-forward changes nothing either (Hubble's relay, the problems monitor).
+		r, err = e.s.Route(ctx, "c1", "create", "v1/pods", "portforward", "kube-system", "hubble-relay-0")
+		if err != nil || r.ViaWrite || r.ContextID != "c1" {
+			t.Fatalf("portforward: %+v %v", r, err)
+		}
 	})
 	t.Run("a transient review failure does not escalate", func(t *testing.T) {
 		for name, terr := range map[string]error{

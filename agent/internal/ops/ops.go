@@ -328,7 +328,7 @@ func (s *Service) routeSub(ctx context.Context, cluster, verb string, gvr schema
 	// Allowed, or the read context cannot answer and there is no write context: the API server decides. With a
 	// write context, a read context that cannot even run the access review (a gateway's read-only target refusing
 	// the POST) is treated like a refusal, so the mutation goes to the write context instead of failing there.
-	if allowed || (rerr != nil && (wctx == "" || !escalates(verb, rerr))) {
+	if allowed || (rerr != nil && (wctx == "" || !escalates(verb, sub, rerr))) {
 		return cluster, rc, false, nil
 	}
 	if rerr != nil {
@@ -400,7 +400,7 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 		return protocol.AccessResult{Allowed: true}
 	}
 	wctx, auto := s.cfg.Links(ck.Cluster)
-	if wctx == "" || (rerr != nil && !escalates(ck.Verb, rerr)) {
+	if wctx == "" || (rerr != nil && !escalates(ck.Verb, "", rerr)) {
 		if rerr != nil {
 			return unable(rerr)
 		}
@@ -450,11 +450,13 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 // escalates reports whether a failed read-context access review sends a request to the linked write context, as a
 // refusal would. Never for reads (logs, uid checks: the read context serves them, and the server decides), and never
 // for a transient failure (timeout, cancellation, 429/5xx): a blip must not run a write as the elevated identity.
+// A port-forward (create pods/portforward) counts as a read here: it changes nothing, and Hubble's relay connection
+// and the background problems monitor depend on it working through the read context.
 // What remains is a read context that cannot run the review at all, e.g. a gateway's read-only target refusing
 // the POST (EOF, connection reset, 401/403/405 from the gateway).
-func escalates(verb string, err error) bool {
-	switch verb {
-	case "get", "list", "watch":
+func escalates(verb, sub string, err error) bool {
+	switch {
+	case verb == "get", verb == "list", verb == "watch", sub == "portforward":
 		return false
 	}
 	var ne net.Error
