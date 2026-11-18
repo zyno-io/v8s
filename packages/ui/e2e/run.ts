@@ -783,11 +783,17 @@ async function main() {
             const sel = page.getByRole('dialog', { name: 'Choose clusters' });
             await sel.waitFor();
             const row = sel.locator('.lrow').first();
-            const before = await row.boundingBox();
+            // Let the panel's open animation finish: a box read mid-animation moves even though nothing resizes.
+            await sel.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(a => a.finished)));
+            const size = async () => {
+                const b = await row.boundingBox();
+                return b && { width: b.width, height: b.height };
+            };
+            const before = await size();
             await row.hover();
             assert.equal(await sel.getByText(/Link write context/).count(), 0, 'no per-row link control');
             assert.equal(await sel.getByRole('button', { name: /Unlink/ }).count(), 0, 'no per-row unlink control');
-            assert.deepEqual(await row.boundingBox(), before, 'row does not resize on hover');
+            assert.deepEqual(await size(), before, 'row does not resize on hover');
             await sel.getByRole('button', { name: /^Linked contexts…/ }).click();
             const dlg = page.getByRole('dialog', { name: 'Linked contexts' });
             await dlg.waitFor();
