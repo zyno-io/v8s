@@ -130,7 +130,7 @@ export function isBulkOrCross(count: number, clusterCount: number): boolean {
 /** What a confirm names: the object (or the count) and the cluster names, spelled out. */
 export function targetSummary(targets: readonly { namespace?: string; name?: string }[], clusterNames: readonly string[]): string {
     const where =
-        clusterNames.length > 1 ? ` across ${clusterNames.length} clusters (${clusterNames.join(', ')})` : ` on ${clusterNames[0] ?? 'the cluster'}`;
+        clusterNames.length > 1 ? ` in ${clusterNames.length} clusters (${clusterNames.join(', ')})` : ` on ${clusterNames[0] ?? 'the cluster'}`;
     if (targets.length === 1) {
         const t = targets[0];
         return `${t.namespace ? t.namespace + '/' : ''}${t.name ?? ''}${where}`;

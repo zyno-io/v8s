@@ -120,6 +120,36 @@ function removeBookmark(i: number) {
                 formatCount(problemCount)
             }}</span></router-link
         >
+        <template v-for="s in model.sections" :key="'c-' + s.id">
+            <template v-if="s.id === 'cluster'">
+                <div v-for="it in s.items" :key="it.to ?? it.gvr" class="navrow">
+                    <router-link class="nav" :class="{ active: it.to ? route.path === it.to : activeGvr === it.gvr }" :to="it.to ?? gvrPath(it.gvr)"
+                        >{{ it.label }}<span class="n">{{ countFor(it.gvr) }}</span></router-link
+                    >
+                    <button
+                        v-if="!it.to"
+                        class="star"
+                        :class="{ on: settings.isStarred(it.gvr) }"
+                        type="button"
+                        :aria-pressed="settings.isStarred(it.gvr)"
+                        :aria-label="settings.isStarred(it.gvr) ? `Unstar ${it.label}` : `Star ${it.label}`"
+                        @click="toggleStar(it.gvr)"
+                    >
+                        <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 16 16"
+                            :fill="settings.isStarred(it.gvr) ? 'currentColor' : 'none'"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                        >
+                            <path d="M8 1.8l1.9 4 4.3.5-3.2 3 .9 4.3L8 11.4 4.1 13.6 5 9.3l-3.2-3 4.3-.5z" />
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </template>
 
         <template v-if="integrations.detected.security">
             <div class="navsec">Security</div>
@@ -134,8 +164,8 @@ function removeBookmark(i: number) {
             <router-link class="nav" to="/network/status">Hubble status</router-link>
         </template>
 
-        <template v-for="s in model.sections" :key="s.id">
-            <div v-if="s.id !== 'cluster'" class="navsec">
+        <template v-for="s in model.sections.filter(x => x.id !== 'cluster')" :key="s.id">
+            <div class="navsec">
                 <button class="sechead" type="button" :aria-expanded="!collapsed.has(s.id)" @click="toggleSection(s.id)">
                     <svg
                         class="chev"
@@ -152,7 +182,7 @@ function removeBookmark(i: number) {
                     >{{ s.title }}
                 </button>
             </div>
-            <template v-if="s.id === 'cluster' || !collapsed.has(s.id)">
+            <template v-if="!collapsed.has(s.id)">
                 <div v-for="it in s.items" :key="it.to ?? it.gvr" class="navrow">
                     <router-link class="nav" :class="{ active: it.to ? route.path === it.to : activeGvr === it.gvr }" :to="it.to ?? gvrPath(it.gvr)"
                         >{{ it.label }}<span class="n">{{ countFor(it.gvr) }}</span></router-link

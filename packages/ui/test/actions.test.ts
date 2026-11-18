@@ -134,6 +134,6 @@ describe('confirm helpers', () => {
     it('targetSummary spells out the count and cluster names', async () => {
         const { targetSummary } = await import('../src/lib/actions.ts');
         expect(targetSummary([{ namespace: 'ns', name: 'web' }], ['Prod'])).toBe('ns/web on Prod');
-        expect(targetSummary([{ name: 'n1' }, { name: 'n2' }, { name: 'n3' }], ['A', 'B'])).toBe('3 objects across 2 clusters (A, B)');
+        expect(targetSummary([{ name: 'n1' }, { name: 'n2' }, { name: 'n3' }], ['A', 'B'])).toBe('3 objects in 2 clusters (A, B)');
     });
 });

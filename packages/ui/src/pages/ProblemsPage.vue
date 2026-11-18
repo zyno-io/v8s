@@ -35,7 +35,7 @@ const chips = computed(() => familyChips(view.classes.value?.classes ?? [], clus
 const summary = computed(() => {
     const n = clusters.activeIds.length;
     const t = view.totals.value;
-    const scope = isPhone.value ? '' : ` across ${n} cluster${n === 1 ? '' : 's'}`;
+    const scope = isPhone.value ? '' : ` in ${n} cluster${n === 1 ? '' : 's'}`;
     const hidden = t.acked && !store.showAcked ? ` · ${formatCount(t.acked)} acknowledged${isPhone.value ? '' : ' hidden'}` : '';
     return `${formatCount(t.shown)}${scope}${hidden}`;
 });
@@ -55,7 +55,22 @@ const groupOptions: { id: GroupBy; label: string }[] = [
     { id: 'cluster', label: 'Cluster' },
     { id: 'namespace', label: 'Namespace' }
 ];
-const groupDisabled = computed(() => view.aggregateActive.value);
+// "Merge across clusters" (one row for the same problem on several clusters) is a way of grouping too, and it excludes
+// the others, so it lives in the same menu.
+const MERGE = 'merge';
+const mergeUnavailable = computed(() => clusters.activeIds.length < 2 || view.aggregateBlocked.value);
+const grouping = computed<string>({
+    get: () => (store.aggregate ? MERGE : store.groupBy),
+    set: v => {
+        if (v === MERGE) {
+            store.groupBy = 'none';
+            store.aggregate = true;
+        } else {
+            store.aggregate = false;
+            store.groupBy = v as GroupBy;
+        }
+    }
+});
 </script>
 
 <template>
@@ -80,9 +95,21 @@ const groupDisabled = computed(() => view.aggregateActive.value);
             <ProblemsPresets :classes="view.classes.value?.classes ?? []" @changed="view.reloadClasses()" />
             <label class="sel opt">
                 <span class="sr-only">Group by</span>
-                <select v-model="store.groupBy" class="btn" :disabled="groupDisabled" aria-label="Group by" data-testid="group-by">
+                <select v-model="grouping" class="btn" aria-label="Group by" data-testid="group-by">
                     <option v-for="g in groupOptions" :key="g.id" :value="g.id" :disabled="g.id === 'namespace' && view.namespaceTooMany.value">
                         {{ g.id === 'none' ? g.label : 'Group: ' + g.label.toLowerCase() }}
+                    </option>
+                    <option
+                        :value="MERGE"
+                        :disabled="mergeUnavailable"
+                        :title="
+                            view.aggregateBlocked.value
+                                ? `Needs ${formatCount(AGGREGATE_CAP)} problems or fewer`
+                                : 'One row for the same problem on several clusters'
+                        "
+                        data-testid="aggregate"
+                    >
+                        Merge across clusters
                     </option>
                 </select>
             </label>
@@ -111,31 +138,19 @@ const groupDisabled = computed(() => view.aggregateActive.value);
                 />
                 <span class="kbd">/</span>
             </label>
+            <button
+                class="chip ackt"
+                type="button"
+                :aria-pressed="store.showAcked"
+                title="Also list problems you have acknowledged"
+                data-testid="show-acked"
+                @click="store.showAcked = !store.showAcked"
+            >
+                Acknowledged
+            </button>
             <div class="chips" role="group" aria-label="Problem families">
                 <ProblemsChips :chips="chips" :selected="store.families" @toggle="store.toggleFamily" @set-class="setClass" />
             </div>
-            <div class="grow"></div>
-            <label
-                class="chk opt"
-                :title="
-                    view.aggregateBlocked.value
-                        ? `Needs ${formatCount(AGGREGATE_CAP)} problems or fewer`
-                        : 'Collapse the same problem across clusters'
-                "
-            >
-                <input
-                    v-model="store.aggregate"
-                    class="cb"
-                    type="checkbox"
-                    :disabled="clusters.activeIds.length < 2 || view.aggregateBlocked.value"
-                    data-testid="aggregate"
-                />
-                Across clusters
-            </label>
-            <label class="chk">
-                <input v-model="store.showAcked" class="cb" type="checkbox" data-testid="show-acked" />
-                Show acknowledged
-            </label>
         </div>
         <div v-if="view.aggregateBlocked.value" class="notice warn" role="status">
             Cross-cluster aggregation is limited to {{ formatCount(AGGREGATE_CAP) }} problems; narrow the filters to use it.
