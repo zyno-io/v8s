@@ -5,6 +5,38 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.2.0 — 2026-11-18
+
+### Added
+
+- **Search by IP.** Type an address, a partial address (`10.42.`), a CIDR, an `a-b` range or an IPv6 address in the search palette to find Pods (including Multus secondary IPs), Services and their load-balancer IPs, EndpointSlices, Nodes and their pod CIDRs, Ingresses and Gateways. A full address, CIDR or range also searches IP-only CRDs the cluster has: Service CIDRs, MetalLB pools and BGP peers, Multus NetworkAttachmentDefinitions, Cilium pools and nodes, and Calico IP pools; those are watched only while a search needs them. Pods get an IP column, and list filters match IPs too. `:ip <address>` opens the search.
+- **Events tab shows every event** of an object, Normal and Warning, newest first, loaded when you open the tab and live while it is open (the background watch still keeps Warning events only).
+- **Protected clusters.** Click the lock at the end of a cluster's row in the selector. On a protected cluster, delete, scale, roll back, drain, Helm actions, Kyverno mode changes, Trivy rescans, Kubescape scans and the Problems quick actions ask you to type the name; a small lock marks the cluster everywhere it appears. This replaces the Production flag on groups: groups are now purely for organizing. Clusters in a group named `production` used to get typed confirmations by default and no longer do; protect them with the lock.
+- **Hosted mode with a public OIDC client** (`publicClient: true`): sign in with an app that has no secret, such as the Entra app `kubelogin` uses (redirect URI under _Mobile and desktop applications_). The docs explain which Entra platform to pick.
+- **Installable web app**: a manifest and icons, so Chrome offers "Install" for the hosted app.
+- **Server-defined groups** (hosted `displayGroups`) appear in the selector as read-only groups.
+
+### Changed
+
+- **Linked contexts dialog**: linking a write context moved from a control revealed on row hover to a "Linked contexts…" dialog in the selector footer, with all suggested pairs and "Link all".
+- **Labels and annotations** are expanded by default; labels are chips, annotations are blocks with long values collapsed behind "Show all".
+- The search box is disabled until at least one cluster is connected. In the selector, a linked write context sits on its own line under the URL.
+- A click anywhere on a table row opens it in the drawer (it used to need the name).
+- Docs moved to **https://docs.v8s.io**.
+- Quieter logs and fewer API calls for read-only users: client-go's log lines go to the agent's logger at debug level, and a background watch the user may not list is retried every 5 minutes instead of every ~30 seconds (it is still reported as unavailable in Problems).
+
+### Fixed
+
+- **Hosted mode**: the data connection failed in every real browser (WebSocket handshakes carry no `Sec-Fetch-Site`); the favicon was blocked by the content security policy; log downloads failed in Safari.
+- **Linked write context on gateways**: when the read context cannot even run an access check (a gateway's read-only target refusing it), actions now use the linked write context, with a hint to activate its elevated session, instead of "unable to check". Reads and transient failures never switch.
+- The log and flow viewers no longer paint blank rows while following a fast stream.
+
+## 0.1.0`) as the
+
+release notes when the tag has no annotation.
+
+## Unreleased
+
 - Quieter logs and fewer API calls for read-only users: client-go's klog lines (such as "Failed to watch ... forbidden") no longer flood stderr (they go to the agent's logger at debug level), and a baseline watch the user is not allowed to list is stopped and retried every 5 minutes (or when you open that kind) instead of being listed again every ~30 seconds. The kind is still reported as unavailable in Problems.
 
 - Replaced the Production flag on cluster groups with a per-cluster Protected flag. Groups are now purely for organizing clusters. Click the lock at the end of a cluster's row in the selector to protect it. On a protected cluster, delete, scale, roll back, drain, Helm actions, Kyverno mode changes, Trivy rescans, Kubescape scans and the Problems quick actions ask you to type the name to confirm; restart, cordon, suspend, trigger and Flux actions on a single object show a confirm naming the cluster. A small lock marks the cluster in the selector, tables, the drawer, Problems and search. Clusters in a group named `production` used to get typed confirmations by default (that was the default production list) and no longer do: protect them with the lock. The old setting is ignored, with no migration.
