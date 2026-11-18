@@ -16,6 +16,7 @@ release notes when the tag has no annotation.
 ### Fixed
 
 - Columns that are hidden by default no longer **reappear after you resize a column**.
+  Saved layouts keep their hidden list but no longer reveal default-hidden columns: Flux columns you had shown (`requestedAt`, `lastHandled`, `dependsOn`) may need to be turned on again from Columns.
 
 ## 0.2.2 — 2026-11-18
 

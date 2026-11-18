@@ -120,6 +120,11 @@ func (m *Manager) wantFor(id string) usageWant {
 
 // reconcileUsage hands every selected runner the union of what the open demands want of it.
 func (m *Manager) reconcileUsage() {
+	// One reconcile at a time, compute and apply together: two concurrent calls (two tabs subscribing at once) would
+	// otherwise each compute a want, and the older one could be applied last. Nothing takes usageMu while holding
+	// m.mu, umu or a runner's usage lock, and this takes them in that order.
+	m.usageMu.Lock()
+	defer m.usageMu.Unlock()
 	m.mu.Lock()
 	sel := make(map[string]bool, len(m.selected))
 	for _, id := range m.selected {
@@ -261,6 +266,11 @@ func (u *usageState) step(now time.Time) time.Duration {
 	res := d.byG[metricsPodsGVR]
 	mr, hasReader := any(r.be).(kube.MetricsReader)
 	switch {
+	case res == nil && hasReader && metricsListed(d):
+		// the group-version is listed but nothing answers: installed and down, not absent
+		u.setDiscAvail(protocol.MetricsUnavailable, "metrics-server is not responding")
+		u.dropPods()
+		return idleWait
 	case res == nil || !hasReader:
 		u.setDiscAvail(protocol.MetricsAbsent, "metrics-server is not installed (no metrics.k8s.io in discovery)")
 		u.dropPods()
@@ -472,4 +482,14 @@ func (u *usageState) interval(scope []string) time.Duration {
 		return u.r.m.UsageBigInterval
 	}
 	return u.r.m.UsageInterval
+}
+
+// metricsListed reports whether discovery lists any metrics.k8s.io group-version, even one that is not answering.
+func metricsListed(d *discState) bool {
+	for i := range d.list {
+		if d.list[i].Group == "metrics.k8s.io" {
+			return true
+		}
+	}
+	return false
 }

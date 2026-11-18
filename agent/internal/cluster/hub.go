@@ -160,13 +160,17 @@ func (r *runner) discoverLoop() {
 		} else {
 			d := &discState{list: res, byG: make(map[string]*disco.Resource, len(res))}
 			for i := range d.list {
-				d.byG[d.list[i].GVR()] = &d.list[i]
+				if !d.list[i].Placeholder() { // a group-version listed but not answering has no resource
+					d.byG[d.list[i].GVR()] = &d.list[i]
+				}
 			}
 			r.disc.Store(d)
 			if r.pe != nil {
 				grs := make(map[string]bool, len(res))
 				for i := range res {
-					grs[problems.GR(res[i].GVR())] = true
+					if !res[i].Placeholder() {
+						grs[problems.GR(res[i].GVR())] = true
+					}
 				}
 				r.pe.SetDiscovery(grs)
 			}

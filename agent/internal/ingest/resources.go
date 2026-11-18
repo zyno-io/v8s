@@ -8,31 +8,106 @@ import (
 // k8s.io/component-helpers/resource PodRequests/PodLimits (regular containers summed, init containers
 // maxed against the running total, restartable init containers (sidecars) counted as running, a
 // pod-level resources block overriding, overhead added) using scalar int64 arithmetic only: no
-// ResourceList maps and no allocation.
+// ResourceList maps built and no allocation. Each container is read once into all four amounts (cpu and
+// memory, requests and limits), not once per resource.
 //
 // A limit counts only if every regular container and every sidecar has a non-zero limit for the
 // resource, or a pod-level limit is set; otherwise the pod is unbounded and Lim is 0 (shown n/a).
 // Non-restartable init containers are left out of that check but still count in the init maximum.
-// The source is spec (desired), not in-place-resize status.
+// The source is spec (desired), not in-place resize status.
 func podRes(p *corev1.Pod) Res {
 	sp := &p.Spec
 	if len(sp.Overhead) == 0 && sp.Resources == nil && noResources(sp) {
 		return Res{}
 	}
-	var out Res
-	c, _ := podResource(sp, corev1.ResourceCPU, false)
-	out.CPUReq = clampU32(c)
-	c, ok := podResource(sp, corev1.ResourceCPU, true)
-	if ok {
-		out.CPULim = clampU32(c)
+	var sum, side, initMax [4]int64
+	bounded := [2]bool{true, true} // limits: cpu, memory
+	for i := range sp.Containers {
+		a := amounts(&sp.Containers[i].Resources)
+		for k := range a {
+			sum[k] += a[k]
+		}
+		bounded[0] = bounded[0] && a[iLimCPU] != 0
+		bounded[1] = bounded[1] && a[iLimMem] != 0
 	}
-	m, _ := podResource(sp, corev1.ResourceMemory, false)
-	out.MemReq = clampU64(m)
-	m, ok = podResource(sp, corev1.ResourceMemory, true)
-	if ok {
-		out.MemLim = clampU64(m)
+	for i := range sp.InitContainers {
+		ic := &sp.InitContainers[i]
+		a := amounts(&ic.Resources)
+		var cur [4]int64
+		if ic.RestartPolicy != nil && *ic.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			for k := range a {
+				sum[k] += a[k]
+				side[k] += a[k]
+			}
+			cur = side
+			bounded[0] = bounded[0] && a[iLimCPU] != 0
+			bounded[1] = bounded[1] && a[iLimMem] != 0
+		} else {
+			for k := range a {
+				cur[k] = a[k] + side[k] // runs alongside the earlier sidecars
+			}
+		}
+		for k := range cur {
+			initMax[k] = max(initMax[k], cur[k])
+		}
+	}
+	var eff [4]int64
+	for k := range eff {
+		eff[k] = max(sum[k], initMax[k])
+	}
+	if sp.Resources != nil {
+		pl := amounts(sp.Resources)
+		for k := range pl {
+			if pl[k] != 0 {
+				eff[k] = pl[k]
+				if k == iLimCPU {
+					bounded[0] = true
+				} else if k == iLimMem {
+					bounded[1] = true
+				}
+			}
+		}
+	}
+	ov := amounts(&corev1.ResourceRequirements{Requests: sp.Overhead})
+	eff[iReqCPU] += ov[iReqCPU]
+	eff[iReqMem] += ov[iReqMem]
+	var out Res
+	out.CPUReq, out.MemReq = clampU32(eff[iReqCPU]), clampU64(eff[iReqMem])
+	if bounded[0] && eff[iLimCPU] != 0 {
+		out.CPULim = clampU32(eff[iLimCPU] + ov[iReqCPU]) // overhead only on non-zero limits
+	}
+	if bounded[1] && eff[iLimMem] != 0 {
+		out.MemLim = clampU64(eff[iLimMem] + ov[iReqMem])
 	}
 	return out
+}
+
+const (
+	iReqCPU = iota
+	iReqMem
+	iLimCPU
+	iLimMem
+)
+
+// amounts reads a container's requests and limits: millicores for cpu, bytes for memory.
+func amounts(r *corev1.ResourceRequirements) (a [4]int64) {
+	if len(r.Requests) != 0 {
+		if q, ok := r.Requests[corev1.ResourceCPU]; ok {
+			a[iReqCPU] = q.MilliValue()
+		}
+		if q, ok := r.Requests[corev1.ResourceMemory]; ok {
+			a[iReqMem] = q.Value()
+		}
+	}
+	if len(r.Limits) != 0 {
+		if q, ok := r.Limits[corev1.ResourceCPU]; ok {
+			a[iLimCPU] = q.MilliValue()
+		}
+		if q, ok := r.Limits[corev1.ResourceMemory]; ok {
+			a[iLimMem] = q.Value()
+		}
+	}
+	return a
 }
 
 func noResources(sp *corev1.PodSpec) bool {
@@ -49,82 +124,6 @@ func noResources(sp *corev1.PodSpec) bool {
 		}
 	}
 	return true
-}
-
-// qty reads one resource of a container's requests or limits as millicores (cpu) or bytes (memory).
-func qty(rl corev1.ResourceList, name corev1.ResourceName) int64 {
-	if len(rl) == 0 {
-		return 0
-	}
-	q, ok := rl[name]
-	if !ok {
-		return 0
-	}
-	if name == corev1.ResourceCPU {
-		return q.MilliValue()
-	}
-	return q.Value()
-}
-
-// podResource returns the effective request (limits=false) or limit (limits=true) of one resource.
-// For limits, ok is false when the pod is unbounded for it.
-func podResource(sp *corev1.PodSpec, name corev1.ResourceName, limits bool) (v int64, ok bool) {
-	pick := func(r *corev1.ResourceRequirements) int64 {
-		if limits {
-			return qty(r.Limits, name)
-		}
-		return qty(r.Requests, name)
-	}
-	var sum, side, initMax int64
-	bounded := true
-	for i := range sp.Containers {
-		q := pick(&sp.Containers[i].Resources)
-		if limits && q == 0 {
-			bounded = false
-		}
-		sum += q
-	}
-	for i := range sp.InitContainers {
-		ic := &sp.InitContainers[i]
-		q := pick(&ic.Resources)
-		var cur int64
-		if ic.RestartPolicy != nil && *ic.RestartPolicy == corev1.ContainerRestartPolicyAlways {
-			if limits && q == 0 {
-				bounded = false
-			}
-			sum += q
-			side += q
-			cur = side
-		} else {
-			cur = q + side // runs alongside the earlier sidecars
-		}
-		if cur > initMax {
-			initMax = cur
-		}
-	}
-	eff := sum
-	if initMax > eff {
-		eff = initMax
-	}
-	if sp.Resources != nil {
-		var pl int64
-		if limits {
-			pl = qty(sp.Resources.Limits, name)
-		} else {
-			pl = qty(sp.Resources.Requests, name)
-		}
-		if pl != 0 {
-			eff = pl
-			bounded = true
-		}
-	}
-	if limits {
-		if !bounded || eff == 0 {
-			return 0, false
-		}
-		return eff + qty(sp.Overhead, name), true
-	}
-	return eff + qty(sp.Overhead, name), true
 }
 
 func clampU32(v int64) uint32 {

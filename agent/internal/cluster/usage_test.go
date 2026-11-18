@@ -27,6 +27,7 @@ type meter struct {
 	nodes atomic.Int64
 	err   error
 	stale atomic.Bool
+	down  atomic.Bool // metrics.k8s.io is listed by discovery but lists no resources (its server is down)
 }
 
 func (m *meter) setErr(err error) { m.mu.Lock(); m.err = err; m.mu.Unlock() }
@@ -61,6 +62,10 @@ func (b meterBackend) NodeMetrics(ctx context.Context) ([]usage.NodeSample, erro
 
 func (b meterBackend) Discover(ctx context.Context) ([]disco.Resource, error) {
 	res, err := b.Backend.Discover(ctx)
+	if b.m.down.Load() {
+		res = slices.DeleteFunc(res, func(r disco.Resource) bool { return r.Group == "metrics.k8s.io" })
+		res = append(res, disco.Resource{Group: "metrics.k8s.io", Version: "v1beta1", Stale: true})
+	}
 	if b.m.stale.Load() {
 		for i := range res {
 			if res[i].Group == "metrics.k8s.io" {
@@ -430,5 +435,73 @@ func TestClusterWideListOverBigPodsUsesTheBigInterval(t *testing.T) {
 	}
 	if got := u.interval([]string{"team-1"}); got != 100*time.Millisecond {
 		t.Fatalf("a namespace-scoped list keeps the normal interval, got %v", got)
+	}
+}
+
+// Installed but down (listed in discovery, no resources) is unavailable; not listed at all is absent.
+func TestListedButDownIsUnavailableNotAbsent(t *testing.T) {
+	m, _, mt := usageManager(t, fake.Config{})
+	mt.down.Store(true)
+	m.runnerForTest("prod-us").invalidate()
+	waitFor(t, "unavailable", func() bool {
+		a, msg := metricsState(m)
+		return a == protocol.MetricsUnavailable && msg == "metrics-server is not responding"
+	})
+	mt.down.Store(false)
+	m.runnerForTest("prod-us").invalidate()
+	waitFor(t, "unknown again", func() bool { a, _ := metricsState(m); return a == "" })
+}
+
+// Concurrent opens and closes (several tabs at once) must leave each runner with the want its open demands derive.
+func TestConcurrentDemandsLeaveTheDerivedWant(t *testing.T) {
+	m, _, _ := usageManager(t, fake.Config{})
+	var wg sync.WaitGroup
+	for g := 0; g < 64; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var open []*UsageDemand
+			for i := 0; i < 300; i++ {
+				ns := []string{"team-" + string(rune('a'+(g+i)%7))}
+				if i%5 == 0 {
+					ns = nil
+				}
+				open = append(open, m.OpenUsage(ingest.PodsGVR, nil, ns, true))
+				if len(open) > 2 {
+					open[0].Close()
+					open = open[1:]
+				}
+			}
+			if g%2 == 0 { // half leave their demands open, half close everything
+				for _, d := range open {
+					d.Close()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	u := m.runnerForTest("prod-us").usage
+	u.mu.Lock()
+	got := u.want
+	u.mu.Unlock()
+	want := m.wantFor("prod-us")
+	if got.pods != want.pods || !slices.Equal(got.podScope, want.podScope) || got.nodes != want.nodes {
+		t.Fatalf("applied want %+v, derived %+v", got, want)
+	}
+	// With everything closed, nothing is wanted.
+	m.umu.Lock()
+	ds := make([]*UsageDemand, 0, len(m.demands))
+	for d := range m.demands {
+		ds = append(ds, d)
+	}
+	m.umu.Unlock()
+	for _, d := range ds {
+		d.Close()
+	}
+	u.mu.Lock()
+	got = u.want
+	u.mu.Unlock()
+	if got.pods {
+		t.Fatalf("pods still wanted with no demand: %+v", got)
 	}
 }

@@ -343,7 +343,7 @@ async function main() {
             // One synchronous read: the third sub-column of every rendered usage block.
             await page.waitForFunction(() => {
                 const v = [...document.querySelectorAll('.scroller .row .ub')].map(e => e.children[2]?.textContent?.trim() ?? '');
-                return v.length > 5 && /^\d+$/.test(v[0]);
+                return v.length > 5 && /^\d+$/.test(v[0]) && Number(v[0]) >= 90; // the re-sorted patch, not the ascending one before it
             });
             const cells = await page.evaluate(() =>
                 [...document.querySelectorAll('.scroller .row:not(.sk) .ub')].map(e => e.children[2].textContent!.trim())

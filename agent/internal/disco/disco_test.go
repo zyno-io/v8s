@@ -217,3 +217,22 @@ func TestFetchLegacyFallback(t *testing.T) {
 		})
 	}
 }
+
+// A group-version that is listed but not answering is kept as a placeholder, so "down" differs from "not installed".
+func TestListedButNotAnsweringIsKept(t *testing.T) {
+	agg := `{"kind":"APIGroupDiscoveryList","apiVersion":"apidiscovery.k8s.io/v2","items":[
+{"metadata":{"name":"metrics.k8s.io"},"versions":[{"version":"v1beta1","freshness":"Stale"}]}]}`
+	rs, err := ParseAggregated(nil, []byte(agg))
+	if err != nil || len(rs) != 1 || !rs[0].Placeholder() || !rs[0].Stale || rs[0].Group != "metrics.k8s.io" || rs[0].Listable() {
+		t.Fatalf("aggregated: %v %+v", err, rs)
+	}
+	groups := `{"kind":"APIGroupList","groups":[{"name":"metrics.k8s.io","versions":[{"groupVersion":"metrics.k8s.io/v1beta1","version":"v1beta1"}],"preferredVersion":{"version":"v1beta1"}}]}`
+	rs, err = ParseLegacy([]byte(`{"versions":[]}`), []byte(groups), map[string][]byte{"metrics.k8s.io/v1beta1": nil})
+	if err != nil || len(rs) != 1 || !rs[0].Placeholder() || !rs[0].Stale {
+		t.Fatalf("legacy failed group: %v %+v", err, rs)
+	}
+	rs, _ = ParseLegacy([]byte(`{"versions":[]}`), []byte(`{"groups":[]}`), nil)
+	if len(rs) != 0 {
+		t.Fatalf("%+v", rs)
+	}
+}

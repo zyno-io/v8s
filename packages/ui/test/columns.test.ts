@@ -2,7 +2,7 @@ import type { Column } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import { gridTemplate, planColumns } from '../src/lib/columns.ts';
+import { gridTemplate, guessPodsUsage, planColumns } from '../src/lib/columns.ts';
 
 const cols: Column[] = [
     { key: 'cluster', type: 'dict' },
@@ -214,5 +214,25 @@ describe('planColumns: the usage block', () => {
         const gaps = 12 * n; // n tracks plus the checkbox column: n gaps
         const name = 1166 - fixed - gaps;
         expect(name).toBe(217);
+    });
+});
+
+describe('guessPodsUsage', () => {
+    it('is on by default, off when every metrics column is hidden, on again by a sort or a shown %N column', () => {
+        expect(guessPodsUsage(undefined, [])).toBe(true);
+        const all = ['cpuUse', 'cpuPctReq', 'cpuPctLim', 'memUse', 'memPctReq', 'memPctLim'];
+        expect(guessPodsUsage({ hidden: all }, [])).toBe(false);
+        expect(guessPodsUsage({ hidden: all }, [{ col: 'cpuPctLim' }])).toBe(true);
+        expect(guessPodsUsage({ hidden: all }, [{ col: 'name' }])).toBe(false);
+        expect(guessPodsUsage({ hidden: all, shown: ['cpuPctNode'] }, [])).toBe(true);
+    });
+});
+
+describe('planKey inputs', () => {
+    it('two blocks of the same width with different sub-columns differ in their sub keys', () => {
+        const a = planColumns(PODS, { gvr: 'v1/pods', showCluster: false, layout: { shown: ['cpuReq'], hidden: ['cpuPctReq'] } });
+        const b = planColumns(PODS, { gvr: 'v1/pods', showCluster: false, layout: { shown: ['cpuLim'], hidden: ['cpuPctReq'] } });
+        expect(a.grid).toBe(b.grid);
+        expect(a.cols.find(c => c.subs)!.subs!.map(u => u.key)).not.toEqual(b.cols.find(c => c.subs)!.subs!.map(u => u.key));
     });
 });

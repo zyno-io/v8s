@@ -526,7 +526,8 @@ defineExpose({ scroller });
 
 // The cluster column/tag only earns its width when more than one cluster is connected.
 const showCluster = computed(() => props.plan.clusterIdx >= 0 && props.plan.cols.some(c => c.kind === 'cluster'));
-const planKey = computed(() => props.plan.grid + props.plan.cols.length);
+// Which usage sub-columns are shown matters too: two blocks of the same width with different columns must re-render the rows.
+const planKey = computed(() => props.plan.grid + props.plan.cols.length + props.plan.cols.map(c => c.subs?.map(u => u.key).join() ?? '').join('|'));
 
 const emptyKind = computed(() => {
     if (!clusters.activeIds.length) return 'no-clusters';

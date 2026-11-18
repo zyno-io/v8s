@@ -305,6 +305,20 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
     };
 }
 
+/**
+ * Whether a pods table will show usage before its schema has arrived: a metrics column is visible by default (or the user
+ * showed one), or the sort is by one. Subscribing with this guess spares the first rows an encode without usage and the
+ * dashes that follow. The page's own watch corrects it once the real plan is known.
+ */
+export const PODS_METRIC_KEYS = ['cpuUse', 'cpuPctReq', 'cpuPctLim', 'cpuPctNode', 'memUse', 'memPctReq', 'memPctLim', 'memPctNode'];
+const PODS_METRIC_SHOWN = ['cpuUse', 'cpuPctReq', 'cpuPctLim', 'memUse', 'memPctReq', 'memPctLim'];
+export function guessPodsUsage(layout: ColumnLayout | undefined, sort: readonly { col: string }[]): boolean {
+    if (sort.some(s => PODS_METRIC_KEYS.includes(s.col))) return true;
+    const hidden = new Set(layout?.hidden ?? []);
+    const shown = new Set(layout?.shown ?? []);
+    return PODS_METRIC_KEYS.some(k => !hidden.has(k) && (PODS_METRIC_SHOWN.includes(k) || shown.has(k)));
+}
+
 // ---- the dense usage block ----
 
 /** Sub-column widths by unit, and the gaps: 6 px inside a resource group, 14 px where cpu meets mem. */

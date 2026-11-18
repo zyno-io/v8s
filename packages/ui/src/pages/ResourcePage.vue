@@ -8,7 +8,7 @@ import NamespaceMenu from '@/components/NamespaceMenu.vue';
 import ResourceTable from '@/components/ResourceTable.vue';
 import { getPodsAll, kinds } from '@/lib/agent.ts';
 import { phaseColor } from '@/lib/colors.ts';
-import { planColumns } from '@/lib/columns.ts';
+import { guessPodsUsage, planColumns } from '@/lib/columns.ts';
 import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
@@ -27,7 +27,13 @@ const clusters = useClustersStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
 const state = table.of(props.gvr);
-const { handle, counts, chips, hasTone } = useResourceView(props.gvr);
+// Pods subscribe with a guess of the usage flag (known keys, saved layout, sort), so the first rows already carry usage.
+const { handle, counts, chips, hasTone } = useResourceView(props.gvr, {
+    usage:
+        props.gvr === PODS_GVR &&
+        !(clusters.states.length > 0 && clusters.states.every(s => s.metrics === 'absent')) &&
+        guessPodsUsage(settings.layout(props.gvr), state.sort)
+});
 const podsAll = props.gvr === PODS_GVR ? getPodsAll() : null;
 
 onMounted(() => (table.currentGvr = props.gvr));

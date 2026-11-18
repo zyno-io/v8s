@@ -53,6 +53,7 @@ type Manager struct {
 	UsageMaxBackoff  time.Duration
 
 	umu     sync.Mutex // guards demands
+	usageMu sync.Mutex // serializes reconcileUsage (compute + apply)
 	demands map[*UsageDemand]struct{}
 
 	problems *problems.Hub

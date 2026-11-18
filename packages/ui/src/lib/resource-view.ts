@@ -14,14 +14,14 @@ const hasTone = (cols: readonly Column[] | null) => !!cols?.some(c => c.type ===
  * Subscribes one kind's list view plus a one-row count view per tone chip (only once the schema shows a tone column).
  * Count views never render rows; they only contribute `total`, so chips show live counts with nothing computed in the UI.
  */
-export function useResourceView(gvr: string) {
+export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
     const agent = getAgent();
     const table = useTableStore();
     const state = table.of(gvr);
     const initialLimit = () => windowPad() * 2 + 60;
     const query = computed(() => stateQuery(gvr, state));
 
-    const handle = agent.subscribeView(query.value, { offset: 0, limit: initialLimit() });
+    const handle = agent.subscribeView(query.value, { offset: 0, limit: initialLimit() }, { usage: opts?.usage });
     const counts: Record<string, ViewHandle> = {};
     const chips = chipsFor(gvr);
 
