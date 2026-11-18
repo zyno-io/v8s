@@ -134,6 +134,11 @@ func (m *Manager) SearchIP(ctx context.Context, q *ipx.Query, perKind int) *prot
 			for _, rel := range releases {
 				rel()
 			}
+			// While the sources were held, a view opened on a full budget may have been refused its watch
+			// (ErrBudget is only logged). Now that they linger and can be evicted, give open scopes another go.
+			if len(releases) > 0 {
+				m.reconcileScopes()
+			}
 		}()
 		for _, r := range runners {
 			t, rels, failed, ok := r.touchIPSources()

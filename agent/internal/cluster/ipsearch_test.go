@@ -566,3 +566,29 @@ func TestStaleLingerTimerDoesNotStopTouchedWatch(t *testing.T) {
 		t.Fatal("the current linger timer must stop the watch")
 	}
 }
+
+// A view opened while a strong search holds the only evictable slot is refused its watch (ErrBudget); once the
+// search releases its sources the view gets the watch, without waiting for the next discovery.
+func TestViewRefusedDuringHeldSearchRecovers(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 100})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	time.Sleep(300 * time.Millisecond)
+	gvr := "v1/configmaps"
+	if _, ok := watchOf(m, "prod-us", gvr); ok {
+		t.Fatal("configmaps already watched")
+	}
+	m.Budget = len(m.WatchInfo("prod-us")) + 1
+	q, _ := ipx.Parse("192.168.100.10")
+	done := make(chan struct{})
+	go func() { m.SearchIP(context.Background(), q, 5); close(done) }()
+	time.Sleep(10 * time.Millisecond) // the search holds its touched source and waits for it to list
+	s := m.OpenScope(gvr, nil)
+	defer s.Close()
+	<-done
+	if _, ok := watchOf(m, "prod-us", gvr); !ok {
+		t.Fatal("the view's watch did not start after the search released its sources")
+	}
+}
