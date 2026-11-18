@@ -56,12 +56,15 @@ describe('settings helpers', () => {
     it('stores column layouts per gvr and applies them through a merge patch', () => {
         let s = emptySettings();
         s = mergePatch(s, layoutPatch('v1/pods', { widths: { name: 300 }, hidden: ['node'] }));
-        expect(layoutFor(s, 'v1/pods')).toEqual({ widths: { name: 300 }, hidden: ['node'] });
+        expect(layoutFor(s, 'v1/pods')).toEqual({ widths: { name: 300 }, hidden: ['node'], shown: [] });
         s = mergePatch(s, layoutPatch('apps/v1/deployments', { hidden: ['images'] }));
         expect(layoutFor(s, 'v1/pods').hidden).toEqual(['node']);
         expect(layoutFor(s, 'apps/v1/deployments').hidden).toEqual(['images']);
         expect(layoutFor(s, 'nope')).toEqual({});
         // resetting replaces the hidden list (arrays replace) and clears widths (objects merge to empty)
+        // `shown` (default-hidden columns the user turned on) round-trips with the rest of the layout
+        s = mergePatch(s, layoutPatch('v1/pods', { widths: { name: 300 }, hidden: ['node'], shown: ['ip', 'cpuReq'] }));
+        expect(layoutFor(s, 'v1/pods')).toEqual({ widths: { name: 300 }, hidden: ['node'], shown: ['ip', 'cpuReq'] });
         s = mergePatch(s, layoutPatch('v1/pods', {}));
         expect(layoutFor(s, 'v1/pods').hidden).toEqual([]);
     });

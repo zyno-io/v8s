@@ -19,6 +19,8 @@ type Resource struct {
 	Namespaced                     bool
 	ShortNames                     []string
 	Verbs                          []string
+	// Stale is the aggregated-discovery freshness of the resource's version: its aggregated API server is not answering.
+	Stale bool
 }
 
 // GVR returns "v1/pods" for the core group, "apps/v1/deployments" otherwise.
@@ -61,6 +63,7 @@ type aggList struct {
 		} `json:"metadata"`
 		Versions []struct {
 			Version   string `json:"version"`
+			Freshness string `json:"freshness"`
 			Resources []struct {
 				Resource     string `json:"resource"`
 				ResponseKind struct {
@@ -104,6 +107,7 @@ func parseAggBody(b []byte, out *[]Resource, seen map[string]bool) error {
 				*out = append(*out, Resource{
 					Group: group, Version: v.Version, Resource: r.Resource, Kind: r.ResponseKind.Kind,
 					Namespaced: r.Scope == "Namespaced", ShortNames: r.ShortNames, Verbs: r.Verbs,
+					Stale: v.Freshness == "Stale",
 				})
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -803,6 +804,8 @@ type Backend struct {
 	deny  bool // read context of a read-only cluster (rbac=1): mutations are denied
 	dyn   *dynClient
 	rate  int // synthetic log lines per second
+	// noMetrics: metrics.k8s.io is not installed (not in discovery; the lists answer NotFound).
+	noMetrics bool
 }
 
 var _ kube.Backend = (*Backend)(nil)
@@ -825,7 +828,13 @@ func (b *Backend) API(gvr string, m *ingest.Module) (ingest.API, error) {
 	return &kindAPI{w: b.w, d: d, mod: m}, nil
 }
 
-func (b *Backend) Discover(ctx context.Context) ([]disco.Resource, error) { return Discovery(), nil }
+func (b *Backend) Discover(ctx context.Context) ([]disco.Resource, error) {
+	d := Discovery()
+	if b.noMetrics {
+		d = slices.DeleteFunc(d, func(r disco.Resource) bool { return r.Group == "metrics.k8s.io" })
+	}
+	return d, nil
+}
 
 // World returns the cluster's object store (tests).
 func (b *Backend) World() *World { return b.w }

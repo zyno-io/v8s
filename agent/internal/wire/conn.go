@@ -42,10 +42,15 @@ type connSub struct {
 	scope    *cluster.Scope // keeps the kind's watches alive for this subscription
 	gvr      string
 	clusters []string
-	involved *protocol.ObjectRef // what the client sent for an involved-object events view (nil otherwise)
-	inv      *cluster.ObjectEvents
-	last     time.Time
-	urgent   bool // client-initiated change: bypass the tick once
+	// namespaces, usage and demand: the metrics polling this subscription asks for (docs/performance.md §5).
+	// demand is nil unless usage is set and the view's kind has a usage source.
+	namespaces []string
+	usage      bool
+	demand     *cluster.UsageDemand
+	involved   *protocol.ObjectRef // what the client sent for an involved-object events view (nil otherwise)
+	inv        *cluster.ObjectEvents
+	last       time.Time
+	urgent     bool // client-initiated change: bypass the tick once
 
 	// Updates of one subscription are applied in request order: while one is resolving (a first-time generic
 	// kind can take up to 20 s) later ones queue behind it, and a later one that changes the query supersedes it.
@@ -124,6 +129,7 @@ func (c *conn) run(ctx context.Context) {
 	defer func() {
 		for _, cs := range c.subs {
 			cs.sub.Close()
+			cs.demand.Close()
 			if cs.scope != nil {
 				cs.scope.Close()
 			}
@@ -701,8 +707,11 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
-			c.subs[p.QID] = &connSub{qid: p.QID, sub: sub, scope: res.scope, gvr: queryGVR(p.Query), clusters: p.Query.Clusters,
-				involved: p.Query.Involved, inv: res.inv, urgent: true}
+			cs := &connSub{qid: p.QID, sub: sub, scope: res.scope, gvr: queryGVR(p.Query), clusters: p.Query.Clusters,
+				namespaces: p.Query.Namespaces, usage: p.Usage, involved: p.Query.Involved, inv: res.inv, urgent: true}
+			c.subs[p.QID] = cs
+			sub.SetUsage(p.Usage)
+			c.syncDemand(cs, res.mod)
 			_ = c.respond(id, protocol.ViewSubscribeResult{Columns: res.mod.Columns()})
 		})
 		return nil
@@ -734,6 +743,7 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 		}
 		if cs := c.subs[p.QID]; cs != nil {
 			cs.sub.Close()
+			cs.demand.Close()
 			if cs.scope != nil {
 				cs.scope.Close()
 			}
@@ -1005,6 +1015,11 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 	if c.subs[p.QID] != cs {
 		return c.respondErr(id, "not_found", "no such subscription")
 	}
+	usageChanged := false
+	if p.Usage != nil && *p.Usage != cs.usage { // never bumps gen; applies even when a query change resolves or is superseded
+		cs.usage, usageChanged = *p.Usage, true
+		cs.sub.SetUsage(cs.usage)
+	}
 	if p.Query != nil && (queryGVR(*p.Query) != cs.gvr || !sameInvolved(p.Query.Involved, cs.involved) ||
 		(p.Query.Involved == nil && !slices.Equal(normClusters(p.Query.Clusters), normClusters(cs.clusters)))) {
 		gvrChanged := queryGVR(*p.Query) != cs.gvr || (p.Query.Involved != nil) != (cs.involved != nil)
@@ -1021,10 +1036,16 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 		c.resolve(c.ctx, *p.Query, func(res resolved, err error) {
 			defer finish()
 			if err != nil {
+				if usageChanged {
+					c.syncDemand(cs, cs.sub.Module())
+				}
 				_ = c.respondBody(id, errBody(err))
 				return
 			}
 			if st.superseded || c.subs[p.QID] != cs { // a newer update replaced this one, or the view is gone
+				if usageChanged {
+					c.syncDemand(cs, cs.sub.Module())
+				}
 				res.scope.Close()
 				if c.subs[p.QID] != cs {
 					_ = c.respondErr(id, "not_found", "no such subscription")
@@ -1034,6 +1055,9 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 				return
 			}
 			if err := cs.sub.Update(&res.q, p.Gen, p.Window); err != nil {
+				if usageChanged {
+					c.syncDemand(cs, cs.sub.Module())
+				}
 				res.scope.Close()
 				_ = c.respondBody(id, errBody(err))
 				return
@@ -1041,6 +1065,8 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 			cs.scope.Close()
 			cs.scope, cs.gvr, cs.clusters, cs.urgent = res.scope, queryGVR(*p.Query), p.Query.Clusters, true
 			cs.involved, cs.inv = p.Query.Involved, res.inv
+			cs.namespaces = p.Query.Namespaces
+			c.syncDemand(cs, res.mod)
 			if gvrChanged { // the client needs the new schema
 				_ = c.respond(id, protocol.ViewSubscribeResult{Columns: res.mod.Columns()})
 			} else {
@@ -1055,10 +1081,36 @@ func (c *conn) applyUpdate(cs *connSub, id uint32, p protocol.ViewUpdateParams) 
 		q = &rq
 	}
 	if err := cs.sub.Update(q, p.Gen, p.Window); err != nil {
+		if usageChanged {
+			c.syncDemand(cs, cs.sub.Module())
+		}
 		return c.respondBody(id, errBody(err))
+	}
+	if p.Query != nil && cs.inv == nil && !slices.Equal(normClusters(p.Query.Namespaces), normClusters(cs.namespaces)) {
+		cs.namespaces = p.Query.Namespaces
+		usageChanged = true // the scope the demand covers changed
+	}
+	if usageChanged {
+		c.syncDemand(cs, cs.sub.Module())
 	}
 	cs.urgent = true
 	return c.respond(id, nil)
+}
+
+// syncDemand makes cs's usage demand match its (gvr, clusters, namespaces, usage). The new demand is opened
+// before the old one is closed, so polling never stops and restarts for an instant (invariant 4). It does
+// nothing for a subscription that is gone, and holds no demand without the usage flag or a usage source.
+func (c *conn) syncDemand(cs *connSub, mod *ingest.Module) {
+	if c.subs[cs.qid] != cs {
+		return
+	}
+	var nd *cluster.UsageDemand
+	if cs.usage && cs.involved == nil && mod != nil && mod.Usage != "" {
+		nd = c.s.opt.Manager.OpenUsage(cs.gvr, cs.clusters, cs.namespaces, true)
+	}
+	old := cs.demand
+	cs.demand = nd
+	old.Close()
 }
 
 // sameInvolved reports whether two involved refs name the same object (the uid is ignored).

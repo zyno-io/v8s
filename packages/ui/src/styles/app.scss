@@ -462,6 +462,53 @@ h1 {
     }
 }
 
+// The usage block (docs/design-system.md): CPU and memory as one dense, right-aligned, unit-less block. Sub-column tracks come
+// from the plan (`subGrid`); the unit lives in the header as a muted, non-uppercase suffix that the sort arrow replaces.
+.ub {
+    display: grid;
+    column-gap: 6px;
+    width: 100%;
+    text-align: right;
+    white-space: nowrap;
+    > span {
+        min-width: 0;
+        overflow: hidden;
+    }
+    .m {
+        color: var(--text3);
+    }
+    .w {
+        color: var(--warning);
+    }
+    .d {
+        color: var(--danger);
+    }
+}
+.hd .ub {
+    letter-spacing: 0.02em;
+}
+.ubh {
+    display: flex;
+    justify-content: flex-end;
+    .th-btn {
+        gap: 0;
+    }
+    .u {
+        margin-left: 2px;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+        opacity: 0.8;
+    }
+}
+.ucard.w {
+    color: var(--warning);
+}
+.ucard.d {
+    color: var(--danger);
+}
+
 .rz {
     position: absolute;
     right: -9px;

@@ -9,6 +9,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/store"
+	"github.com/zyno-io/v8s/agent/internal/usage"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
@@ -27,6 +28,7 @@ type srcRec struct {
 	attached bool
 	evbuf    []store.Event
 	snap     []store.Item
+	use      *usage.Snap // the usage snapshot of this store (nil: none); cleared whenever the store changes or detaches
 }
 
 type srcKey struct{ cl, gv uint16 }
@@ -146,6 +148,7 @@ func (e *Engine) AttachKind(name, gvr string, st *store.Store) {
 	}
 	if rec.st != st {
 		rec.epoch++
+		rec.use = nil // invariant 1: a snapshot belongs to the store it was built from
 	}
 	rec.st, rec.attached = st, true
 	st.SetNotify(e.signal)
@@ -155,6 +158,7 @@ func (e *Engine) AttachKind(name, gvr string, st *store.Store) {
 	changed := false
 	for _, v := range e.views {
 		if v.gv == gv {
+			v.setUse(cl, rec.use) // before replaceCluster, which sorts with it
 			changed = v.replaceCluster(cl, snap) || changed
 		}
 	}
@@ -199,8 +203,10 @@ func (e *Engine) detachLocked(rec *srcRec) {
 	rec.attached = false
 	rec.st.SetNotify(nil)
 	rec.st, rec.evbuf, rec.snap = nil, nil, nil // epoch stays: a later attach of a new store bumps it
+	rec.use = nil
 	for _, v := range e.views {
 		if v.gv == rec.gv {
+			v.setUse(rec.cl, nil)
 			v.replaceCluster(rec.cl, nil)
 		}
 	}
@@ -285,6 +291,10 @@ type View struct {
 	key       keyFn
 	match     func(r *ingest.Row, cl uint16) bool
 	idleSince time.Time
+	// use is the usage snapshot per cluster index (nil entries: none). It is swapped, and the entries of a
+	// view sorted by a usage column (useSort) re-sorted, together under e.mu (invariant 2).
+	use     []*usage.Snap
+	useSort bool
 }
 
 func (v *View) markDirty() {
@@ -293,13 +303,15 @@ func (v *View) markDirty() {
 	}
 }
 
-func (v *View) find(row *ingest.Row, cl uint16, h uint32) (int, bool) {
-	probe := mkEntry(row, cl, h, 0)
+// find locates the entry of (row, cl, h, gen). gen is part of the probe because usage-sorted comparisons look
+// up the slot by (h, gen); a probe without it would not compare equal to its own entry (invariant 2).
+func (v *View) find(row *ingest.Row, cl uint16, h, gen uint32) (int, bool) {
+	probe := mkEntry(row, cl, h, gen)
 	return slices.BinarySearchFunc(v.entries, probe, func(a, b entry) int { return v.cmp(&a, &b) })
 }
 
 func (v *View) insert(en entry) {
-	i, _ := v.find(en.row, en.cl, en.h)
+	i, _ := v.find(en.row, en.cl, en.h, en.gen)
 	v.entries = slices.Insert(v.entries, i, en)
 }
 
@@ -312,7 +324,7 @@ func (v *View) apply(cl uint16, evs []store.Event) bool {
 		switch {
 		case oldIn && newIn:
 			en := mkEntry(ev.New, cl, ev.H, ev.Gen)
-			if pos, ok := v.find(ev.Old, cl, ev.H); ok {
+			if pos, ok := v.find(ev.Old, cl, ev.H, ev.Gen); ok {
 				if v.cmp(&v.entries[pos], &en) == 0 {
 					v.entries[pos] = en
 					changed = true
@@ -323,7 +335,7 @@ func (v *View) apply(cl uint16, evs []store.Event) bool {
 			v.insert(en)
 			changed = true
 		case oldIn:
-			if pos, ok := v.find(ev.Old, cl, ev.H); ok {
+			if pos, ok := v.find(ev.Old, cl, ev.H, ev.Gen); ok {
 				v.entries = slices.Delete(v.entries, pos, pos+1)
 				changed = true
 			}
@@ -376,9 +388,19 @@ func (e *Engine) viewFor(n *Norm) *View {
 	}
 	gv := e.gvrIdx(n.GVR)
 	v := &View{e: e, gv: gv, n: n, subs: make(map[*Sub]struct{})}
-	v.cmp = e.buildCmp(n)
-	v.key = e.buildKey(n)
+	v.cmp = e.buildCmp(n, v)
+	v.key = e.buildKey(n, v)
 	v.match = e.buildMatch(n)
+	for _, k := range n.sort {
+		if c := n.Mod.Col(k.col); c != nil && c.Src == ingest.SrcUsage {
+			v.useSort = true
+		}
+	}
+	for _, rec := range e.srcL {
+		if rec.gv == gv && rec.attached && rec.use != nil {
+			v.setUse(rec.cl, rec.use) // before the first sort
+		}
+	}
 	// Drain every store of the gvr atomically with its snapshot so no event is applied twice;
 	// existing views get the events, the new view the snapshot.
 	// Apply pending feeds first, through the bulk path, so the quadratic per-event application below
@@ -454,6 +476,8 @@ type Sub struct {
 
 	mark  map[uint32]struct{}
 	dirty atomic.Bool
+
+	showUsage bool // encode usage columns (else they are nil); guarded by e.mu
 }
 
 func clampWindow(w protocol.Window) protocol.Window {
@@ -574,7 +598,7 @@ func (s *Sub) indexOfID(id uint32) (int, bool) {
 	}
 	if rec != nil && rec.attached {
 		if row, ok := rec.st.Row(k.h, k.gen); ok {
-			if i, ok := s.v.find(row, k.cl, k.h); ok && s.v.entries[i].gen == k.gen {
+			if i, ok := s.v.find(row, k.cl, k.h, k.gen); ok && s.v.entries[i].gen == k.gen {
 				return i, true
 			}
 		}
@@ -595,7 +619,7 @@ func (s *Sub) bounds(total int) (start, end int) {
 		steady := s.sentOnce && s.sentGen == s.gen
 		switch {
 		case ok && steady && (idx < s.sentOffset || idx >= s.sentOffset+max(1, len(s.sentIDs))) &&
-			s.sentVer[s.win.AnchorID] != s.v.entries[idx].row.Ver():
+			s.sentVer[s.win.AnchorID] != s.wireVerOf(&s.v.entries[idx]):
 			// the anchor row itself changed and re-sorted outside the window the client holds: do not
 			// chase it. (An unchanged anchor that moved because rows were inserted above is followed.)
 			off, ok = s.sentOffset, false
@@ -617,6 +641,8 @@ type PendRow struct {
 	ID      uint32
 	Row     *ingest.Row
 	Cluster ingest.Str
+	Use     *usage.Slot // nil when the subscription does not show usage, or the row has no slot
+	Ver     uint32      // the wire version (see Sub.wireVer)
 }
 
 // Pending is the diff between the subscription's current window and what the client last received.
@@ -677,9 +703,9 @@ func (s *Sub) Prepare() *Pending {
 	}
 	var rows []PendRow
 	for i := range win {
-		row := win[i].row
-		if s.sentVer[ids[i]] != row.Ver() {
-			rows = append(rows, PendRow{ID: ids[i], Row: row, Cluster: e.strs[win[i].cl]})
+		ver, sl := s.wireVer(&win[i])
+		if s.sentVer[ids[i]] != ver {
+			rows = append(rows, PendRow{ID: ids[i], Row: win[i].row, Cluster: e.strs[win[i].cl], Use: sl, Ver: ver})
 		}
 	}
 	if !idsChanged && len(rows) == 0 && len(removed) == 0 && s.sentOnce && total == s.sentTotal && start == s.sentOffset {
@@ -715,7 +741,7 @@ func (p *Pending) Commit(nRows, nRemoved int, withIDs bool) {
 	}
 	p.di += nRemoved
 	for _, r := range p.Rows[p.ri : p.ri+nRows] {
-		s.sentVer[r.ID] = r.Row.Ver()
+		s.sentVer[r.ID] = r.Ver
 	}
 	p.ri += nRows
 	s.sentTotal, s.sentOffset, s.sentGen, s.sentOnce = p.Total, p.Offset, p.Gen, true
@@ -739,3 +765,5 @@ func (s *Sub) Module() *ingest.Module {
 	}
 	return s.v.n.Mod
 }
+
+func (s *Sub) wireVerOf(en *entry) uint32 { v, _ := s.wireVer(en); return v }

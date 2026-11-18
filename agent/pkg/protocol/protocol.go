@@ -153,11 +153,27 @@ const (
 	PhaseUnreachable  ClusterPhase = "unreachable"
 )
 
+// MetricsAvail is whether usage (metrics.k8s.io) can be read from a cluster: "" unknown, "ok", "absent" (no metrics
+// API in discovery), "unavailable" (the API is registered but failing or stale), "forbidden" (the user may not read it).
+type MetricsAvail string
+
+const (
+	MetricsOK          MetricsAvail = "ok"
+	MetricsAbsent      MetricsAvail = "absent"
+	MetricsUnavailable MetricsAvail = "unavailable"
+	MetricsForbidden   MetricsAvail = "forbidden"
+)
+
+// CapacityGVR is the synthetic per-cluster capacity view behind the Overview CPU/Memory card.
+const CapacityGVR = "v8s/v1/capacity"
+
 type ClusterState struct {
-	ID      string       `msgpack:"id" json:"id"`
-	Phase   ClusterPhase `msgpack:"phase" json:"phase"`
-	Synced  int          `msgpack:"synced" json:"synced"` // rows received so far while syncing
-	Message string       `msgpack:"message,omitempty" json:"message,omitempty"`
+	ID             string       `msgpack:"id" json:"id"`
+	Phase          ClusterPhase `msgpack:"phase" json:"phase"`
+	Synced         int          `msgpack:"synced" json:"synced"` // rows received so far while syncing
+	Message        string       `msgpack:"message,omitempty" json:"message,omitempty"`
+	Metrics        MetricsAvail `msgpack:"metrics,omitempty" json:"metrics,omitempty"`               // usage availability; set only while a view polls usage
+	MetricsMessage string       `msgpack:"metricsMessage,omitempty" json:"metricsMessage,omitempty"` // why usage is unavailable
 }
 
 type ClusterStates struct {
@@ -194,7 +210,7 @@ type ColumnType string
 const (
 	ColDict ColumnType = "dict" // u32 dictionary id (KindDict); 0 = empty
 	ColStr  ColumnType = "str"  // inline string
-	ColInt  ColumnType = "int"  // integer
+	ColInt  ColumnType = "int"  // integer; cells of unit columns may be nil (no data) or -1 (n/a: no request/limit/node)
 	ColTime ColumnType = "time" // unix milliseconds (int); the UI renders relative ages
 	ColTone ColumnType = "tone" // small int: 0 neutral, 1 success, 2 warning, 3 danger, 4 info, 5 release
 )
@@ -205,6 +221,14 @@ type Column struct {
 	Label string     `msgpack:"label,omitempty" json:"label,omitempty"`
 	Width int        `msgpack:"width,omitempty" json:"width,omitempty"` // px hint
 	Align string     `msgpack:"align,omitempty" json:"align,omitempty"` // "left" | "right"
+	// Unit marks a usage column: "millicores" | "MiB" | "permille". Its int cells may be nil (no data) or -1 (n/a).
+	Unit string `msgpack:"unit,omitempty" json:"unit,omitempty"`
+	// Short is the label inside the dense usage block ("%R", "req", "alloc").
+	Short string `msgpack:"short,omitempty" json:"short,omitempty"`
+	// Metrics marks a column whose values come from metrics.k8s.io (needs the subscription's usage flag).
+	Metrics bool `msgpack:"metrics,omitempty" json:"metrics,omitempty"`
+	// Hidden marks a column hidden until shown from the Columns menu.
+	Hidden bool `msgpack:"hidden,omitempty" json:"hidden,omitempty"`
 }
 
 type Filter struct {
@@ -249,6 +273,8 @@ type ViewSubscribeParams struct {
 	Gen    uint32    `msgpack:"gen" json:"gen"`
 	Query  ViewQuery `msgpack:"query" json:"query"`
 	Window Window    `msgpack:"window" json:"window"`
+	// Usage asks the agent to poll metrics.k8s.io for this view's namespaces and fill the metrics columns.
+	Usage bool `msgpack:"usage,omitempty" json:"usage,omitempty"`
 }
 
 type ViewSubscribeResult struct {
@@ -261,6 +287,8 @@ type ViewUpdateParams struct {
 	Gen    uint32     `msgpack:"gen" json:"gen"`
 	Query  *ViewQuery `msgpack:"query,omitempty" json:"query,omitempty"`
 	Window *Window    `msgpack:"window,omitempty" json:"window,omitempty"`
+	// Usage changes the subscription's usage flag (nil = unchanged). It never bumps Gen.
+	Usage *bool `msgpack:"usage,omitempty" json:"usage,omitempty"`
 }
 
 type ViewUnsubscribeParams struct {
@@ -301,15 +329,28 @@ type DictAdd struct {
 var PodColumns = []Column{
 	{Key: "cluster", Type: ColDict, Label: "Cluster", Width: 110},
 	{Key: "name", Type: ColStr, Label: "Name", Width: 320},
-	{Key: "namespace", Type: ColDict, Label: "Namespace", Width: 160},
+	{Key: "namespace", Type: ColDict, Label: "Namespace", Width: 120},
 	{Key: "ready", Type: ColInt, Label: "Ready", Width: 64, Align: "right"},           // ready containers
 	{Key: "containers", Type: ColInt, Label: "Containers", Width: 84, Align: "right"}, // total containers
-	{Key: "status", Type: ColDict, Label: "Status", Width: 140},                       // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
+	{Key: "status", Type: ColDict, Label: "Status", Width: 120},                       // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
 	{Key: "statusTone", Type: ColTone, Label: "Tone", Width: 40},
-	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 76, Align: "right"},
-	{Key: "node", Type: ColDict, Label: "Node", Width: 160},
-	{Key: "ip", Type: ColStr, Label: "IP", Width: 130}, // pod IPs, comma-separated; sorts numerically
-	{Key: "createdAt", Type: ColTime, Label: "Age", Width: 72, Align: "right"},
+	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 68, Align: "right"},
+	// Usage columns (one dense block in the UI). Values are ints; nil = no data, -1 = n/a (no request/limit/node).
+	{Key: "cpuUse", Type: ColInt, Label: "CPU", Width: 44, Align: "right", Unit: "millicores", Metrics: true},
+	{Key: "cpuReq", Type: ColInt, Label: "CPU req", Short: "req", Width: 44, Align: "right", Unit: "millicores", Hidden: true},
+	{Key: "cpuLim", Type: ColInt, Label: "CPU lim", Short: "lim", Width: 44, Align: "right", Unit: "millicores", Hidden: true},
+	{Key: "cpuPctReq", Type: ColInt, Label: "%CPU/R", Short: "%R", Width: 36, Align: "right", Unit: "permille", Metrics: true},
+	{Key: "cpuPctLim", Type: ColInt, Label: "%CPU/L", Short: "%L", Width: 36, Align: "right", Unit: "permille", Metrics: true},
+	{Key: "cpuPctNode", Type: ColInt, Label: "%CPU/N", Short: "%N", Width: 36, Align: "right", Unit: "permille", Metrics: true, Hidden: true},
+	{Key: "memUse", Type: ColInt, Label: "MEM", Width: 48, Align: "right", Unit: "MiB", Metrics: true},
+	{Key: "memReq", Type: ColInt, Label: "MEM req", Short: "req", Width: 48, Align: "right", Unit: "MiB", Hidden: true},
+	{Key: "memLim", Type: ColInt, Label: "MEM lim", Short: "lim", Width: 48, Align: "right", Unit: "MiB", Hidden: true},
+	{Key: "memPctReq", Type: ColInt, Label: "%MEM/R", Short: "%R", Width: 36, Align: "right", Unit: "permille", Metrics: true},
+	{Key: "memPctLim", Type: ColInt, Label: "%MEM/L", Short: "%L", Width: 36, Align: "right", Unit: "permille", Metrics: true},
+	{Key: "memPctNode", Type: ColInt, Label: "%MEM/N", Short: "%N", Width: 36, Align: "right", Unit: "permille", Metrics: true, Hidden: true},
+	{Key: "node", Type: ColDict, Label: "Node", Width: 120},
+	{Key: "ip", Type: ColStr, Label: "IP", Width: 120, Hidden: true}, // pod IPs, comma-separated; sorts numerically
+	{Key: "createdAt", Type: ColTime, Label: "Age", Width: 56, Align: "right"},
 }
 
 // ---- objects --------------------------------------------------------------------------

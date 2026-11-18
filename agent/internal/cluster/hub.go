@@ -108,11 +108,15 @@ type runner struct {
 	// oev is the one store all of the cluster's object-events watches write into (created on first use,
 	// guarded by mu); it is attached to the view engine once as ingest.ObjectEventsGVR.
 	oev *store.Store
+
+	usage *usageState // the metrics poller (nil for a failed runner)
 }
 
 func (r *runner) state() protocol.ClusterState {
 	msg, _ := r.message.Load().(string)
-	return protocol.ClusterState{ID: r.id, Phase: r.phase.Load().(protocol.ClusterPhase), Synced: int(r.synced.Load()), Message: msg}
+	ma, mm := r.usage.avail()
+	return protocol.ClusterState{ID: r.id, Phase: r.phase.Load().(protocol.ClusterPhase), Synced: int(r.synced.Load()), Message: msg,
+		Metrics: ma, MetricsMessage: mm}
 }
 
 func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
@@ -168,6 +172,7 @@ func (r *runner) discoverLoop() {
 			}
 			r.m.kick()
 			r.m.reconcileAll()
+			r.usage.kickNow()
 		}
 		t := time.NewTimer(wait)
 		select {
@@ -626,6 +631,7 @@ func (r *runner) attachAll() {
 		r.m.eng.AttachKind(r.id, ingest.ObjectEventsGVR, r.oev)
 	}
 	r.mu.Unlock()
+	r.usage.republish() // detach cleared the engine's copy; the snapshot belongs to the same store (invariant 1 is checked by SetUsage)
 }
 
 func (r *runner) detachAll() {

@@ -117,8 +117,8 @@ export interface FlowUpdate {
 export type MainToWorker =
     | { t: 'connect'; url: string; token: string }
     | { t: 'request'; rid: number; method: string; params?: unknown }
-    | { t: 'subscribe'; qid: number; gen: number; query: ViewQuery; window: Window }
-    | { t: 'update'; qid: number; gen: number; query?: ViewQuery; window?: Window }
+    | { t: 'subscribe'; qid: number; gen: number; query: ViewQuery; window: Window; usage?: boolean }
+    | { t: 'update'; qid: number; gen: number; query?: ViewQuery; window?: Window; usage?: boolean }
     | { t: 'unsubscribe'; qid: number }
     | { t: 'log.open'; sid: number; params: StreamOpenParams; capacity: number; maxBytes?: number; multi: boolean }
     | { t: 'log.view'; sid: number; first: number; count: number; follow: boolean }

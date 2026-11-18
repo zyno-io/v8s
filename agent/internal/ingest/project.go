@@ -31,6 +31,10 @@ func Project(p *corev1.Pod) *Row {
 	r.putN(int64(restarts))
 	r.putS(p.Spec.NodeName)
 	r.tone = StatusTone(reason, p.Status.Phase, ready, total)
+	r.res = podRes(p)
+	if p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
+		r.flags |= flagTerminal
+	}
 	if f := podFacts(p); f != nil {
 		r.facts = f
 	}

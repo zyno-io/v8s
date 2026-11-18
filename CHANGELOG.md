@@ -5,6 +5,18 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- **CPU and memory in the Pods table**, from metrics-server: usage, and usage as a percentage of the pod's request and limit, in one dense block (CPU in millicores, memory in MiB, units in the header). Requests, limits and the percentage of the node are in the Columns menu. Hover the block for used, requested, limit and node share; amber from 90 % and red from 100 % of a limit; sort by any of them (missing values always last). On a phone each card shows `cpu 16m · mem 163Mi`. Usage is read only while a table shows it, every 30 seconds, for the namespaces on screen, and a cluster without metrics-server shows no usage columns and says why.
+
+### Changed
+
+- The pods **IP** column is hidden by default (turn it on from Columns; IP search and filtering are unaffected), and the Namespace, Status, Restarts, Node and Age columns are narrower, so the usage block fits a 1440 px screen with the sidebar pinned.
+
+### Fixed
+
+- Columns that are hidden by default no longer **reappear after you resize a column**.
+
 ## 0.2.2 — 2026-11-18
 
 ### Fixed

@@ -506,11 +506,26 @@ export const PhaseReady: ClusterPhase = "ready";
 export const PhaseDegraded: ClusterPhase = "degraded";
 export const PhaseReconnecting: ClusterPhase = "reconnecting";
 export const PhaseUnreachable: ClusterPhase = "unreachable";
+/**
+ * MetricsAvail is whether usage (metrics.k8s.io) can be read from a cluster: "" unknown, "ok", "absent" (no metrics
+ * API in discovery), "unavailable" (the API is registered but failing or stale), "forbidden" (the user may not read it).
+ */
+export type MetricsAvail = string;
+export const MetricsOK: MetricsAvail = "ok";
+export const MetricsAbsent: MetricsAvail = "absent";
+export const MetricsUnavailable: MetricsAvail = "unavailable";
+export const MetricsForbidden: MetricsAvail = "forbidden";
+/**
+ * CapacityGVR is the synthetic per-cluster capacity view behind the Overview CPU/Memory card.
+ */
+export const CapacityGVR = "v8s/v1/capacity";
 export interface ClusterState {
   id: string;
   phase: ClusterPhase;
   synced: number /* int */; // rows received so far while syncing
   message?: string;
+  metrics?: MetricsAvail; // usage availability; set only while a view polls usage
+  metricsMessage?: string; // why usage is unavailable
 }
 export interface ClusterStates {
   states: ClusterState[];
@@ -541,7 +556,7 @@ export interface KindsListResult {
 export type ColumnType = string;
 export const ColDict: ColumnType = "dict"; // u32 dictionary id (KindDict); 0 = empty
 export const ColStr: ColumnType = "str"; // inline string
-export const ColInt: ColumnType = "int"; // integer
+export const ColInt: ColumnType = "int"; // integer; cells of unit columns may be nil (no data) or -1 (n/a: no request/limit/node)
 export const ColTime: ColumnType = "time"; // unix milliseconds (int); the UI renders relative ages
 export const ColTone: ColumnType = "tone"; // small int: 0 neutral, 1 success, 2 warning, 3 danger, 4 info, 5 release
 export interface Column {
@@ -550,6 +565,22 @@ export interface Column {
   label?: string;
   width?: number /* int */; // px hint
   align?: string; // "left" | "right"
+  /**
+   * Unit marks a usage column: "millicores" | "MiB" | "permille". Its int cells may be nil (no data) or -1 (n/a).
+   */
+  unit?: string;
+  /**
+   * Short is the label inside the dense usage block ("%R", "req", "alloc").
+   */
+  short?: string;
+  /**
+   * Metrics marks a column whose values come from metrics.k8s.io (needs the subscription's usage flag).
+   */
+  metrics?: boolean;
+  /**
+   * Hidden marks a column hidden until shown from the Columns menu.
+   */
+  hidden?: boolean;
 }
 export interface Filter {
   col: string;
@@ -596,6 +627,10 @@ export interface ViewSubscribeParams {
   gen: number /* uint32 */;
   query: ViewQuery;
   window: Window;
+  /**
+   * Usage asks the agent to poll metrics.k8s.io for this view's namespaces and fill the metrics columns.
+   */
+  usage?: boolean;
 }
 export interface ViewSubscribeResult {
   columns: Column[];
@@ -608,6 +643,10 @@ export interface ViewUpdateParams {
   gen: number /* uint32 */;
   query?: ViewQuery;
   window?: Window;
+  /**
+   * Usage changes the subscription's usage flag (nil = unchanged). It never bumps Gen.
+   */
+  usage?: boolean;
 }
 export interface ViewUnsubscribeParams {
   qid: number /* uint32 */;
