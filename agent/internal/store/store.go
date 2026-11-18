@@ -48,6 +48,8 @@ type Store struct {
 
 	// notify is called (outside the lock) after a mutation appended to the feed.
 	notify atomic.Pointer[func()]
+	// seq counts mutation batches (see Seq).
+	seq atomic.Uint64
 	// tap observes every row change (add, update, delete) under the store lock; it must be quick and must
 	// not call back into the store. Unchanged rows (equal cells and facts) are not reported.
 	tap func(old, new *ingest.Row)
@@ -147,7 +149,12 @@ func (s *Store) deleteLocked(h uint32) {
 	}
 }
 
+// Seq is a counter that increases with every mutation (add, update, delete, replace, bookmark). A consumer that
+// aggregates over the store compares it with the value it last saw to skip a scan when nothing changed.
+func (s *Store) Seq() uint64 { return s.seq.Load() }
+
 func (s *Store) after(replace bool, n int) {
+	s.seq.Add(1)
 	if replace {
 		if s.OnReplace != nil {
 			s.OnReplace(n)
@@ -173,6 +180,7 @@ func (s *Store) Provisional(rows []*ingest.Row) {
 		s.upsertLocked(r)
 	}
 	s.mu.Unlock()
+	s.seq.Add(1)
 	if f := s.notify.Load(); f != nil {
 		(*f)()
 	}
@@ -401,6 +409,7 @@ func (s *Store) NamespaceCount(ns string) int {
 
 // Reset drops all contents (used when a cluster is released).
 func (s *Store) Reset() {
+	s.seq.Add(1)
 	s.mu.Lock()
 	s.rows, s.gens, s.pos, s.free, s.mark, s.feed = nil, nil, nil, nil, nil, nil
 	s.byUID = make(map[string]uint32)

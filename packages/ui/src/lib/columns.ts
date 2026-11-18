@@ -57,6 +57,11 @@ export interface UsageIdx {
     memPctLim: number;
     memPctNode: number;
     node: number;
+    /** Nodes: usage as a percentage of the node's own allocatable, and the allocatable columns (`cpu`, `memory`). */
+    cpuPctAlloc: number;
+    cpuAlloc: number;
+    memPctAlloc: number;
+    memAlloc: number;
 }
 
 export interface TablePlan {
@@ -313,10 +318,32 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
 export const PODS_METRIC_KEYS = ['cpuUse', 'cpuPctReq', 'cpuPctLim', 'cpuPctNode', 'memUse', 'memPctReq', 'memPctLim', 'memPctNode'];
 const PODS_METRIC_SHOWN = ['cpuUse', 'cpuPctReq', 'cpuPctLim', 'memUse', 'memPctReq', 'memPctLim'];
 export function guessPodsUsage(layout: ColumnLayout | undefined, sort: readonly { col: string }[]): boolean {
-    if (sort.some(s => PODS_METRIC_KEYS.includes(s.col))) return true;
+    return guess(PODS_METRIC_KEYS, PODS_METRIC_SHOWN, layout, sort);
+}
+
+/** The same guess for nodes: all four metrics columns are shown by default. */
+export const NODES_METRIC_KEYS = ['cpuUse', 'cpuPctAlloc', 'memUse', 'memPctAlloc'];
+export function guessNodesUsage(layout: ColumnLayout | undefined, sort: readonly { col: string }[]): boolean {
+    return guess(NODES_METRIC_KEYS, NODES_METRIC_KEYS, layout, sort);
+}
+
+/** The subscribe-time usage guess for a kind (false for kinds without usage). */
+export function guessUsage(gvr: string, layout: ColumnLayout | undefined, sort: readonly { col: string }[]): boolean {
+    if (gvr === 'v1/pods') return guessPodsUsage(layout, sort);
+    if (gvr === 'v1/nodes') return guessNodesUsage(layout, sort);
+    return false;
+}
+
+function guess(
+    keys: readonly string[],
+    shownByDefault: readonly string[],
+    layout: ColumnLayout | undefined,
+    sort: readonly { col: string }[]
+): boolean {
+    if (sort.some(s => keys.includes(s.col))) return true;
     const hidden = new Set(layout?.hidden ?? []);
     const shown = new Set(layout?.shown ?? []);
-    return PODS_METRIC_KEYS.some(k => !hidden.has(k) && (PODS_METRIC_SHOWN.includes(k) || shown.has(k)));
+    return keys.some(k => !hidden.has(k) && (shownByDefault.includes(k) || shown.has(k)));
 }
 
 // ---- the dense usage block ----
@@ -368,7 +395,11 @@ function usageIdx(columns: readonly Column[]): UsageIdx | null {
         memPctReq: at('memPctReq'),
         memPctLim: at('memPctLim'),
         memPctNode: at('memPctNode'),
-        node: at('node')
+        node: at('node'),
+        cpuPctAlloc: at('cpuPctAlloc'),
+        cpuAlloc: at('cpu'),
+        memPctAlloc: at('memPctAlloc'),
+        memAlloc: at('memory')
     };
     return u.cpuUse >= 0 && u.memUse >= 0 ? u : null;
 }

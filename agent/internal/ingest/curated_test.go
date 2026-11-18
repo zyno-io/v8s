@@ -89,7 +89,7 @@ func TestCuratedProjections(t *testing.T) {
 				Addresses:   []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.1.1.1"}},
 				NodeInfo:    corev1.NodeSystemInfo{KubeletVersion: "v1.31.0", OSImage: "Ubuntu", KernelVersion: "6.8", ContainerRuntimeVersion: "containerd://1.7"},
 				Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4"), corev1.ResourceMemory: resource.MustParse("16Gi"), corev1.ResourcePods: resource.MustParse("110")}}},
-			"Ready,SchedulingDisabled|gpu,worker|v1.31.0|10.1.1.1|Ubuntu|6.8|containerd://1.7|4|16Gi|110|1", ToneWarning},
+			"Ready,SchedulingDisabled|gpu,worker|v1.31.0|10.1.1.1|Ubuntu|6.8|containerd://1.7|110|1", ToneWarning},
 		{"v1/namespaces", &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns", UID: "u", ResourceVersion: "1"}, Status: corev1.NamespaceStatus{Phase: corev1.NamespaceTerminating}}, "Terminating", ToneWarning},
 		{"v1/persistentvolumeclaims", &corev1.PersistentVolumeClaim{ObjectMeta: om("p", "ns"), Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-1", StorageClassName: ptr("fast")},
 			Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound, Capacity: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},

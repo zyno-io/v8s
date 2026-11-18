@@ -110,6 +110,9 @@ type runner struct {
 	oev *store.Store
 
 	usage *usageState // the metrics poller (nil for a failed runner)
+	// capStore holds the cluster's one capacity row (the Overview CPU/Memory card), computed by usageState.stepCapacity.
+	// Attached like the problems store; nil for a failed runner.
+	capStore *store.Store
 }
 
 func (r *runner) state() protocol.ClusterState {
@@ -626,6 +629,9 @@ func (r *runner) attachAll() {
 	if r.pe != nil {
 		r.m.eng.AttachKind(r.id, problems.GVR, r.pe.Store())
 	}
+	if r.capStore != nil {
+		r.m.eng.AttachKind(r.id, protocol.CapacityGVR, r.capStore)
+	}
 	for gvr, w := range r.watches {
 		if w.part == nil {
 			r.m.eng.AttachKind(r.id, gvr, w.st)
@@ -665,6 +671,9 @@ func (r *runner) stop() {
 	}
 	if r.oev != nil {
 		r.oev.Reset()
+	}
+	if r.capStore != nil {
+		r.capStore.Reset()
 	}
 	r.watches = map[string]*watchEntry{}
 	r.mu.Unlock()

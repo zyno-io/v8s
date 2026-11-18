@@ -124,6 +124,10 @@ Pod columns (all integers; CPU in millicores, memory in MiB, percentages in per-
 
 Requests and limits follow Kubernetes: regular containers are summed, init containers are the maximum of the sum so far (plus the restartable ones before them), restartable init containers (native sidecars) count as running, a pod-level `resources` block overrides, and `overhead` is added to requests and to non-zero limits. A limit exists only when every regular container and every sidecar has one (or the pod has a pod-level limit); otherwise the pod is unbounded and shows `n/a`. Node percentages use the node's **allocatable**, not capacity (it is what the scheduler packs against).
 
+Node columns: `cpuUse` and `memUse` are the node's usage (NodeMetrics), `cpuPctAlloc` and `memPctAlloc` that usage over the node's own allocatable, and `cpu` and `memory` (the keys the old string columns had, so saved layouts still apply) are the allocatable itself, in millicores and MiB; they are numeric now and sort as such, and need no metrics-server. `os`, `kernel`, `runtime` and `taints` are hidden by default.
+
+Overview capacity: the synthetic `v8s/v1/capacity` view has one row per cluster. The agent computes it with a throttled full scan of the pod and node stores (at most every 2 s, only while an Overview has it open, and only when a store's change counter or the node usage snapshot moved; about 0.75 ms at 50k pods and 5k nodes). The denominator is the allocatable of **all** nodes, control-plane and cordoned ones included (as `kubectl describe nodes`). Requests and limits are summed over pods that are bound to a node and have not finished (Succeeded and Failed pods and unscheduled pods are skipped); a pod without a limit adds nothing to the limits and is counted in `podsNoCPULim` / `podsNoMemLim`. Usage is the sum of the node metrics that report, and is -1 when none does.
+
 Cells: `null` means no data (no metrics yet, a pod metrics-server does not report such as Pending or Completed, or a sample older than the pod), `-1` means n/a (no request, no limit or no node to divide by). Missing values sort last in both directions.
 
 ## Generic CRD support

@@ -1105,8 +1105,10 @@ func (c *conn) syncDemand(cs *connSub, mod *ingest.Module) {
 		return
 	}
 	var nd *cluster.UsageDemand
-	if cs.usage && cs.involved == nil && mod != nil && mod.Usage != "" {
-		nd = c.s.opt.Manager.OpenUsage(cs.gvr, cs.clusters, cs.namespaces, true)
+	// A capacity card always holds a demand (the row's requests and limits need no metrics); only its usage flag
+	// decides whether node metrics are polled.
+	if cs.involved == nil && mod != nil && mod.Usage != "" && (cs.usage || mod.Usage == "capacity") {
+		nd = c.s.opt.Manager.OpenUsage(cs.gvr, cs.clusters, cs.namespaces, cs.usage)
 	}
 	old := cs.demand
 	cs.demand = nd

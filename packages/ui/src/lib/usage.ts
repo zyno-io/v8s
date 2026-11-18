@@ -35,8 +35,23 @@ function line(
     return parts.join(' · ');
 }
 
-/** The usage block's tooltip: both resources against request, limit and node. Built only when a row re-renders. */
+/** A node row's line: usage against the node's own allocatable. */
+function nodeLine(name: 'CPU' | 'MEM', fmt: (n: number) => string, used: number | null, alloc: number | null, pAlloc: number | null): string {
+    const parts = [used == null ? `${name} no data` : `${name} ${fmt(used)} used`];
+    if (alloc == null) parts.push('no allocatable');
+    else parts.push(`${pAlloc != null && pAlloc >= 0 ? `${pct(pAlloc)}% of ` : ''}${fmt(alloc)} allocatable`);
+    return parts.join(' · ');
+}
+
+/** The usage block's tooltip: both resources against request, limit and node (nodes: against their allocatable). Built only when a row re-renders. */
 export function usageTitle(u: UsageIdx, row: Row): string {
+    if (u.cpuPctAlloc >= 0) {
+        const a = (i: number) => num(row, i);
+        return [
+            nodeLine('CPU', cpuText, a(u.cpuUse), a(u.cpuAlloc), a(u.cpuPctAlloc)),
+            nodeLine('MEM', memText, a(u.memUse), a(u.memAlloc), a(u.memPctAlloc))
+        ].join('\n');
+    }
     const node = u.node >= 0 && typeof row[u.node] === 'string' ? (row[u.node] as string) : '';
     const n = (i: number) => num(row, i);
     return [
@@ -50,6 +65,9 @@ export function usageCardLine(u: UsageIdx, row: Row): { text: string; tone: 'war
     const cpu = num(row, u.cpuUse);
     const mem = num(row, u.memUse);
     if (cpu == null || mem == null) return null;
-    const tones = [usageTone('lim', num(row, u.cpuPctLim)), usageTone('lim', num(row, u.memPctLim))];
+    const tones =
+        u.cpuPctAlloc >= 0
+            ? [usageTone('node', num(row, u.cpuPctAlloc)), usageTone('node', num(row, u.memPctAlloc))]
+            : [usageTone('lim', num(row, u.cpuPctLim)), usageTone('lim', num(row, u.memPctLim))];
     return { text: `cpu ${cpu}m · mem ${mem}Mi`, tone: tones.includes('danger') ? 'danger' : tones.includes('warning') ? 'warning' : '' };
 }

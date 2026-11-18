@@ -18,6 +18,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/settings"
+	"github.com/zyno-io/v8s/agent/internal/store"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -332,6 +333,9 @@ func (m *Manager) start(id string) (*runner, error) {
 		r.wg.Add(1)
 		go func() { defer r.wg.Done(); r.pe.Run(ctx) }()
 	}
+	r.capStore = store.New()
+	_ = r.capStore.Replace(nil, "") // synced and empty until the first capacity scan
+	m.eng.AttachKind(id, protocol.CapacityGVR, r.capStore)
 	r.usage = newUsageState(r) // before startTier0: the discovery loop kicks it
 	r.startTier0()
 	r.wg.Add(1)
