@@ -21,6 +21,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['d', 'describe: open the focused object, Overview tab'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
+            ['[', 'pin or unpin the sidebar'],
             ['?', 'show this list']
         ]
     },

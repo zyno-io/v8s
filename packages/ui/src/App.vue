@@ -10,7 +10,7 @@ import DrainHost from './components/DrainHost.vue';
 import NodeShellHost from './components/NodeShellHost.vue';
 import PortForwardHost from './components/PortForwardHost.vue';
 import ShortcutsOverlay from './components/ShortcutsOverlay.vue';
-import SideNav from './components/SideNav.vue';
+import SideBar from './components/SideBar.vue';
 import Toaster from './components/Toaster.vue';
 import TopBar from './components/TopBar.vue';
 import { bootMessage, bootState, getAgent, refreshKinds, startAgent } from './lib/agent.ts';
@@ -96,7 +96,7 @@ onBeforeUnmount(() => uninstall?.());
             Sign in to the clusters to continue. <button class="btn sm" type="button" @click="clusterLogin">Sign in to clusters</button>
         </div>
         <div class="body">
-            <SideNav />
+            <SideBar />
             <div class="content">
                 <router-view v-slot="{ Component, route: r }"><component :is="Component" :key="r.path" /></router-view>
                 <CommandBar />
@@ -191,10 +191,5 @@ onBeforeUnmount(() => uninstall?.());
 }
 .splash p {
     margin: 0;
-}
-@media (max-width: 899.98px) {
-    .body :deep(.side) {
-        display: none;
-    }
 }
 </style>

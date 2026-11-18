@@ -73,6 +73,9 @@ func normalize(s protocol.Settings) protocol.Settings {
 	if s.Acks == nil {
 		s.Acks = map[string]any{}
 	}
+	if s.UIPrefs == nil {
+		s.UIPrefs = map[string]any{}
+	}
 	if s.NodeShell == nil {
 		s.NodeShell = map[string]protocol.NodeShellSettings{}
 	}
