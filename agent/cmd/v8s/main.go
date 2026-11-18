@@ -23,6 +23,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/cluster"
 	"github.com/zyno-io/v8s/agent/internal/engine"
 	"github.com/zyno-io/v8s/agent/internal/fake"
+	"github.com/zyno-io/v8s/agent/internal/klogbridge"
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/version"
@@ -68,6 +69,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	klogbridge.Install(log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

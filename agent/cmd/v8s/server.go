@@ -14,6 +14,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/hosted"
 	"github.com/zyno-io/v8s/agent/internal/hosted/config"
+	"github.com/zyno-io/v8s/agent/internal/klogbridge"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/webui"
 )
@@ -30,6 +31,7 @@ func runServer(args []string) error {
 		return err
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	klogbridge.Install(log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
