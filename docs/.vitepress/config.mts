@@ -25,13 +25,15 @@ function repoLinks(md: MarkdownIt) {
 export default defineConfig({
     title: 'v8s',
     description: 'A fast, multi-cluster Kubernetes manager for desktop, web, and phone.',
-    base: '/v8s/',
+    // Served at https://docs.v8s.io (GitHub Pages custom domain; docs/public/CNAME).
+    base: '/',
+    sitemap: { hostname: 'https://docs.v8s.io' },
     cleanUrls: true,
     lastUpdated: true,
     appearance: true,
 
     head: [
-        ['link', { rel: 'icon', type: 'image/svg+xml', href: '/v8s/logo.svg' }],
+        ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
         ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
         ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
         ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap' }]

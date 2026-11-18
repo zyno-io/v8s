@@ -44,7 +44,7 @@ First release. v8s is a multi-cluster Kubernetes manager for desktop, browser, a
 ### Problems
 
 - Problems view across all selected clusters with 51 classes in 12 families, rollups by workload, severity and family filters, grouping, cross-cluster aggregation, and acknowledge and snooze. Acknowledgements survive object recreation and are collected after 7 days unseen.
-- Detectors for pods, workloads, jobs, nodes, storage, networking, Gateway API, cert-manager, API services, webhooks, Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble. Defaults are listed in the [Problems guide](https://zyno-io.github.io/v8s/guide/problems).
+- Detectors for pods, workloads, jobs, nodes, storage, networking, Gateway API, cert-manager, API services, webhooks, Flux, Helm, Kyverno, Trivy, Kubescape, and Hubble. Defaults are listed in the [Problems guide](https://docs.v8s.io/guide/problems).
 
 ### Integrations
 
