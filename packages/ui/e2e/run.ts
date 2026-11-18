@@ -954,6 +954,37 @@ async function main() {
             await drawer.waitFor({ state: 'hidden' });
         });
 
+        await step('agent restart: reconnects by itself, no reload, the open view recovers', async () => {
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            await page.keyboard.press(':');
+            await page.getByLabel('Command', { exact: true }).fill('ns all');
+            await page.getByLabel('Command', { exact: true }).press('Enter');
+            await page.keyboard.press(':');
+            await page.getByLabel('Command', { exact: true }).fill('configmaps');
+            await page.getByLabel('Command', { exact: true }).press('Enter');
+            await page.waitForURL(/\/r\/v1\/configmaps/);
+            await page.getByPlaceholder('Filter by name').fill('e2e-config');
+            const created = page.locator('.scroller .row:not(.sk)', { hasText: 'e2e-config' });
+            await created.first().waitFor({ timeout: 20000 });
+            await page.evaluate(() => ((window as unknown as { __noReload: boolean }).__noReload = true));
+            const seen = errors.length;
+            await stack.restartAgent(); // new process on the same port: every socket drops, in-memory state (and that ConfigMap) is gone
+            // The same view resubscribes and shows the new agent's snapshot: the old agent's ConfigMap disappears.
+            await created.first().waitFor({ state: 'detached', timeout: 30000 });
+            await page.getByText(/No configmaps match/).waitFor({ timeout: 30000 }); // the fresh snapshot, not stale rows
+            // A view opened after the restart works too.
+            await page.getByRole('link', { name: /^Services/ }).click();
+            await page.waitForURL(/\/r\/v1\/services/);
+            await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 30000 });
+            await page.getByTestId('agent-reconnecting').waitFor({ state: 'hidden', timeout: 30000 });
+            assert.equal(await page.getByTestId('agent-unreachable').count(), 0);
+            assert.equal(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload), true, 'the page did not reload');
+            // Only the failed reconnect attempts' socket errors are expected; anything else still fails the run.
+            const expected = /WebSocket|ERR_CONNECTION|Failed to load resource/i;
+            errors.splice(seen, errors.length - seen, ...errors.slice(seen).filter(m => !expected.test(m)));
+        });
+
         assert.deepEqual(errors, [], 'no console or page errors');
         console.log('e2e: all flows passed');
     } catch (e) {

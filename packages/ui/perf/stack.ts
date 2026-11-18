@@ -18,6 +18,7 @@ export interface Stack {
     agentPort: number;
     token: string;
     url: string;
+    restartAgent(): Promise<void>;
     stop(): Promise<void>;
 }
 
@@ -73,26 +74,33 @@ export async function startStack(fake: string, token = 'perf'): Promise<Stack> {
     });
     procs.push(preview);
 
-    const agent = spawn(
-        bin,
-        ['agent', '--fake', fake, '--listen', '127.0.0.1:0', '--dev-token', token, '--allowed-origin', `http://127.0.0.1:${previewPort}`],
-        { cwd: agentDir, stdio: ['pipe', 'pipe', 'inherit'] }
-    );
-    procs.push(agent);
-
-    const agentPort = await new Promise<number>((res, rej) => {
-        let buf = '';
-        const t = setTimeout(() => rej(new Error('agent did not print its port')), 20000);
-        agent.once('exit', code => rej(new Error(`agent exited early (${code})`)));
-        agent.stdout!.on('data', (d: Buffer) => {
-            buf += d.toString();
-            const line = buf.split('\n').find(l => l.startsWith('{'));
-            if (line) {
+    const startAgent = async (listen: string) => {
+        const agent = spawn(
+            bin,
+            ['agent', '--fake', fake, '--listen', listen, '--dev-token', token, '--allowed-origin', `http://127.0.0.1:${previewPort}`],
+            { cwd: agentDir, stdio: ['pipe', 'pipe', 'inherit'] }
+        );
+        procs.push(agent);
+        const port = await new Promise<number>((res, rej) => {
+            let buf = '';
+            const t = setTimeout(() => rej(new Error('agent did not print its port')), 20000);
+            agent.once('exit', code => {
                 clearTimeout(t);
-                res((JSON.parse(line) as { port: number }).port);
-            }
+                rej(new Error(`agent exited early (${code})`));
+            });
+            agent.stdout!.on('data', (d: Buffer) => {
+                buf += d.toString();
+                const line = buf.split('\n').find(l => l.startsWith('{'));
+                if (line) {
+                    clearTimeout(t);
+                    res((JSON.parse(line) as { port: number }).port);
+                }
+            });
         });
-    });
+        return { agent, port };
+    };
+    let current = await startAgent('127.0.0.1:0');
+    const agentPort = current.port;
     await waitHttp(`http://127.0.0.1:${previewPort}/`);
 
     return {
@@ -100,6 +108,21 @@ export async function startStack(fake: string, token = 'perf'): Promise<Stack> {
         agentPort,
         token,
         url: `http://127.0.0.1:${previewPort}/#agent=ws://127.0.0.1:${agentPort}/ws&token=${token}`,
+        /** Kills the agent and starts a fresh one on the same port (in-memory state is lost, as in a redeploy). */
+        async restartAgent() {
+            const old = current.agent;
+            old.kill('SIGKILL');
+            if (old.exitCode === null && old.signalCode === null) await new Promise(r => old.once('exit', r));
+            for (let i = 0; ; i++) {
+                try {
+                    current = await startAgent(`127.0.0.1:${agentPort}`);
+                    return;
+                } catch (e) {
+                    if (i >= 20) throw e;
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+        },
         async stop() {
             for (const p of procs) p.kill('SIGTERM');
             await new Promise(r => setTimeout(r, 300));

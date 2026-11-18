@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import BottomNav from './components/BottomNav.vue';
@@ -35,6 +35,37 @@ const drawerOpen = computed(() => !!(route.query.c && route.query.n));
 const closed = computed(() => bootState.value === 'ready' && getAgent().status.value === 'closed');
 let uninstall: (() => void) | null = null;
 const reload = () => location.reload();
+
+// Connection loss: the client reconnects by itself and the views keep their last rows. Show a calm "Reconnecting…" only after a
+// short grace (quick blips stay invisible), and escalate to "Can't reach the agent" after a minute of failing.
+const RECONNECT_NOTICE_MS = 1500;
+const RECONNECT_GIVE_UP_MS = 60_000;
+const reconnecting = computed(() => bootState.value === 'ready' && getAgent().status.value === 'reconnecting');
+const showReconnecting = ref(false);
+const unreachable = ref(false);
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let giveUpTimer: ReturnType<typeof setTimeout> | undefined;
+watch(reconnecting, on => {
+    clearTimeout(noticeTimer);
+    clearTimeout(giveUpTimer);
+    if (!on) {
+        showReconnecting.value = false;
+        unreachable.value = false;
+        return;
+    }
+    noticeTimer = setTimeout(() => (showReconnecting.value = true), RECONNECT_NOTICE_MS);
+    giveUpTimer = setTimeout(() => (unreachable.value = true), RECONNECT_GIVE_UP_MS);
+});
+const retryNow = () => getAgent().reconnectNow();
+
+// Back after a drop: the views are resubscribed by the client; re-read what is derived from the connection (kinds).
+watch(
+    () => (bootState.value === 'ready' ? getAgent().reconnects.value : 0),
+    n => {
+        if (!n) return;
+        refreshKinds(0);
+    }
+);
 
 // Hosted: a cluster whose app login lapsed (`auth-required`), or `/api/me` saying `clusterAuth: required`, needs the cluster-login flow.
 const needsClusterLogin = computed(
@@ -89,6 +120,12 @@ onBeforeUnmount(() => uninstall?.());
 <template>
     <div v-if="bootState === 'ready'" class="frame">
         <TopBar />
+        <div v-if="unreachable" class="banner warn" role="status" data-testid="agent-unreachable">
+            Can't reach the agent.
+            <button class="btn sm" type="button" @click="retryNow">Retry now</button>
+            <button class="btn sm" type="button" @click="reload">Reload</button>
+        </div>
+        <div v-else-if="showReconnecting" class="banner calm" role="status" data-testid="agent-reconnecting">Reconnecting…</div>
         <div v-if="closed" class="banner" role="alert">
             Disconnected from the agent. <button class="btn sm" type="button" @click="reload">Reload</button>
         </div>
@@ -173,6 +210,11 @@ onBeforeUnmount(() => uninstall?.());
     display: flex;
     gap: 10px;
     align-items: center;
+}
+.banner.calm {
+    background: var(--neutral-soft);
+    border-bottom-color: var(--neutral-b);
+    color: var(--text2);
 }
 .banner.warn {
     background: var(--warning-soft);

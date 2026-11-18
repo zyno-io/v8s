@@ -38,7 +38,7 @@ export interface AgentEndpoint {
     token: string;
 }
 
-export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error';
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting' | 'closed' | 'error';
 
 /** The KindObject payload on the wire: ObjectPayload fields inline (Go embeds the struct) plus `deleted` / `error`. */
 export type ObjectFrameWire = ObjectPayload & { deleted?: boolean; error?: ErrorBody };
@@ -132,6 +132,8 @@ export type MainToWorker =
     | { t: 'flow.pause'; sid: number; paused: boolean }
     | { t: 'flow.clear'; sid: number }
     | { t: 'flow.close'; sid: number }
+    /** The network is back or the tab is visible again: reconnect now instead of waiting out the backoff. */
+    | { t: 'nudge' }
     | { t: 'close' };
 
 export type WorkerToMain =
@@ -148,6 +150,8 @@ export type WorkerToMain =
     | { t: 'flow.opened'; sid: number; usedContext?: string }
     | { t: 'flow.error'; sid: number; error: ErrorBody }
     | { t: 'columns'; qid: number; columns: Column[]; error?: ErrorBody }
+    /** The view was resubscribed on a new connection: wire ids restarted, so ids held by the page no longer mean what they did. Precedes the first rows. */
+    | { t: 'reset'; qid: number }
     /** Up to 500 rows; applied immediately without a version bump. */
     | { t: 'rows'; qid: number; gen: number; rows: Row[] }
     /** Last message of a flush: ids/total/offset/removed, then the main thread bumps the view version. */

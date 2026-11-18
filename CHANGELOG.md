@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- **"Disconnected from the agent" no longer needs a reload.** The page reconnects by itself after a server restart, a proxy idle timeout, sleep or a network change (backoff up to 15 s, immediately when the network returns or the tab is shown again), resubscribes every view and keeps showing the last rows meanwhile. A small "Reconnecting…" bar replaces the red banner; after a minute it offers **Retry now**. The agent now pings every socket every 25 s so idle connections survive proxies.
+
 ## 0.2.0 — 2026-11-18
 
 ### Added

@@ -8,6 +8,8 @@ The source of truth is [`agent/pkg/protocol/protocol.go`](../agent/pkg/protocol/
 - **Desktop / `v8s serve`**: the client offers `Sec-WebSocket-Protocol: v8s.v1, token.<hex>`. The agent rejects a missing or wrong token, and an `Origin` that is not the agent's own origin (or the Electron app origin), with 403 before upgrading. It echoes `v8s.v1`.
 - **Fake mode** (`v8s agent --fake …`, used by tests and UI development) still requires the token, but it is printed to stdout like in desktop mode.
 - On upgrade the agent sends `Hello`. The client checks `version == 1` and closes on mismatch.
+- **Keepalive**: the agent sends a WebSocket ping on every data socket and every `/stream` socket every 25 s (`Options.PingInterval`) and keeps proxies with idle timeouts (`tailscale serve`, load balancers) from dropping a quiet connection. On the data socket a ping not answered within `PingTimeout` (default 15 s, the write timeout) closes it, which frees its subscriptions. On `/stream` a missing pong never closes the socket: pongs are only processed inside a read, and a debug container or node-shell pod can take up to 90 s to start before the stream body reads; stream reads and writes detect a dead client themselves. Browsers answer pings on their own; clients need no code for it.
+
 
 ## Frames
 
@@ -46,6 +48,19 @@ msgpack: maps with the field names in the Go tags; `ids` is a msgpack `bin`. Go 
 - `view.subscribe` answers only after the first list, an error, or 15 s, so the client has a real loading state and a real error. An error response means no subscription exists. `bad_request`: `gvr` other than `v1/events`, a missing name or namespace, a kind that has no events (`helm.sh/v1/releases`, `v8s/v1/problems`), or a direct query of the internal `v8s/v1/objectevents` kind. `not_found`: the cluster is not selected, or the kind is unknown. `forbidden`: no permission to list events in that namespace. `unavailable`: the 15 s timeout or the watch budget is exhausted.
 - `view.update` that changes the `involved` object (cluster, gvr, namespace or name) re-resolves like a changed kind; one that keeps it only changes sort, filters or the window.
 - Unsubscribing releases the watch, which lingers 30 s (it counts against the per-cluster watch budget and is evicted first). These rows live in their own store: they never reach the Warning-only tier-0 events or the problems engine.
+
+## Reconnect
+
+A socket close is not the end of the session. The Data Worker reconnects on its own unless the page closed it, the Hello version did not match, or a hosted session ended; the first connect is not retried (the page reports a boot error). The data-socket status goes `open` → `reconnecting` → `open` (`closed` only when it stops for good).
+
+- **Backoff**: 0.5 s, 1 s, 2 s, 4 s … capped at 15 s, each delay reduced by a random 0–25 %. The delay resets after a completed handshake. The page nudges the worker on `online` and when the tab becomes visible, which skips the wait. An attempt that has not received `Hello` after 10 s is abandoned.
+- **Handshake**: identical to the first connect (same subprotocols: token in desktop and `serve`, the session cookie in hosted). The dictionary restarts with the new connection.
+- **Hosted session end**: the browser hides a 401 on the upgrade, so after a failed attempt the worker asks `GET /api/me`; a 401 stops reconnecting (status `closed`, "session ended") and the UI goes to sign-in.
+- **Views** are restored: the worker keeps each view's `qid`, current `gen`, query and window, and after `Hello` sends one `view.subscribe` per live view with the same `qid` and `gen`. A new connection has no memory of the old one, so no `gen` bump is needed (a bump is only for a changed query). The window is resent as an absolute `{offset, limit}` without `anchorId`: wire ids restart on the new connection, so an old anchor id would name another row. The worker drops the view's row table and the old wire ids, which are per subscription; the engine always answers with a first full patch (empty views included). Before the first rows of that snapshot the worker posts a `reset` message, and the page's `ViewHandle.epoch` changes: the page must clear anything it keyed by wire id (a focused or expanded row, a scroll anchor). Until then the page keeps painting its last rows; the snapshot's `ids` list replaces them. Views opened, updated or closed while disconnected are recorded locally and applied at resubscribe.
+- **Requests** in flight at the close, and any made while disconnected, fail with `unavailable`; they are never queued or replayed (a stale mutation must not run minutes later). `stream.open` fails the same way.
+- **Object subscriptions** are re-sent by the page (`object.subscribe` with the same `oid`); the agent answers with a fresh full frame.
+- **Streams** (logs, flows) have their own sockets and end with theirs: a pane reports `unavailable` and offers Reconnect, and nothing is reopened automatically.
+- After a reconnect the page re-reads `jobs.list` and `kinds.list`. The worker waits for the agent's first cluster states (2 s at most) before resubscribing views; if none are live (a restart, or a hosted engine evicted after its 30 s grace) it first sends `clusters.select` with the clusters last reported live (or last selected successfully by this page), so views resolve against them. A merely remembered or pre-checked selection is never restored.
 
 ## Requests
 

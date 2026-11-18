@@ -267,6 +267,17 @@ watch(
     () => requestWindow()
 );
 
+// Resubscribed after a reconnect: row ids restarted, so the focused row and the scroll anchor would name different rows.
+watch(
+    () => props.handle.epoch.value,
+    () => {
+        ui.value.focusId = 0;
+        anchor.id = 0;
+        lastKey = '';
+    },
+    { flush: 'sync' }
+);
+
 watch(isPhone, () => {
     lastKey = '';
     requestWindow(true);

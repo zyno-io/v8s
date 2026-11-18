@@ -318,7 +318,7 @@ describe('DataCore posting', () => {
         h.main({ t: 'request', rid: 1, method: 'clusters.list' });
         h.core.handleClosed('bye');
         expect(h.of('response')[0].error?.code).toBe('unavailable');
-        expect(h.of('status').at(-1)?.status).toBe('closed');
+        expect(h.of('status').at(-1)?.status).toBe('reconnecting');
     });
 });
 
