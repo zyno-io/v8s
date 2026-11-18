@@ -72,6 +72,18 @@ describe('actionState', () => {
         expect(s.viaWrite).toBe(true);
         expect(s.reason).toMatch(/write context/);
     });
+    it('keeps an action that needs the write context after confirmation enabled', () => {
+        const s = actionState([
+            { allowed: false, viaWrite: false, needsConfirm: true, reason: 'allowed through the linked write context after confirmation' }
+        ]);
+        expect(s).toMatchObject({ disabled: false, viaWrite: true });
+    });
+    it("shows the agent's note when the write context could not be checked", () => {
+        const note = 'runs through the write context prod-admin, which could not be checked (is its elevated session active?)';
+        expect(actionState([{ allowed: true, viaWrite: true, reason: note }])).toEqual({ disabled: false, reason: note, viaWrite: true });
+        // autoSwitchWrite off: the same note arrives on a needsConfirm result.
+        expect(actionState([{ allowed: false, viaWrite: false, needsConfirm: true, reason: note }]).reason).toBe(note);
+    });
 });
 
 describe('needsTypeToConfirm', () => {

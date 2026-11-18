@@ -85,7 +85,10 @@ function tip(a: ActionDef): string {
     if (st.disabled) return st.reason;
     if (st.viaWrite) {
         const ctxs = [...new Set(props.targets.map(x => clusters.writeContextOf(x.cluster)).filter(Boolean))];
-        return ctxs.length ? `Runs as ${ctxs.join(', ')}` : st.reason;
+        const base = ctxs.length ? `Runs as ${ctxs.join(', ')}` : '';
+        // The agent's note (e.g. the write context could not be checked: is its elevated session active?) adds to it.
+        const note = st.reason && st.reason !== 'Will run as the linked write context' ? st.reason : '';
+        return [base, note].filter(Boolean).join(' — ') || st.reason;
     }
     return '';
 }

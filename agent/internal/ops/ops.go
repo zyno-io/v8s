@@ -4,7 +4,10 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -322,8 +325,14 @@ func (s *Service) routeSub(ctx context.Context, cluster, verb string, gvr schema
 		return toWrite()
 	}
 	allowed, reason, rerr := s.reviewSub(ctx, cluster, rc, verb, gvr, sub, ns, name)
-	if rerr != nil || allowed {
+	// Allowed, or the read context cannot answer and there is no write context: the API server decides. With a
+	// write context, a read context that cannot even run the access review (a gateway's read-only target refusing
+	// the POST) is treated like a refusal, so the mutation goes to the write context instead of failing there.
+	if allowed || (rerr != nil && (wctx == "" || !escalates(verb, sub, rerr))) {
 		return cluster, rc, false, nil
+	}
+	if rerr != nil {
+		reason = checkCause(rerr)
 	}
 	if wctx != "" && auto {
 		return toWrite()
@@ -380,33 +389,95 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 		return protocol.AccessResult{Reason: "unable to check: invalid gvr"}
 	}
 	unable := func(err error) protocol.AccessResult {
-		return protocol.AccessResult{Reason: "unable to check: " + trunc(err.Error(), 100)}
+		return protocol.AccessResult{Reason: "unable to check: " + checkCause(err)}
 	}
 	rc, err := s.conn(ck.Cluster)
 	if err != nil {
 		return unable(err)
 	}
-	allowed, reason, err := s.review(ctx, ck.Cluster, rc, ck.Verb, gvr, ck.Namespace, ck.Name)
-	if err != nil {
-		return unable(err)
-	}
-	if allowed {
+	allowed, reason, rerr := s.review(ctx, ck.Cluster, rc, ck.Verb, gvr, ck.Namespace, ck.Name)
+	if rerr == nil && allowed {
 		return protocol.AccessResult{Allowed: true}
 	}
-	if wctx, auto := s.cfg.Links(ck.Cluster); wctx != "" {
-		if wc, err := s.conn(wctx); err == nil {
-			if ok, _, err := s.review(ctx, wctx, wc, ck.Verb, gvr, ck.Namespace, ck.Name); err == nil && ok {
-				if !auto { // autoSwitchWrite off: the mutation needs the user's confirmation first
-					return protocol.AccessResult{NeedsConfirm: true, Reason: "allowed through the linked write context after confirmation"}
-				}
-				return protocol.AccessResult{Allowed: true, ViaWrite: true}
-			}
+	wctx, auto := s.cfg.Links(ck.Cluster)
+	if wctx == "" || (rerr != nil && !escalates(ck.Verb, "", rerr)) {
+		if rerr != nil {
+			return unable(rerr)
 		}
+		if reason == "" {
+			reason = "denied"
+		}
+		return protocol.AccessResult{Reason: reason}
 	}
-	if reason == "" {
-		reason = "denied"
+	// The read context refused, or could not run the review (a gateway's read-only target may refuse the POST):
+	// ask the linked write context.
+	viaWrite := func(note string) protocol.AccessResult {
+		if !auto { // autoSwitchWrite off: the mutation needs the user's confirmation first
+			if note == "" {
+				note = "allowed through the linked write context after confirmation"
+			}
+			return protocol.AccessResult{NeedsConfirm: true, Reason: note}
+		}
+		return protocol.AccessResult{Allowed: true, ViaWrite: true, Reason: note}
 	}
-	return protocol.AccessResult{Reason: reason}
+	wc, werr := s.conn(wctx)
+	var ok bool
+	var wreason string
+	if werr == nil {
+		ok, wreason, werr = s.review(ctx, wctx, wc, ck.Verb, gvr, ck.Namespace, ck.Name)
+	}
+	switch {
+	case werr == nil && ok:
+		return viaWrite("")
+	case werr != nil:
+		// The write context cannot answer either: typically a gateway target whose elevated session is not
+		// active. Offer the action through it; the mutation itself reports write_unavailable if it still fails.
+		return viaWrite(fmt.Sprintf("runs through the write context %s, which could not be checked (is its elevated session active?)", wctx))
+	}
+	// Both refuse: the read context's reason when it answered, else the write context's.
+	if rerr == nil {
+		wreason = reason
+	}
+	if wreason == "" {
+		wreason = "denied"
+	}
+	if rerr != nil {
+		wreason += " (the read context could not check: " + checkCause(rerr) + ")"
+	}
+	return protocol.AccessResult{Reason: wreason}
+}
+
+// escalates reports whether a failed read-context access review sends a request to the linked write context, as a
+// refusal would. Never for reads (logs, uid checks: the read context serves them, and the server decides), and never
+// for a transient failure (timeout, cancellation, 429/5xx): a blip must not run a write as the elevated identity.
+// A port-forward (create pods/portforward) counts as a read here: it changes nothing, and Hubble's relay connection
+// and the background problems monitor depend on it working through the read context.
+// What remains is a read context that cannot run the review at all, e.g. a gateway's read-only target refusing
+// the POST (EOF, connection reset, 401/403/405 from the gateway).
+func escalates(verb, sub string, err error) bool {
+	switch {
+	case verb == "get", verb == "list", verb == "watch", sub == "portforward":
+		return false
+	}
+	var ne net.Error
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded),
+		errors.As(err, &ne) && ne.Timeout(),
+		apierrors.IsTooManyRequests(err), apierrors.IsServerTimeout(err), apierrors.IsTimeout(err),
+		apierrors.IsServiceUnavailable(err), apierrors.IsInternalError(err):
+		return false
+	}
+	return true
+}
+
+// checkCause is the readable cause of a failed access review: the transport error without the request URL
+// (`Post "https://gateway/…/selfsubjectaccessreviews": EOF` → `EOF`), truncated.
+func checkCause(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		err = ue.Err
+	}
+	return trunc(err.Error(), 120)
 }
 
 // mutationTimeout bounds a mutation that no longer follows its caller's cancellation.
