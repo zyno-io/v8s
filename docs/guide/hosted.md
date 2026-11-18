@@ -137,7 +137,7 @@ A list of cluster records.
 | `impersonation` | Credential of the `impersonation` strategy, below. Only valid with that strategy                                     |                    |
 | `kiosk`         | Credential of the `kiosk` strategy, below. Only valid with that strategy                                             |                    |
 | `groups`        | IdP groups that may see this cluster. `'*'` means every signed-in user                                               | none               |
-| `displayGroups` | Selector groups the cluster is listed under                                                                          | none               |
+| `displayGroups` | Groups the cluster is listed under, shown to users as read-only groups in the cluster selector                       | none               |
 
 A cluster with an empty `groups` list is an error unless `adminGroups` is set, because nobody could see it. A user sees a cluster if they belong to one of its `groups`, or to an `adminGroups` group.
 

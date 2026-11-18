@@ -48,6 +48,7 @@ A group is a named set of clusters, such as `production`, `staging`, or `eu`.
 - Create one from the selector: tick clusters, choose **+ New group**, and name it.
 - Click a group chip to select exactly that group. Shift-click to add it.
 - **Manage** lets you rename a group, change its members to the current ticks, or delete it.
+- In [hosted mode](/guide/hosted), the server can put clusters in groups too (`displayGroups`). Those chips have a dashed border: they select clusters like any group, but you can't rename, change, or delete them.
 
 On a phone, group chips are the fast way to pick clusters. See [On a phone](/guide/mobile).
 
