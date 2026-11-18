@@ -5,6 +5,16 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.2.2 — 2026-11-18
+
+### Fixed
+
+- **Hubble status** no longer says "Why are there no flows?" while flows are arriving: that heading now appears only when the relay has seen none, otherwise "Some flows may be missing". Cilium's default flow buffer (4,095 per node) is no longer reported as small; the per-node figure divides by connected nodes only.
+
+### Internal
+
+- The agent's real-cluster e2e suite runs in CI (nightly, on demand, and on PRs that change it) against a seeded kind cluster and a Cilium cluster.
+
 ## 0.2.1 — 2026-11-18
 
 ### Added
