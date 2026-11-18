@@ -81,6 +81,8 @@ describe('actionState', () => {
     it("shows the agent's note when the write context could not be checked", () => {
         const note = 'runs through the write context prod-admin, which could not be checked (is its elevated session active?)';
         expect(actionState([{ allowed: true, viaWrite: true, reason: note }])).toEqual({ disabled: false, reason: note, viaWrite: true });
+        // autoSwitchWrite off: the same note arrives on a needsConfirm result.
+        expect(actionState([{ allowed: false, viaWrite: false, needsConfirm: true, reason: note }]).reason).toBe(note);
     });
 });
 

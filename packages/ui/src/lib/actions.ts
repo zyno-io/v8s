@@ -93,7 +93,7 @@ export function actionState(results: readonly (AccessResult | undefined)[]): Act
         if (!r.allowed && !r.needsConfirm) return { disabled: true, reason: r.reason || 'Not permitted', viaWrite: false };
         if (write) {
             viaWrite = true;
-            if (r.reason && r.viaWrite) note ||= r.reason;
+            if (r.reason) note ||= r.reason;
         }
     }
     return { disabled: false, reason: viaWrite ? note || 'Will run as the linked write context' : '', viaWrite };

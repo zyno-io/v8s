@@ -886,8 +886,8 @@ func TestAccess(t *testing.T) {
 	if got[2].Allowed || got[2].Reason != "RBAC: no" {
 		t.Fatalf("%+v", got[2])
 	}
-	// The read context cannot check, so the write context is asked: it refuses too.
-	if got[3].Allowed || got[3].NeedsConfirm || !strings.Contains(got[3].Reason, "the read context could not check: connection refused") {
+	// A read whose review fails is never escalated to the write context: unable to check.
+	if got[3].Allowed || got[3].NeedsConfirm || got[3].Reason != "unable to check: connection refused" {
 		t.Fatalf("%+v", got[3])
 	}
 	// no link, empty reason
@@ -999,6 +999,42 @@ func TestReadContextCannotCheck(t *testing.T) {
 		g := e.s.Access(ctx, check)[0]
 		if !g.Allowed || !g.ViaWrite || !strings.Contains(g.Reason, "elevated session") {
 			t.Fatalf("%+v", g)
+		}
+	})
+	t.Run("confirm mode, write context cannot check either: needs confirmation, with the note", func(t *testing.T) {
+		w := newConn(true)
+		w.az.fn = refused
+		e := newEnv(newConn(false), w)
+		e.read.az.fn = refused
+		e.auto = false
+		g := e.s.Access(ctx, check)[0]
+		if g.Allowed || !g.NeedsConfirm || !strings.Contains(g.Reason, "elevated session") {
+			t.Fatalf("%+v", g)
+		}
+	})
+	t.Run("reads stay on the read context", func(t *testing.T) {
+		e := newEnv(newConn(false), newConn(true))
+		e.read.az.fn = refused
+		r, err := e.s.Route(ctx, "c1", "get", "v1/pods", "log", "ns", "web-0")
+		if err != nil || r.ViaWrite || r.ContextID != "c1" {
+			t.Fatalf("%+v %v", r, err)
+		}
+	})
+	t.Run("a transient review failure does not escalate", func(t *testing.T) {
+		for name, terr := range map[string]error{
+			"deadline":    context.DeadlineExceeded,
+			"unavailable": apierrors.NewServiceUnavailable("restarting"),
+			"throttled":   apierrors.NewTooManyRequests("slow down", 1),
+		} {
+			e := newEnv(newConn(false), newConn(true))
+			e.read.az.fn = func(*authorizationv1.ResourceAttributes) (bool, string, error) { return false, "", terr }
+			r, err := e.s.Route(ctx, "c1", "patch", "apps/v1/deployments", "", "ns", "web")
+			if err != nil || r.ViaWrite || r.ContextID != "c1" {
+				t.Fatalf("%s: %+v %v", name, r, err)
+			}
+			if g := e.s.Access(ctx, check)[0]; g.Allowed || g.NeedsConfirm || !strings.HasPrefix(g.Reason, "unable to check: ") {
+				t.Fatalf("%s access: %+v", name, g)
+			}
 		}
 	})
 	t.Run("mutation goes to the write context", func(t *testing.T) {
