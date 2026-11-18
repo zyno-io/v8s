@@ -952,7 +952,6 @@ async function main() {
             assert.ok(inside, 'the drawer is above the pinned sidebar near its left edge');
             await page.keyboard.press('Escape');
             await drawer.waitFor({ state: 'hidden' });
-
         });
 
         await step('agent restart: reconnects by itself, no reload, the open view recovers', async () => {
