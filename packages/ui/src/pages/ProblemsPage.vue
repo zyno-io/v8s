@@ -202,10 +202,15 @@ h1 {
     max-width: 100%;
 }
 .chips {
+    /* one line that scrolls sideways (like the Policies tabs); it takes the rest of the filter row, or a
+       line of its own when that is too narrow */
+    flex: 1 1 360px;
+    min-width: 0;
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
     align-items: center;
+    overflow-x: auto;
+    padding-bottom: 2px;
 }
 .chk {
     display: flex;

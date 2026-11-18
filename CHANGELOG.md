@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Changed
+
+- Problems: the family chips are **one line that scrolls sideways** (like the Policies tabs) and share the row with the search box when there is room, instead of wrapping onto several lines.
+
 ## 0.3.0 — 2026-11-18
 
 ### Added
