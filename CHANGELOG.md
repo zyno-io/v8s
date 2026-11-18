@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+- Quieter logs and fewer API calls for read-only users: client-go's klog lines (such as "Failed to watch ... forbidden") no longer flood stderr (they go to the agent's logger at debug level), and a baseline watch the user is not allowed to list is stopped and retried every 5 minutes (or when you open that kind) instead of being listed again every ~30 seconds. The kind is still reported as unavailable in Problems.
+
 - Replaced the Production flag on cluster groups with a per-cluster Protected flag. Groups are now purely for organizing clusters. Click the lock at the end of a cluster's row in the selector to protect it. On a protected cluster, delete, scale, roll back, drain, Helm actions, Kyverno mode changes, Trivy rescans, Kubescape scans and the Problems quick actions ask you to type the name to confirm; restart, cordon, suspend, trigger and Flux actions on a single object show a confirm naming the cluster. A small lock marks the cluster in the selector, tables, the drawer, Problems and search. Clusters in a group named `production` used to get typed confirmations by default (that was the default production list) and no longer do: protect them with the lock. The old setting is ignored, with no migration.
 
 - IP search also reads IP-only CRDs when you search for a full address, CIDR or range: Service CIDRs, MetalLB pools and BGP peers, Multus NetworkAttachmentDefinitions, Cilium pools and nodes, and Calico IP pools. They are watched only while a search needs them and then stop after a few minutes; a short prefix such as `10.` never starts them.

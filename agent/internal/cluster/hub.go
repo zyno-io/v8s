@@ -23,6 +23,9 @@ const (
 	DefaultLinger         = 5 * time.Minute
 	DefaultBudget         = 96
 	DefaultDiscoveryEvery = 5 * time.Minute
+	// DefaultForbiddenRetry is how long an unreferenced (baseline) watch whose LIST was refused (Forbidden or
+	// NotFound) stays parked before it is tried again.
+	DefaultForbiddenRetry = 5 * time.Minute
 )
 
 // DefaultEventsLinger is how long an object-events watch stays warm after its last reference (these are
@@ -42,7 +45,7 @@ type watchEntry struct {
 	gvr     string
 	st      *store.Store
 	cancel  context.CancelFunc
-	done    chan struct{}
+	done    chan struct{} // closed when the current reflector run ends (replaced by each restart, guarded by r.mu)
 	refs    int
 	errv    atomic.Value // listErr: the latest list/watch error, cleared by the next success
 	tier0   bool
@@ -53,6 +56,13 @@ type watchEntry struct {
 	// runner's shared oev store, st stays nil, and synced closes after the first list.
 	part   *store.Part
 	synced chan struct{}
+
+	// parked: the reflector is stopped after a terminal LIST error while nothing held the watch (guarded by
+	// r.mu). The entry stays registered (attached, reported unavailable) and is restarted by retry, or by acquire.
+	parked bool
+	retry  *time.Timer
+	cur    atomic.Pointer[context.Context] // the context of the current reflector run
+	lw     *ingest.ListerWatcher
 }
 
 type listErr struct{ err error }
@@ -230,8 +240,6 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 		return nil, err
 	}
 	w := &watchEntry{gvr: gvr, st: store.New(), done: make(chan struct{}), tier0: tier0, lastUse: time.Now()}
-	wctx, cancel := context.WithCancel(r.ctx)
-	w.cancel = cancel
 	hooks := ingest.Hooks{
 		OnRows: w.st.Provisional,
 		OnOK: func() {
@@ -241,7 +249,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			}
 		},
 		OnError: func(err error) {
-			if wctx.Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
+			if c := w.cur.Load(); c == nil || (*c).Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
 				return // a routine relist, not a cluster problem
 			}
 			w.setErr(err)
@@ -249,6 +257,9 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 				if reason := unavailableReason(gvr, err); reason != "" {
 					r.pe.SetUnavailable(problems.GR(gvr), reason)
 				}
+			}
+			if gvr != ingest.PodsGVR && terminalListErr(err) {
+				r.parkIfUnheld(w)
 			}
 			primary := gvr == ingest.PodsGVR
 			if !primary && !apierrors.IsUnauthorized(err) {
@@ -261,7 +272,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			} else if r.everOK.Load() && p != protocol.PhaseAuthRequired {
 				p = protocol.PhaseDegraded
 			}
-			r.m.log.Warn("cluster error", "cluster", r.id, "phase", p, "err", msg)
+			r.m.log.Warn("cluster error", "cluster", r.id, "phase", p, "err", msg, "detail", err.Error())
 			r.setPhase(p, msg)
 		},
 	}
@@ -304,23 +315,87 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			}
 		}
 	}
-	lw := &ingest.ListerWatcher{API: api, Mod: mod, Generic: spec, Hooks: hooks}
-	refl := cache.NewReflectorWithOptions(lw, &ingest.Row{}, w.st, cache.ReflectorOptions{Name: gvr + "/" + r.id, TypeDescription: gvr})
-	refl.WatchListPageSize = 500 // the fallback LIST (and relists) page instead of one huge response
+	w.lw = &ingest.ListerWatcher{API: api, Mod: mod, Generic: spec, Hooks: hooks}
 	r.watches[gvr] = w
 	if r.pe != nil {
 		r.pe.Attach(gvr, w.st)
 	}
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		defer close(w.done)
-		refl.RunWithContext(wctx)
-	}()
+	r.runLocked(w)
 	if r.attached {
 		r.m.eng.AttachKind(r.id, gvr, w.st)
 	}
 	return w, nil
+}
+
+// runLocked starts a reflector run for w (a new one after a park). Caller holds r.mu.
+func (r *runner) runLocked(w *watchEntry) {
+	wctx, cancel := context.WithCancel(r.ctx)
+	w.cancel = cancel
+	w.cur.Store(&wctx)
+	w.parked = false
+	done := make(chan struct{})
+	w.done = done
+	refl := cache.NewReflectorWithOptions(w.lw, &ingest.Row{}, w.st, cache.ReflectorOptions{Name: w.gvr + "/" + r.id, TypeDescription: w.gvr})
+	refl.WatchListPageSize = 500 // the fallback LIST (and relists) page instead of one huge response
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		defer close(done)
+		refl.RunWithContext(wctx)
+	}()
+}
+
+// terminalListErr: the API refused the list for this user (or does not serve the kind); retrying every few
+// seconds cannot help. Unauthorized is not included: it is often transient (credentials refreshing) and
+// cluster-wide, and the pods watch drives the auth-required phase.
+func terminalListErr(err error) bool {
+	return apierrors.IsForbidden(err) || apierrors.IsNotFound(err)
+}
+
+// parkIfUnheld stops the reflector of a watch nobody is looking at after a terminal LIST error, instead of
+// letting client-go retry (and hit the API server through the gateway) every ~30 s for the whole session. The
+// watch stays registered with its error, so it is still reported unavailable; it is retried after
+// ForbiddenRetry, or at once when a view acquires it. A watch held by a view keeps retrying: the user is
+// looking at it and expects it to recover as soon as access is granted.
+func (r *runner) parkIfUnheld(w *watchEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.watches[w.gvr] != w || w.refs > 0 || w.parked || w.part != nil || r.ctx.Err() != nil {
+		return
+	}
+	w.parked = true
+	w.cancel()
+	d := r.m.ForbiddenRetry
+	if d <= 0 {
+		d = DefaultForbiddenRetry
+	}
+	w.retry = time.AfterFunc(d, func() { r.unpark(w) })
+}
+
+func (r *runner) unpark(w *watchEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.unparkLocked(w)
+}
+
+func (r *runner) unparkLocked(w *watchEntry) {
+	if r.watches[w.gvr] != w || !w.parked || r.ctx.Err() != nil {
+		return
+	}
+	if w.retry != nil {
+		w.retry.Stop()
+		w.retry = nil
+	}
+	w.errv.Store(listErr{}) // do not answer scopeFailure / IP search from the stale refusal before the new LIST lands
+	r.runLocked(w)
+}
+
+// retryIfGoneLocked restarts a baseline watch parked on NotFound: discovery now serves the kind again (a CRD or
+// APIService was reinstalled). Caller holds r.mu.
+func (r *runner) retryIfGoneLocked(w *watchEntry) {
+	if w.parked && apierrors.IsNotFound(w.lastErr()) {
+		r.unparkLocked(w)
+	}
 }
 
 // unavailableReason explains a watch error that makes a kind unreadable for the problems engine ("" for
@@ -371,6 +446,10 @@ func (r *runner) stopLocked(w *watchEntry) {
 		w.linger.Stop()
 		w.linger = nil
 	}
+	if w.retry != nil {
+		w.retry.Stop()
+		w.retry = nil
+	}
 	if w.part != nil {
 		// An object-events watch: remove its rows now, under r.mu, so a restart of the same key cannot have its
 		// rows deleted by this watch later (late reflector writes are no-ops after Close). It never touches
@@ -385,8 +464,9 @@ func (r *runner) stopLocked(w *watchEntry) {
 		r.pe.SetUnavailable(problems.GR(w.gvr), "")
 	}
 	w.cancel()
+	done := w.done
 	go func() {
-		<-w.done
+		<-done
 		w.st.Reset()
 	}()
 }
@@ -417,6 +497,7 @@ func (r *runner) acquireKey(key string, linger time.Duration, start func() (*wat
 	w.refs++
 	w.gen++
 	w.lastUse = time.Now()
+	r.unparkLocked(w) // a view wants it now: try again at once
 	if w.linger != nil {
 		w.linger.Stop()
 		w.linger = nil
@@ -496,6 +577,7 @@ func (r *runner) startOptionalBaseline() {
 		}
 		if w := r.watches[m.GVR]; w != nil { // an on-demand watch (a user opened the kind) becomes baseline
 			r.promoteLocked(w)
+			r.retryIfGoneLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {
@@ -520,6 +602,7 @@ func (r *runner) startGatedBaseline() {
 		}
 		if w := r.watches[m.GVR]; w != nil {
 			r.promoteLocked(w)
+			r.retryIfGoneLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {
@@ -561,6 +644,9 @@ func (r *runner) stop() {
 		if w.linger != nil {
 			w.linger.Stop()
 		}
+		if w.retry != nil {
+			w.retry.Stop()
+		}
 		if w.part != nil {
 			w.part.Close()
 		} else {
@@ -599,6 +685,7 @@ type WatchInfo struct {
 	Refs      int
 	Tier0     bool
 	Lingering bool
+	Parked    bool // stopped after a refused LIST; retried after ForbiddenRetry or when a view acquires it
 }
 
 func (r *runner) info() []WatchInfo {
@@ -606,7 +693,7 @@ func (r *runner) info() []WatchInfo {
 	defer r.mu.Unlock()
 	out := make([]WatchInfo, 0, len(r.watches))
 	for _, w := range r.watches {
-		out = append(out, WatchInfo{GVR: w.gvr, Refs: w.refs, Tier0: w.tier0, Lingering: w.refs == 0 && !w.tier0})
+		out = append(out, WatchInfo{GVR: w.gvr, Refs: w.refs, Tier0: w.tier0, Lingering: w.refs == 0 && !w.tier0, Parked: w.parked})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].GVR < out[j].GVR })
 	return out

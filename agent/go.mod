@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/coder/websocket v1.8.15
+	github.com/go-logr/logr v1.4.4
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	golang.org/x/time v0.15.0
@@ -14,6 +15,7 @@ require (
 	k8s.io/api v0.37.2
 	k8s.io/apimachinery v0.37.2
 	k8s.io/client-go v0.37.2
+	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.37.2
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2
@@ -48,7 +50,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-gorp/gorp/v3 v3.1.0 // indirect
-	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-openapi/jsonreference v1.0.0 // indirect
 	github.com/go-openapi/swag v0.27.1 // indirect
@@ -126,7 +127,6 @@ require (
 	k8s.io/apiserver v0.37.2 // indirect
 	k8s.io/cli-runtime v0.37.2 // indirect
 	k8s.io/component-base v0.37.2 // indirect
-	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/streaming v0.37.2 // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
