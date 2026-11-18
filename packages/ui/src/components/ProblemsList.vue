@@ -132,7 +132,9 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
             getScrollElement: () => scroller.value,
             estimateSize: (i: number) => sizeOf(describe(m, i).kind),
             overscan: isPhone.value ? 6 : 10,
-            scrollMargin: headH.value
+            scrollMargin: headH.value,
+            // a row scrolled to the start stays below the sticky header
+            scrollPaddingStart: headH.value
         };
     })
 );
@@ -638,7 +640,8 @@ function focusFirstRow(): 'ok' | 'none' | 'unloaded' {
             return 'unloaded';
         }
         focusId.value = id;
-        virtualizer.value.scrollToIndex(j, { align: 'start' });
+        // the first row: show the top of the list, its group header included
+        if (scroller.value) scroller.value.scrollTop = 0;
         return 'ok';
     }
     return 'none';

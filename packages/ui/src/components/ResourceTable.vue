@@ -44,7 +44,9 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
         getScrollElement: () => scroller.value,
         estimateSize: () => rowH.value,
         overscan: isPhone.value ? 6 : 10,
-        scrollMargin: headerH.value
+        scrollMargin: headerH.value,
+        // a row scrolled to the start stays below the sticky header
+        scrollPaddingStart: headerH.value
     }))
 );
 
