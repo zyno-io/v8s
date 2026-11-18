@@ -3,11 +3,11 @@
 A fast, multi-cluster Kubernetes manager for desktop, web, and phone.
 
 [![CI](https://github.com/zyno-io/v8s/actions/workflows/ci.yml/badge.svg)](https://github.com/zyno-io/v8s/actions/workflows/ci.yml)
-[![Docs](https://github.com/zyno-io/v8s/actions/workflows/pages.yml/badge.svg)](https://zyno-io.github.io/v8s/)
+[![Docs](https://github.com/zyno-io/v8s/actions/workflows/pages.yml/badge.svg)](https://docs.v8s.io/)
 [![Release](https://img.shields.io/github/v/release/zyno-io/v8s?include_prereleases)](https://github.com/zyno-io/v8s/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Documentation: <https://zyno-io.github.io/v8s/>**
+**Documentation: <https://docs.v8s.io/>**
 
 v8s keeps compact projections of your clusters in a Go agent and sends the UI only the rows on screen, so 10k+ objects per cluster, and several clusters at once, stay smooth. Every request carries your own credential to the API server, or to an access gateway such as [Warpgate](https://github.com/warp-tech/warpgate).
 
@@ -50,7 +50,7 @@ helm install v8s oci://ghcr.io/zyno-io/charts/v8s --version 0.1.0 \
   --namespace v8s --create-namespace --values my-values.yaml
 ```
 
-See [Install](https://zyno-io.github.io/v8s/guide/install), [Hosted mode](https://zyno-io.github.io/v8s/guide/hosted), and the [CLI reference](https://zyno-io.github.io/v8s/guide/cli).
+See [Install](https://docs.v8s.io/guide/install), [Hosted mode](https://docs.v8s.io/guide/hosted), and the [CLI reference](https://docs.v8s.io/guide/cli).
 
 ## Build from source
 
