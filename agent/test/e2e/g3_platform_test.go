@@ -27,7 +27,7 @@ func TestPlatformProblems(t *testing.T) {
 		t.Skip("V8S_E2E_KUBECONFIG not set")
 	}
 	_ = os.Setenv("KUBE_FEATURE_WatchListClient", "true")
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	src := &cluster.KubeSource{Loader: kube.Loader{Path: path}}
 	cs := src.Clusters()
@@ -60,8 +60,9 @@ func TestPlatformProblems(t *testing.T) {
 		}
 		return false
 	}
-	waitFor(t, "flux.source-failed GitRepository platform", 90*time.Second, func() bool { return find("flux.source-failed", "GitRepository", "platform") })
-	waitFor(t, "flux.not-ready Kustomization platform", 30*time.Second, func() bool { return find("flux.not-ready", "Kustomization", "platform") })
+	// Fresh clusters (CI) need minutes for Flux to reconcile and fail; a settled one answers at once.
+	waitFor(t, "flux.source-failed GitRepository platform", 5*time.Minute, func() bool { return find("flux.source-failed", "GitRepository", "platform") })
+	waitFor(t, "flux.not-ready Kustomization platform", 5*time.Minute, func() bool { return find("flux.not-ready", "Kustomization", "platform") })
 
 	hasWatch := false
 	for _, w := range m.WatchInfo(id) {

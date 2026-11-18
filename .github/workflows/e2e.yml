@@ -44,7 +44,7 @@ jobs:
         working-directory: agent
         env:
           V8S_E2E_KUBECONFIG: ${{ github.workspace }}/test/e2e/out/kubeconfig
-        run: go test -tags e2e -count=1 -v ./test/e2e/
+        run: go test -tags e2e -count=1 -timeout 30m -v ./test/e2e/
       - name: Cluster state on failure
         if: failure()
         env:
