@@ -24,7 +24,7 @@ function repoLinks(md: MarkdownIt) {
 
 export default defineConfig({
     title: 'v8s',
-    description: 'A fast, multi-cluster Kubernetes manager for desktop, web, and phone.',
+    description: 'Visual k8s: a fast, multi-cluster Kubernetes manager for desktop, web, and phone.',
     // Served at https://docs.v8s.io (GitHub Pages custom domain; docs/public/CNAME).
     base: '/',
     sitemap: { hostname: 'https://docs.v8s.io' },
