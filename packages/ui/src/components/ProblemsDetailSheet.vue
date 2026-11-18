@@ -14,16 +14,17 @@ let returnTo: HTMLElement | null = null;
 function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation(); // before the global Esc chain, which would also clear the search
         emit('close');
     }
 }
 onMounted(() => {
     returnTo = document.activeElement as HTMLElement | null;
     back.value?.focus();
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
 });
 onBeforeUnmount(() => {
-    window.removeEventListener('keydown', onKey);
+    window.removeEventListener('keydown', onKey, true);
     returnTo?.focus?.();
 });
 </script>

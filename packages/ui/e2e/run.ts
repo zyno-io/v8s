@@ -765,22 +765,41 @@ async function main() {
                 await page.getByRole('link', { name: /^Pods/ }).first().click();
                 await page.waitForURL(/\/pods/);
                 const rows = page.locator('.scroller .row:not(.sk)');
+                const names = rows.locator('.name');
                 await rows.first().waitFor({ timeout: 30000 });
-                const prefix = (await rows.first().locator('.name').innerText()).slice(0, 3);
+                const all = (await names.allInnerTexts()).map(n => n.trim());
+                const first0 = all[0];
+                // A filter that keeps at least three rows but not the first one, so a focus left on the old first row would be visible.
+                const target = all[Math.min(14, all.length - 1)];
+                let filterText = '';
+                for (let n = target.length; n >= 3 && !filterText; n--) {
+                    const p = target.slice(0, n);
+                    if (all.filter(x => x.includes(p)).length >= 3 && !first0.includes(p)) filterText = p;
+                }
+                assert.ok(filterText, 'found a filter that excludes the first row and keeps three');
                 const filter = page.locator('#pods-filter');
-                await filter.fill(prefix);
-                await page.waitForFunction(() => document.querySelectorAll('.scroller .row:not(.sk)').length >= 3);
+                await filter.fill(filterText);
+                const onlyMatches = () =>
+                    page.waitForFunction(t => {
+                        const ns = [...document.querySelectorAll('.scroller .row:not(.sk) .name')];
+                        return ns.length >= 3 && ns.every(n => n.textContent?.includes(t));
+                    }, filterText);
+                await onlyMatches();
                 await filter.press('Enter');
                 assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'Enter moves focus to the list');
-                await rows.nth(0).waitFor();
-                assert.ok(await rows.nth(0).evaluate(el => el.classList.contains('focus')), 'first row has the row focus');
+                await page.waitForFunction(() => document.querySelector('.scroller .row:not(.sk)')?.classList.contains('focus'));
                 await page.keyboard.press('ArrowDown');
                 await page.keyboard.press('ArrowDown');
                 assert.ok(await rows.nth(2).evaluate(el => el.classList.contains('focus')), 'two ArrowDowns focus the third row');
                 await page.keyboard.press('Escape');
                 assert.equal(await filter.inputValue(), '');
                 assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'the list keeps focus after Esc');
-                assert.ok(await rows.nth(0).evaluate(el => el.classList.contains('focus')), 'row focus returns to the first row');
+                // The unfiltered first row (not the old first match) has the row focus.
+                await page.waitForFunction(n => {
+                    const r = document.querySelector('.scroller .row:not(.sk)');
+                    return r?.querySelector('.name')?.textContent?.trim() === n && r.classList.contains('focus');
+                }, first0);
+                assert.equal(await page.locator('.scroller .row.focus').count(), 1, 'exactly one row has the row focus');
             }
         );
 
@@ -802,27 +821,31 @@ async function main() {
         });
 
         await step('problems: Enter in the search moves focus to the list, ArrowDown moves the row focus, Esc clears the search', async () => {
-            const name = (await page.getByTestId('problem-row').first().locator('.oname b').first().innerText()).trim();
+            const objs = page.getByTestId('problem-row').locator('.oname b');
+            const all = (await objs.allInnerTexts()).map(n => n.trim());
+            const first0 = all[0];
+            const target = all.find(n => n !== first0 && !first0.includes(n)) ?? first0;
             const search = page.locator('#pods-filter');
-            await search.fill(name.slice(0, 3));
-            await page.getByTestId('problem-row').first().waitFor();
+            await search.fill(target);
+            await page.waitForFunction(t => {
+                const ns = [...document.querySelectorAll('[data-testid="problem-row"] .oname b')];
+                return ns.length > 0 && ns.every(n => n.textContent?.includes(t));
+            }, target);
             await search.press('Enter');
             assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'Enter moves focus to the list');
-            const first = page.getByTestId('problem-row').first();
-            assert.ok(await first.evaluate(el => el.classList.contains('focus')), 'first row has the row focus');
-            const rowCount = await page.getByTestId('problem-row').count();
-            await page.keyboard.press('ArrowDown');
-            if (rowCount > 1)
-                assert.ok(
-                    await page
-                        .getByTestId('problem-row')
-                        .nth(1)
-                        .evaluate(el => el.classList.contains('focus')),
-                    'ArrowDown moves the row focus'
-                );
+            const rowsLoc = page.getByTestId('problem-row');
+            await page.waitForFunction(() => document.querySelector('[data-testid="problem-row"]')?.classList.contains('focus'));
+            if ((await rowsLoc.count()) > 1) {
+                await page.keyboard.press('ArrowDown');
+                assert.ok(await rowsLoc.nth(1).evaluate(el => el.classList.contains('focus')), 'ArrowDown moves the row focus');
+            }
             await page.keyboard.press('Escape');
             assert.equal(await search.inputValue(), '');
             assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'the list keeps focus after Esc');
+            await page.waitForFunction(n => {
+                const r = document.querySelector('[data-testid="problem-row"]');
+                return r?.querySelector('.oname b')?.textContent?.trim() === n && r.classList.contains('focus');
+            }, first0);
         });
 
         await step('problems: group by class inserts header rows into the same list', async () => {

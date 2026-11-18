@@ -258,6 +258,12 @@ watch(
 watch(
     () => props.handle.version.value,
     () => {
+        // The first reply after a filter/sort change: focus the first row of the NEW results (ids were of the old query before).
+        queryPending = false;
+        if (focusFirstNext) {
+            focusFirstNext = false;
+            focusFirstRow();
+        }
         holdAnchor();
         requestWindow();
         openPending();
@@ -289,6 +295,7 @@ watch(
     () => [ui.value.text, ui.value.namespaces, ui.value.tones, ui.value.sort],
     () => {
         anchor.id = 0;
+        queryPending = true;
         if (scroller.value) scroller.value.scrollTop = 0;
     },
     { flush: 'post' }
@@ -382,11 +389,35 @@ function moveFocus(delta: number) {
 }
 
 // Enter in the filter (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+// While a filter/sort change waits for its reply, ids/offset still describe the previous query: focus the list now and the
+// first row when the reply lands.
+let queryPending = false;
+let focusFirstNext = false;
+
+function focusFirstRow() {
+    const h = props.handle;
+    if (!h.ids.length) return;
+    if (h.offset.value > 0) {
+        // The window is not at the top yet: scroll there; the next reply brings row 0.
+        focusFirstNext = true;
+        if (scroller.value) scroller.value.scrollTop = 0;
+        return;
+    }
+    ui.value.focusId = h.ids[0];
+    virtualizer.value.scrollToIndex(0, { align: 'start' });
+}
+
 function focusList(first: boolean): boolean {
     const h = props.handle;
     const ids = h.ids;
     const el = scroller.value;
-    if (!ids.length || !el) return false;
+    if (!el) return false;
+    if (queryPending) {
+        focusFirstNext = true;
+        el.focus({ preventScroll: true });
+        return true;
+    }
+    if (!ids.length) return false;
     const keep = !first && ui.value.focusId && ids.includes(ui.value.focusId);
     if (!keep) ui.value.focusId = ids[0];
     el.focus({ preventScroll: true });

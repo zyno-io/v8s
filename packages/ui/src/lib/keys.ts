@@ -117,7 +117,14 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target instanceof HTMLInputElement && e.target.id === FILTER_ID) {
+        if (
+            e.key === 'Enter' &&
+            !e.shiftKey &&
+            !e.isComposing &&
+            e.keyCode !== 229 &&
+            e.target instanceof HTMLInputElement &&
+            e.target.id === FILTER_ID
+        ) {
             // Enter in the filter hands focus to the results so the arrow keys move through them.
             if (!ui.commandBarOpen && !ui.shortcutsOpen && !ui.paletteOpen && !ui.createOpen && !ui.dialog && listNav?.focusList(false))
                 e.preventDefault();

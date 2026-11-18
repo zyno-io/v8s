@@ -375,6 +375,7 @@ watch(
         collapseAll();
         focusId.value = 0;
         anchor.id = 0;
+        queryPending = true;
         if (scroller.value) scroller.value.scrollTop = 0;
     },
     { flush: 'post' }
@@ -402,6 +403,8 @@ function collapseAll() {
 watch(
     () => h.version.value,
     () => {
+        queryPending = false;
+        if (focusFirstNext && focusFirstRow() !== 'unloaded') focusFirstNext = false;
         if (expandedId.value && viewIndexOfId(expandedId.value) < 0 && h.ids.length) expandedId.value = 0;
         if (sheetId.value && !h.rows.has(sheetId.value) && h.ids.length) sheetId.value = 0;
         if (pending.value.size) {
@@ -574,6 +577,8 @@ function onClick(e: MouseEvent) {
         case 'snooze': {
             const b = (t.closest('[data-act]') as HTMLElement).getBoundingClientRect();
             ackMenu.value = { id: it.id, x: Math.min(b.right, window.innerWidth - 8), y: b.bottom + 4 };
+            // Focus moves into the menu so Esc is handled there (its @keydown.esc.stop) and never reaches the page chain.
+            void nextTick(() => document.querySelector<HTMLElement>('.amenu button')?.focus());
             return;
         }
         case 'restore':
@@ -616,26 +621,47 @@ function moveFocus(delta: number) {
 }
 
 // Enter in the search box (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+// While a search/sort change waits for its reply, the loaded window still holds the previous query's rows: focus the list now and
+// the first row when the reply lands.
+let queryPending = false;
+let focusFirstNext = false;
+
+/** Row focus to the first row of the results. 'unloaded': the window is not at the top yet (scrolled to the top; retried on the next reply). */
+function focusFirstRow(): 'ok' | 'none' | 'unloaded' {
+    const m = model.value;
+    for (let j = 0; j < m.count; j++) {
+        const meta = describe(m, j);
+        if (meta.kind !== 'row' && meta.kind !== 'child') continue;
+        const id = idAtView(meta.vi);
+        if (!id) {
+            if (scroller.value) scroller.value.scrollTop = 0;
+            return 'unloaded';
+        }
+        focusId.value = id;
+        virtualizer.value.scrollToIndex(j, { align: 'start' });
+        return 'ok';
+    }
+    return 'none';
+}
+
 function focusList(first: boolean): boolean {
     const el = scroller.value;
-    const m = model.value;
     if (!el) return false;
+    if (queryPending) {
+        focusFirstNext = true;
+        el.focus({ preventScroll: true });
+        return true;
+    }
     if (!first && flatOfId(focusId.value) >= 0) {
         el.focus({ preventScroll: true });
         virtualizer.value.scrollToIndex(flatOfId(focusId.value), { align: 'auto' });
         return true;
     }
-    for (let j = 0; j < m.count; j++) {
-        const meta = describe(m, j);
-        if (meta.kind !== 'row' && meta.kind !== 'child') continue;
-        const id = idAtView(meta.vi);
-        if (!id) return false;
-        focusId.value = id;
-        el.focus({ preventScroll: true });
-        virtualizer.value.scrollToIndex(j, { align: 'auto' });
-        return true;
-    }
-    return false;
+    const r = focusFirstRow();
+    if (r === 'none') return false;
+    if (r === 'unloaded') focusFirstNext = true;
+    el.focus({ preventScroll: true });
+    return true;
 }
 
 setListNav({
