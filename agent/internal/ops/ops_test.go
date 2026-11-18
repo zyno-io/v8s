@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -885,7 +886,8 @@ func TestAccess(t *testing.T) {
 	if got[2].Allowed || got[2].Reason != "RBAC: no" {
 		t.Fatalf("%+v", got[2])
 	}
-	if got[3].Allowed || !strings.HasPrefix(got[3].Reason, "unable to check: ") {
+	// The read context cannot check, so the write context is asked: it refuses too.
+	if got[3].Allowed || got[3].NeedsConfirm || !strings.Contains(got[3].Reason, "the read context could not check: connection refused") {
 		t.Fatalf("%+v", got[3])
 	}
 	// no link, empty reason
@@ -957,4 +959,62 @@ func TestWatchNotFound(t *testing.T) {
 	if code(t, err) != "not_found" {
 		t.Fatal(err)
 	}
+}
+
+// A gateway's read-only target may refuse even the access review (the POST): with a linked write context, that
+// read context is treated like a refusal, for the action menu (access.check) and for the mutation's routing.
+func TestReadContextCannotCheck(t *testing.T) {
+	ctx := context.Background()
+	refused := func(*authorizationv1.ResourceAttributes) (bool, string, error) {
+		return false, "", &url.Error{Op: "Post", URL: "https://gw.example/k8s-ro/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", Err: errors.New("EOF")}
+	}
+	check := []protocol.AccessCheck{{Cluster: "c1", Verb: "delete", GVR: "apps/v1/deployments", Namespace: "ns", Name: "web"}}
+
+	t.Run("no write context: unable to check, without the URL", func(t *testing.T) {
+		e := newEnv(newConn(false), nil)
+		e.read.az.fn = refused
+		g := e.s.Access(ctx, check)[0]
+		if g.Allowed || g.Reason != "unable to check: EOF" {
+			t.Fatalf("%+v", g)
+		}
+	})
+	t.Run("write context allows: via write, or after confirmation", func(t *testing.T) {
+		e := newEnv(newConn(false), newConn(true))
+		e.read.az.fn = refused
+		if g := e.s.Access(ctx, check)[0]; !g.Allowed || !g.ViaWrite {
+			t.Fatalf("auto: %+v", g)
+		}
+		e2 := newEnv(newConn(false), newConn(true))
+		e2.read.az.fn = refused
+		e2.auto = false
+		if g := e2.s.Access(ctx, check)[0]; g.Allowed || !g.NeedsConfirm {
+			t.Fatalf("confirm: %+v", g)
+		}
+	})
+	t.Run("write context cannot check either: offered through it, with a note", func(t *testing.T) {
+		w := newConn(true)
+		w.az.fn = refused
+		e := newEnv(newConn(false), w)
+		e.read.az.fn = refused
+		g := e.s.Access(ctx, check)[0]
+		if !g.Allowed || !g.ViaWrite || !strings.Contains(g.Reason, "elevated session") {
+			t.Fatalf("%+v", g)
+		}
+	})
+	t.Run("mutation goes to the write context", func(t *testing.T) {
+		e := newEnv(newConn(false, deployment("ns", "web")), newConn(true, deployment("ns", "web")))
+		e.read.az.fn = refused
+		if _, err := e.s.Action(ctx, scaleParams("1")); err != nil {
+			t.Fatal(err)
+		}
+		if lastAction(e.write, "patch") == nil || lastAction(e.read, "patch") != nil {
+			t.Fatal("wrong context patched")
+		}
+		e2 := newEnv(newConn(false, deployment("ns", "web")), newConn(true, deployment("ns", "web")))
+		e2.read.az.fn = refused
+		e2.auto = false
+		if _, err := e2.s.Action(ctx, scaleParams("1")); code(t, err) != "write_confirm" {
+			t.Fatal(err)
+		}
+	})
 }

@@ -4,7 +4,9 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -322,8 +324,14 @@ func (s *Service) routeSub(ctx context.Context, cluster, verb string, gvr schema
 		return toWrite()
 	}
 	allowed, reason, rerr := s.reviewSub(ctx, cluster, rc, verb, gvr, sub, ns, name)
-	if rerr != nil || allowed {
+	// Allowed, or the read context cannot answer and there is no write context: the API server decides. With a
+	// write context, a read context that cannot even run the access review (a gateway's read-only target refusing
+	// the POST) is treated like a refusal, so the mutation goes to the write context instead of failing there.
+	if allowed || (rerr != nil && wctx == "") {
 		return cluster, rc, false, nil
+	}
+	if rerr != nil {
+		reason = checkCause(rerr)
 	}
 	if wctx != "" && auto {
 		return toWrite()
@@ -380,33 +388,72 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 		return protocol.AccessResult{Reason: "unable to check: invalid gvr"}
 	}
 	unable := func(err error) protocol.AccessResult {
-		return protocol.AccessResult{Reason: "unable to check: " + trunc(err.Error(), 100)}
+		return protocol.AccessResult{Reason: "unable to check: " + checkCause(err)}
 	}
 	rc, err := s.conn(ck.Cluster)
 	if err != nil {
 		return unable(err)
 	}
-	allowed, reason, err := s.review(ctx, ck.Cluster, rc, ck.Verb, gvr, ck.Namespace, ck.Name)
-	if err != nil {
-		return unable(err)
-	}
-	if allowed {
+	allowed, reason, rerr := s.review(ctx, ck.Cluster, rc, ck.Verb, gvr, ck.Namespace, ck.Name)
+	if rerr == nil && allowed {
 		return protocol.AccessResult{Allowed: true}
 	}
-	if wctx, auto := s.cfg.Links(ck.Cluster); wctx != "" {
-		if wc, err := s.conn(wctx); err == nil {
-			if ok, _, err := s.review(ctx, wctx, wc, ck.Verb, gvr, ck.Namespace, ck.Name); err == nil && ok {
-				if !auto { // autoSwitchWrite off: the mutation needs the user's confirmation first
-					return protocol.AccessResult{NeedsConfirm: true, Reason: "allowed through the linked write context after confirmation"}
-				}
-				return protocol.AccessResult{Allowed: true, ViaWrite: true}
-			}
+	wctx, auto := s.cfg.Links(ck.Cluster)
+	if wctx == "" {
+		if rerr != nil {
+			return unable(rerr)
 		}
+		if reason == "" {
+			reason = "denied"
+		}
+		return protocol.AccessResult{Reason: reason}
 	}
-	if reason == "" {
-		reason = "denied"
+	// The read context refused, or could not run the review (a gateway's read-only target may refuse the POST):
+	// ask the linked write context.
+	viaWrite := func(note string) protocol.AccessResult {
+		if !auto { // autoSwitchWrite off: the mutation needs the user's confirmation first
+			if note == "" {
+				note = "allowed through the linked write context after confirmation"
+			}
+			return protocol.AccessResult{NeedsConfirm: true, Reason: note}
+		}
+		return protocol.AccessResult{Allowed: true, ViaWrite: true, Reason: note}
 	}
-	return protocol.AccessResult{Reason: reason}
+	wc, werr := s.conn(wctx)
+	var ok bool
+	var wreason string
+	if werr == nil {
+		ok, wreason, werr = s.review(ctx, wctx, wc, ck.Verb, gvr, ck.Namespace, ck.Name)
+	}
+	switch {
+	case werr == nil && ok:
+		return viaWrite("")
+	case werr != nil:
+		// The write context cannot answer either: typically a gateway target whose elevated session is not
+		// active. Offer the action through it; the mutation itself reports write_unavailable if it still fails.
+		return viaWrite(fmt.Sprintf("runs through the write context %s, which could not be checked (is its elevated session active?)", wctx))
+	}
+	// Both refuse: the read context's reason when it answered, else the write context's.
+	if rerr == nil {
+		wreason = reason
+	}
+	if wreason == "" {
+		wreason = "denied"
+	}
+	if rerr != nil {
+		wreason += " (the read context could not check: " + checkCause(rerr) + ")"
+	}
+	return protocol.AccessResult{Reason: wreason}
+}
+
+// checkCause is the readable cause of a failed access review: the transport error without the request URL
+// (`Post "https://gateway/…/selfsubjectaccessreviews": EOF` → `EOF`), truncated.
+func checkCause(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		err = ue.Err
+	}
+	return trunc(err.Error(), 120)
 }
 
 // mutationTimeout bounds a mutation that no longer follows its caller's cancellation.

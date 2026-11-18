@@ -79,15 +79,24 @@ export interface ActionState {
     viaWrite: boolean;
 }
 
-/** Combines per-target access results: all must be allowed; any via-write marks the hint. Unknown (no result yet) stays enabled. */
+/**
+ * Combines per-target access results: all must be allowed; any via-write marks the hint. Unknown (no result yet) stays enabled.
+ * `needsConfirm` (allowed only through the linked write context, which asks first) counts as allowed via write: the mutation
+ * gets `write_confirm` and the user confirms there. A result's own reason (e.g. "is its elevated session active?") wins as the hint.
+ */
 export function actionState(results: readonly (AccessResult | undefined)[]): ActionState {
     let viaWrite = false;
+    let note = '';
     for (const r of results) {
         if (!r) continue;
-        if (!r.allowed) return { disabled: true, reason: r.reason || 'Not permitted', viaWrite: false };
-        if (r.viaWrite) viaWrite = true;
+        const write = !!r.viaWrite || !!r.needsConfirm;
+        if (!r.allowed && !r.needsConfirm) return { disabled: true, reason: r.reason || 'Not permitted', viaWrite: false };
+        if (write) {
+            viaWrite = true;
+            if (r.reason && r.viaWrite) note ||= r.reason;
+        }
     }
-    return { disabled: false, reason: viaWrite ? 'Will run as the linked write context' : '', viaWrite };
+    return { disabled: false, reason: viaWrite ? note || 'Will run as the linked write context' : '', viaWrite };
 }
 
 export interface ConfirmInput {
