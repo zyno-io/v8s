@@ -7,15 +7,15 @@ import {
     emptySettings,
     groupList,
     groupPatch,
-    isProductionCluster,
     layoutFor,
     layoutPatch,
     mergePatch,
     moveStar,
     normalizeSettings,
-    productionGroups,
-    productionGroupsPatch,
+    protectedClusters,
+    protectedPatch,
     renameGroupPatch,
+    toggleProtected,
     toggleStar
 } from '../src/lib/settings.ts';
 
@@ -81,15 +81,21 @@ describe('settings helpers', () => {
         expect(Object.keys(s.groups)).toEqual(['europe']);
     });
 
-    it('keeps the production-group list in problemPrefs, defaulting to "production"', () => {
+    it('keeps protected cluster ids at the top level, empty by default', () => {
         let s = emptySettings();
-        expect(productionGroups(s)).toEqual(['production']);
-        s = mergePatch(s, productionGroupsPatch(['prod', 'dr']));
-        expect(productionGroups(s)).toEqual(['prod', 'dr']);
-        s = mergePatch(s, productionGroupsPatch([]));
-        expect(productionGroups(s)).toEqual([]);
-        expect(isProductionCluster(['eu', 'prod'], ['prod'])).toBe(true);
-        expect(isProductionCluster(['eu'], ['prod'])).toBe(false);
+        expect(protectedClusters(s)).toEqual([]);
+        s = mergePatch(s, protectedPatch(['a', 'b']));
+        expect(protectedClusters(s)).toEqual(['a', 'b']);
+        expect(toggleProtected(['a', 'b'], 'a')).toEqual(['b']);
+        expect(toggleProtected(['b'], 'a')).toEqual(['b', 'a']);
+        s = mergePatch(s, protectedPatch([]));
+        expect(protectedClusters(s)).toEqual([]);
+    });
+
+    it('ignores the old productionGroups key and keeps only string ids', () => {
+        const s = normalizeSettings({ problemPrefs: { productionGroups: ['prod'] }, protectedClusters: ['a', 3 as unknown as string] });
+        expect(protectedClusters(s)).toEqual(['a']);
+        expect(normalizeSettings({ problemPrefs: { productionGroups: ['prod'] } }).protectedClusters).toEqual([]);
     });
 
     it('records dismissed link suggestions in acks without losing earlier ones', () => {

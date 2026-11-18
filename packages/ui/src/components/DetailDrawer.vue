@@ -8,6 +8,7 @@ import type { DrawerTab } from '@/lib/route.ts';
 
 import ActionBar from '@/components/ActionBar.vue';
 import ObjectOverview from '@/components/ObjectOverview.vue';
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { closeDrawer, openObject } from '@/lib/drawer.ts';
@@ -173,7 +174,10 @@ const TAB_LABEL: Record<DrawerTab, string> = {
         ></div>
         <header>
             <div class="meta">
-                <span class="tag"><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster }}</span>
+                <span class="tag"
+                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster
+                    }}<ProtectedMark :cluster="target.cluster"
+                /></span>
                 <span class="muted small">{{ kindName }}<template v-if="target.namespace"> · {{ target.namespace }}</template></span>
                 <div class="grow"></div>
                 <ActionBar

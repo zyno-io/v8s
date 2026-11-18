@@ -76,8 +76,8 @@ watch(options, () => {
 
 const summary = computed(() => (pre.value ? preflightSummary(pre.value, options.value) : null));
 const clusterName = computed(() => clusters.nameById.get(props.cluster) ?? props.cluster);
-const production = computed(() => clusters.isProduction(props.cluster));
-const needsTyped = computed(() => production.value || !!opts.disableEviction);
+const isProt = computed(() => clusters.isProtected(props.cluster));
+const needsTyped = computed(() => isProt.value || !!opts.disableEviction);
 const typedOk = computed(() => !needsTyped.value || typed.value.trim() === props.node);
 const startDisabled = computed(
     () => busy.value || !pre.value || preLoading.value || !!summary.value?.blockers.length || (step.value === 'confirm' ? !typedOk.value : false)
@@ -296,8 +296,8 @@ onBeforeUnmount(() => {
                 </ul>
                 <p v-for="w in summary?.warnings ?? []" :key="w" class="notice warn">{{ w }}</p>
 
-                <label v-if="production && !opts.disableEviction" class="phrase">
-                    <span>Production cluster <b>{{ clusterName }}</b>. Type <b class="mono">{{ node }}</b> to confirm</span>
+                <label v-if="isProt && !opts.disableEviction" class="phrase">
+                    <span>Protected cluster <b>{{ clusterName }}</b>. Type <b class="mono">{{ node }}</b> to confirm</span>
                     <span class="field"><input v-model="typed" type="text" autocomplete="off" spellcheck="false" aria-label="Node name" /></span>
                 </label>
             </template>

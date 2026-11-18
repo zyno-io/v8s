@@ -47,13 +47,13 @@ const err = ref('');
 const gitopsHint = ref('');
 const jobId = ref('');
 
-const production = computed(() => clusters.isProduction(props.target.cluster));
+const isProt = computed(() => clusters.isProtected(props.target.cluster));
 const viaWrite = ref(false);
 const runsAs = computed(() => runAs(props.target.cluster, viaWrite.value));
 const ns = computed(() => props.target.namespace ?? props.release.namespace);
 const flux = computed(() => props.release.managedBy);
-// A phone rolls back by holding the button (uninstall and production already ask for typed names).
-const holdStart = computed(() => isPhone.value && props.action === 'rollback' && !production.value);
+// A phone rolls back by holding the button (uninstall and protected clusters already ask for typed names).
+const holdStart = computed(() => isPhone.value && props.action === 'rollback' && !isProt.value);
 const title = computed(() => ({ rollback: 'Roll back', uninstall: 'Uninstall', retry: 'Retry' })[props.action]);
 const job = computed<JobFrame | undefined>(() => getAgent().jobs.value.find(j => j.jobId === jobId.value));
 const finished = computed(() => !!job.value && !isActive(job.value));
@@ -63,11 +63,11 @@ watch(finished, f => f && emit('done'));
 const canStart = computed(() => {
     if (busy.value || !timeoutOk.value) return false;
     if (props.action === 'rollback' && !revision.value) return false;
-    // Production groups: every release-changing action types the release name (uninstall also the namespace), like ActionBar.
-    if (production.value && typedName.value.trim() !== props.release.name) return false;
+    // Protected clusters: every release-changing action types the release name (uninstall also the namespace), like ActionBar.
+    if (isProt.value && typedName.value.trim() !== props.release.name) return false;
     if (props.action === 'uninstall') {
         if (typedName.value.trim() !== props.release.name) return false;
-        if (production.value && typedNs.value.trim() !== ns.value) return false;
+        if (isProt.value && typedNs.value.trim() !== ns.value) return false;
     }
     return true;
 });
@@ -227,9 +227,9 @@ onMounted(async () => {
                         Force replacement deletes and recreates resources that cannot be patched, which can cause downtime.
                     </p>
                 </template>
-                <template v-if="action === 'uninstall' || production">
+                <template v-if="action === 'uninstall' || isProt">
                     <label class="fld"
-                        >{{ production ? 'This is a production cluster. ' : '' }}Type <b class="mono">{{ release.name }}</b> to confirm
+                        >{{ isProt ? 'This is a protected cluster. ' : '' }}Type <b class="mono">{{ release.name }}</b> to confirm
                         <span class="field"
                             ><input
                                 v-model="typedName"
@@ -240,8 +240,8 @@ onMounted(async () => {
                                 data-testid="helm-confirm-name"
                         /></span>
                     </label>
-                    <label v-if="production && action === 'uninstall'" class="fld"
-                        >This is a production cluster. Type the namespace <b class="mono">{{ ns }}</b>
+                    <label v-if="isProt && action === 'uninstall'" class="fld"
+                        >This is a protected cluster. Type the namespace <b class="mono">{{ ns }}</b>
                         <span class="field"
                             ><input
                                 v-model="typedNs"

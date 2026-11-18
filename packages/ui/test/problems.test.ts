@@ -204,7 +204,7 @@ describe('presets', () => {
         expect(patch).toEqual({ problemPrefs: { classes: { 'pod.pending': false } } });
         expect(presetDiff({ classes: { 'pod.pending': false, 'pod.crashloop': true } }, classes)).toBe(1);
     });
-    it('class patches never overwrite productionGroups or presets (merge semantics)', () => {
+    it('class patches never overwrite other problemPrefs keys or presets (merge semantics)', () => {
         const doc = { problemPrefs: { productionGroups: ['prod'], presets: { a: { classes: { x: true } } }, classes: { 'pod.pending': true } } };
         const merged = mergePatch(doc, classPatch({ 'pod.pending': false, 'flux.stale': true }));
         expect(merged.problemPrefs).toEqual({

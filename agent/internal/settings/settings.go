@@ -79,6 +79,9 @@ func normalize(s protocol.Settings) protocol.Settings {
 	if s.PortForwards == nil {
 		s.PortForwards = []protocol.SavedForward{}
 	}
+	if s.ProtectedClusters == nil {
+		s.ProtectedClusters = []string{}
+	}
 	return s
 }
 

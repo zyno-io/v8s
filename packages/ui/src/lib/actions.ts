@@ -94,19 +94,18 @@ export interface ConfirmInput {
     count: number;
     /** Distinct clusters of the targets. */
     clusters: readonly string[];
-    /** Cluster id → group names. */
-    groupsOf: (clusterId: string) => readonly string[];
-    productionGroups: readonly string[];
+    /** The targets' clusters that are protected. */
+    protectedClusters: readonly string[];
     /** Destructive action (delete) on a phone: never a single tap. */
     destructive?: boolean;
     phone?: boolean;
 }
 
-/** Single object: plain confirm. Bulk, cross-cluster, production-group, or a destructive action on a phone: type-to-confirm. */
+/** Single object: plain confirm. Bulk, cross-cluster, protected-cluster, or a destructive action on a phone: type-to-confirm. */
 export function needsTypeToConfirm(i: ConfirmInput): boolean {
     if (i.count > 1 || i.clusters.length > 1) return true;
     if (i.destructive && i.phone) return true;
-    return i.clusters.some(c => i.groupsOf(c).some(g => i.productionGroups.includes(g)));
+    return i.clusters.some(c => i.protectedClusters.includes(c));
 }
 
 /** What the user must type: the object name for one, the count for several. */

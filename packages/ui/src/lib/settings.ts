@@ -23,7 +23,8 @@ export function emptySettings(): Settings {
         problemPrefs: {},
         acks: {},
         nodeShell: {},
-        portForwards: []
+        portForwards: [],
+        protectedClusters: []
     };
 }
 
@@ -47,7 +48,8 @@ export function normalizeSettings(s: Partial<Settings> | null | undefined): Sett
         problemPrefs: s.problemPrefs ?? d.problemPrefs,
         acks: s.acks ?? d.acks,
         nodeShell: s.nodeShell ?? d.nodeShell,
-        portForwards: s.portForwards ?? d.portForwards
+        portForwards: s.portForwards ?? d.portForwards,
+        protectedClusters: protectedClusters(s)
     };
 }
 
@@ -107,23 +109,20 @@ export function groupList(groups: Record<string, string[]>): [string, string[]][
         .sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-// ---- production groups ----
-// The agent's Settings document is a closed struct (unknown top-level keys are rejected), so this list lives in the
-// free-form `problemPrefs` map until the protocol grows a field.
+// ---- protected clusters ----
 
-export const PRODUCTION_KEY = 'productionGroups';
-
-export function productionGroups(s: Settings): string[] {
-    const v = s.problemPrefs?.[PRODUCTION_KEY];
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : ['production'];
+/** Cluster ids whose destructive actions ask for a typed confirmation. */
+export function protectedClusters(s: Partial<Settings>): string[] {
+    const v = s.protectedClusters as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
-export function productionGroupsPatch(groups: readonly string[]): Record<string, unknown> {
-    return { problemPrefs: { [PRODUCTION_KEY]: [...groups] } };
+export function protectedPatch(ids: readonly string[]): Record<string, unknown> {
+    return { protectedClusters: [...ids] };
 }
 
-export function isProductionCluster(clusterGroups: readonly string[], production: readonly string[]): boolean {
-    return clusterGroups.some(g => production.includes(g));
+export function toggleProtected(ids: readonly string[], id: string): string[] {
+    return ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id];
 }
 
 // ---- dismissed link suggestions (acks) ----

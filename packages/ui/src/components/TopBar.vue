@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import AccountMenu from '@/components/AccountMenu.vue';
 import JobsTray from '@/components/JobsTray.vue';
 import PortForwardsButton from '@/components/PortForwardsButton.vue';
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getProblemsAll } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -50,7 +51,8 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
             aria-haspopup="dialog"
             @click="clusters.popoverOpen ? clusters.close() : clusters.open()"
         >
-            <span class="dot" :style="{ background: dotColor }"></span>{{ label }}
+            <span class="dot" :style="{ background: dotColor }"></span>{{ label
+            }}<ProtectedMark v-if="clusters.activeIds.length === 1" :cluster="clusters.activeIds[0]!" />
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path d="M4 6l4 4 4-4" />
             </svg>

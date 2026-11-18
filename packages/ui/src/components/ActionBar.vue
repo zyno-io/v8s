@@ -15,7 +15,6 @@ import { nodeShellAvailable, openNodeShell } from '@/lib/node-shell.ts';
 import { portForwardAvailable, portForwardRequest } from '@/lib/portforward.ts';
 import { isPhone } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
-import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const props = defineProps<{
@@ -31,7 +30,6 @@ const emit = defineEmits<{ done: [action: string, ok: boolean] }>();
 
 const ui = useUiStore();
 const clusters = useClustersStore();
-const settings = useSettingsStore();
 
 const actions = computed(() => {
     const base = isFluxGvr(props.gvr) ? [...fluxActionDefs(props.gvr), ...actionsFor(props.gvr)] : actionsFor(props.gvr);
@@ -112,15 +110,14 @@ function go(a: ActionDef) {
     if (!first) return;
     const clusterIds = [...new Set(targets.map(x => x.cluster))];
     const clusterNames = clusterIds.map(nameOf);
-    const prodNames = clusterIds.filter(c => clusters.isProduction(c)).map(nameOf);
+    const protNames = clusterIds.filter(c => clusters.isProtected(c)).map(nameOf);
     const summary = targetSummary(targets, clusterNames);
     const runsAs = [...new Set(clusterIds.map(c => runAs(c, viaWrite(a))))].join('; ');
-    const note = prodNames.length ? `Production group: ${prodNames.join(', ')}.` : undefined;
+    const note = protNames.length ? `Protected cluster: ${protNames.join(', ')}.` : undefined;
     const confirmInput = {
         count: targets.length,
         clusters: clusterIds,
-        groupsOf: clusters.groupsOf,
-        productionGroups: settings.productionGroups
+        protectedClusters: clusterIds.filter(c => clusters.isProtected(c))
     };
     if (a.client === 'drain') {
         drainRequest.value = { cluster: first.cluster, node: first.name ?? '' };
@@ -144,6 +141,7 @@ function go(a: ActionDef) {
             current: props.currentReplicas ?? null,
             phrase: phraseFor(needsTypeToConfirm(confirmInput)),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async n => finish(a.id, await runAction(targets, 'scale', 'Scaled', { replicas: n }))
         };
@@ -156,6 +154,7 @@ function go(a: ActionDef) {
             current: props.currentRevision ?? 0,
             phrase: phraseFor(needsTypeToConfirm(confirmInput)),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async rev => finish(a.id, await runAction(targets, 'rollback', 'Rolled back', { revision: rev }))
         };
@@ -171,6 +170,7 @@ function go(a: ActionDef) {
             danger: true,
             phrase: phraseFor(typed),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: async () => finish(a.id, await runDelete(targets))
         };
@@ -178,7 +178,7 @@ function go(a: ActionDef) {
     }
     const doIt = async () =>
         finish(a.id, a.id.startsWith('flux.') ? await runFluxAction(targets, a.id) : await runAction(targets, a.id, pastTense(a), undefined));
-    // Bulk and cross-cluster (cordon included): type the count. A single object in a production group: plain confirm naming the cluster.
+    // Bulk and cross-cluster (cordon included): type the count. A single object on a protected cluster: plain confirm naming the cluster.
     const typed = isBulkOrCross(targets.length, clusterIds.length);
     // On a phone restart and trigger are never a single tap: hold to confirm.
     const hold = isPhone.value && (a.id === 'restart' || a.id === 'trigger');
@@ -192,6 +192,7 @@ function go(a: ActionDef) {
             hold,
             phrase: phraseFor(typed),
             note,
+            locked: !!note,
             runAs: runsAs,
             run: doIt
         };

@@ -104,13 +104,13 @@ export async function stopForward(id: string): Promise<void> {
 
 export async function saveForward(f: { name?: string; ref: ObjectRef; port: number }): Promise<void> {
     const settings = useSettingsStore();
-    const cur = settings.doc.portForwards ?? [];
     const key = forwardKey(f.ref, f.port);
-    const next: SavedForward[] = [
-        ...cur.filter(s => forwardKey(s.ref, s.port) !== key),
-        { ...(f.name ? { name: f.name } : {}), ref: f.ref, port: f.port }
-    ];
-    await settings.patch({ portForwards: next });
+    await settings.patch(d => ({
+        portForwards: [
+            ...(d.portForwards ?? []).filter(s => forwardKey(s.ref, s.port) !== key),
+            { ...(f.name ? { name: f.name } : {}), ref: f.ref, port: f.port }
+        ] satisfies SavedForward[]
+    }));
 }
 
 export async function removeSavedForward(index: number): Promise<void> {

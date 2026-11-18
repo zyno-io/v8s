@@ -97,7 +97,7 @@ Performed by the agent with the Helm 4 SDK (`action.Rollback`, `action.Uninstall
 | Action | Behaviour |
 | --- | --- |
 | Rollback | to a chosen revision; options wait, timeout, cleanup-on-fail, force (behind confirm) |
-| Uninstall | options keep-history, wait, timeout, cascade policy; type-to-confirm in production groups |
+| Uninstall | options keep-history, wait, timeout, cascade policy; type-to-confirm on protected clusters |
 | Retry | for a `failed` or stuck `pending-*` release: re-run the last upgrade with the stored chart and values (no chart repo access needed; it is in the release). For a stuck `pending-*`, offer "mark failed" first, which is what people do by hand today |
 | Upgrade with edited values | edit values YAML, preview the manifest diff via dry run, apply. P3, not MVP |
 

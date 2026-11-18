@@ -835,6 +835,10 @@ export interface Settings {
    * PortForwards are the saved forwards (restorable with one click: stream.open type "portforward").
    */
   portForwards: SavedForward[];
+  /**
+   * ProtectedClusters are cluster ids whose destructive actions ask for a typed confirmation in the UI.
+   */
+  protectedClusters: string[];
 }
 /**
  * NodeShellSettings: Image must be pinned (a digest); empty fields use the defaults.

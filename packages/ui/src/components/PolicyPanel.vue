@@ -157,7 +157,7 @@ async function setMode(next: 'Audit' | 'Enforce') {
         current: mode.value,
         fails: failCount.value,
         partial: !!scanned.value?.limited || violations.value.length >= MAX_VIOLATIONS,
-        production: clusters.isProduction(props.target.cluster)
+        protected: clusters.isProtected(props.target.cluster)
     });
     if (!(await ask(text))) return;
     busy.value = true;

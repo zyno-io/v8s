@@ -2,11 +2,13 @@
 import { computed, nextTick, ref, watch } from 'vue';
 
 import LinkedContextsDialog from '@/components/LinkedContextsDialog.vue';
+import LockIcon from '@/components/LockIcon.vue';
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { phaseColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { suggestLinks } from '@/lib/link-suggest.ts';
 import { errorText } from '@/lib/mutations.ts';
-import { deleteGroupPatch, dismissedLinks, groupList, groupPatch, productionGroupsPatch, renameGroupPatch } from '@/lib/settings.ts';
+import { deleteGroupPatch, dismissedLinks, groupList, groupPatch, renameGroupPatch } from '@/lib/settings.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 
@@ -67,7 +69,7 @@ function connect() {
     void clusters.connect([...clusters.checked]);
 }
 
-// ---- groups: create, rename, delete, production flag ----
+// ---- groups: create, rename, delete ----
 const managing = ref(false);
 const creating = ref(false);
 const newName = ref('');
@@ -105,11 +107,7 @@ function doRename() {
     const to = renameTo.value.trim();
     renaming.value = '';
     if (!to || to === from) return;
-    void guard(async () => {
-        await settings.patch(renameGroupPatch(settings.groups, from, to));
-        if (settings.productionGroups.includes(from))
-            await settings.patch(productionGroupsPatch(settings.productionGroups.map(x => (x === from ? to : x))));
-    });
+    void guard(() => settings.patch(renameGroupPatch(settings.groups, from, to)));
 }
 function setMembers(g: string) {
     void guard(() => settings.patch(groupPatch(g, [...clusters.checked])));
@@ -117,10 +115,11 @@ function setMembers(g: string) {
 function removeGroup(g: string) {
     void guard(() => settings.patch(deleteGroupPatch(g)));
 }
-const isProdGroup = (g: string) => settings.productionGroups.includes(g);
-function toggleProd(g: string) {
-    const cur = settings.productionGroups;
-    void guard(() => settings.patch(productionGroupsPatch(cur.includes(g) ? cur.filter(x => x !== g) : [...cur, g])));
+
+// ---- protected clusters: a lock toggle at the end of every row ----
+const isProt = (id: string) => settings.protectedClusters.includes(id);
+function toggleProtect(id: string) {
+    void guard(() => settings.toggleProtect(id));
 }
 
 // ---- linked write contexts (managed in LinkedContextsDialog) ----
@@ -150,7 +149,7 @@ const suggestions = computed(() =>
                 </div>
                 <div class="gchips">
                     <button v-for="[g, ids] in groups" :key="g" class="chip" type="button" @click="pickGroup(ids, $event)">
-                        {{ g }} <span class="muted">{{ ids.length }}</span><span v-if="isProdGroup(g)" class="tag danger prodtag">prod</span>
+                        {{ g }} <span class="muted">{{ ids.length }}</span>
                     </button>
                     <button v-if="!creating" class="btn ghost sm" type="button" @click="creating = true">+ New group</button>
                     <form v-else class="newg" @submit.prevent="createGroup" @keydown.esc.stop="creating = false">
@@ -179,9 +178,6 @@ const suggestions = computed(() =>
                             >
                                 Set to checked
                             </button>
-                            <label class="prodflag"
-                                ><input class="cb" type="checkbox" :checked="isProdGroup(g)" @change="toggleProd(g)" />Production</label
-                            >
                             <button class="btn ghost sm danger" type="button" :aria-label="`Delete group ${g}`" @click="removeGroup(g)">
                                 Delete
                             </button>
@@ -205,24 +201,46 @@ const suggestions = computed(() =>
             </div>
             <ul class="list">
                 <li v-for="c in visible" :key="c.id" class="lrow">
-                    <label class="crow" :class="{ on: clusters.checked.has(c.id) }">
-                        <input
-                            class="cb"
-                            type="checkbox"
-                            :checked="clusters.checked.has(c.id)"
-                            :aria-label="`Select ${c.name}`"
-                            @change="clusters.toggle(c.id)"
-                        />
-                        <span class="dot" :style="{ background: phaseColor(clusters.stateById.get(c.id)?.phase ?? '') }"></span>
-                        <span class="ctext">
-                            <span class="cname">{{ c.name }}<span v-for="g in c.groups" :key="g" class="tag">{{ g }}</span></span>
-                            <span class="muted small sub"><span class="mono url">{{ c.server }}</span></span>
-                            <span v-if="c.writeContext" class="muted small sub"
-                                ><span class="tag warning">write</span><span class="mono">{{ c.writeContext }}</span></span
-                            >
-                        </span>
-                        <span class="small state" :class="{ bad: stateBad(c.id) }" :title="stateTitle(c.id)">{{ stateText(c.id) }}</span>
-                    </label>
+                    <div class="rowwrap">
+                        <label class="crow" :class="{ on: clusters.checked.has(c.id) }">
+                            <input
+                                class="cb"
+                                type="checkbox"
+                                :checked="clusters.checked.has(c.id)"
+                                :aria-label="`Select ${c.name}`"
+                                @change="clusters.toggle(c.id)"
+                            />
+                            <span class="dot" :style="{ background: phaseColor(clusters.stateById.get(c.id)?.phase ?? '') }"></span>
+                            <span class="ctext">
+                                <span class="cname"
+                                    >{{ c.name }}<ProtectedMark :cluster="c.id" /><span v-for="g in c.groups" :key="g" class="tag">{{
+                                        g
+                                    }}</span></span
+                                >
+                                <span class="muted small sub"><span class="mono url">{{ c.server }}</span></span>
+                                <span v-if="c.writeContext" class="muted small sub"
+                                    ><span class="tag warning">write</span><span class="mono">{{ c.writeContext }}</span></span
+                                >
+                            </span>
+                            <span class="small state" :class="{ bad: stateBad(c.id) }" :title="stateTitle(c.id)">{{ stateText(c.id) }}</span>
+                        </label>
+                        <button
+                            class="lock"
+                            :class="{ on: isProt(c.id) }"
+                            type="button"
+                            :aria-pressed="isProt(c.id)"
+                            :aria-label="`Protect ${c.name}`"
+                            :title="
+                                isProt(c.id)
+                                    ? 'Protected: destructive actions ask you to type the name to confirm. Click to unprotect.'
+                                    : 'Destructive actions on a protected cluster ask you to type the name to confirm.'
+                            "
+                            data-testid="protect-toggle"
+                            @click="toggleProtect(c.id)"
+                        >
+                            <LockIcon :size="14" :filled="isProt(c.id)" />
+                        </button>
+                    </div>
                     <p v-if="stateBad(c.id) && stateTitle(c.id)" class="small smsg">{{ stateTitle(c.id) }}</p>
                 </li>
                 <li v-if="!visible.length" class="empty muted">No matching contexts</li>
@@ -356,11 +374,46 @@ const suggestions = computed(() =>
     margin: -2px 12px 4px 48px;
     color: var(--danger);
 }
-.prodtag {
-    height: 15px;
-    font-size: 10px;
-    padding: 0 4px;
-    margin-left: 4px;
+.rowwrap {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.rowwrap .crow {
+    flex: 1;
+    min-width: 0;
+}
+.lock {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+}
+.lock:hover {
+    background: var(--hover);
+    color: var(--text2);
+}
+.lock.on,
+.lock.on:hover {
+    color: var(--danger);
+}
+@media (pointer: coarse) {
+    .lock {
+        width: 44px;
+        height: 44px;
+    }
+}
+.lock:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
 }
 .manage {
     list-style: none;
@@ -379,13 +432,6 @@ const suggestions = computed(() =>
 .gn {
     flex-grow: 1;
     font-weight: 500;
-}
-.prodflag {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text2);
 }
 .newg {
     display: inline-flex;

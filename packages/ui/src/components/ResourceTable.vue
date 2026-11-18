@@ -10,6 +10,7 @@ import type { ColPlan, TablePlan } from '@/lib/columns.ts';
 import type { DrawerTab } from '@/lib/route.ts';
 import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
@@ -604,9 +605,9 @@ function metricText(c: ColPlan, row: Row): string {
                             >
                             <template v-else-if="c.kind === 'cluster'"
                                 ><span class="tag"
-                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx] }}</span
-                                ></template
-                            >
+                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx]
+                                    }}<ProtectedMark :cluster="s(it.row[c.idx])" /></span
+                            ></template>
                             <template v-else-if="c.kind === 'status' || c.kind === 'tone'"
                                 ><span
                                     v-if="it.row[c.idx] !== '' && !(c.kind === 'tone' && n(it.row[c.idx]) === 0)"
@@ -653,7 +654,7 @@ function metricText(c: ColPlan, row: Row): string {
                         <div class="sub">
                             <template v-if="showCluster"
                                 ><span class="dot" :style="{ background: clusterColor(s(it.row[plan.clusterIdx])) }"></span
-                                >{{ it.row[plan.clusterIdx] }}<span>·</span></template
+                                >{{ it.row[plan.clusterIdx] }}<ProtectedMark :cluster="s(it.row[plan.clusterIdx])" /><span>·</span></template
                             ><template v-if="plan.nsIdx >= 0">{{ it.row[plan.nsIdx] }}<span>·</span></template
                             ><template v-if="ageCol">{{ formatAge(n(it.row[ageCol.idx]), nowMs) }}</template>
                         </div>

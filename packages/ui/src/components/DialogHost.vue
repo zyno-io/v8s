@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import type { DialogState } from '@/stores/ui.ts';
 
 import HoldButton from '@/components/HoldButton.vue';
+import LockIcon from '@/components/LockIcon.vue';
 import { isPhone } from '@/lib/viewport.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -110,7 +111,7 @@ async function run(fromHold = false) {
                 </label>
             </template>
             <p v-if="d.runAs" class="runas" data-testid="runas">{{ d.runAs }}</p>
-            <p v-if="d.note" class="note tag warning">{{ d.note }}</p>
+            <p v-if="d.note" class="note tag warning"><LockIcon v-if="d.locked" :size="12" />{{ d.note }}</p>
             <label v-if="d.phrase" class="phrase"
                 >Type <b class="mono">{{ d.phrase }}</b> to confirm
                 <span class="field"><input v-model="typed" type="text" autocomplete="off" spellcheck="false" aria-label="Confirmation text" /></span>
@@ -161,6 +162,9 @@ p {
     word-break: break-word;
 }
 .note {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     align-self: flex-start;
     height: auto;
     padding: 3px 7px;

@@ -5,6 +5,7 @@ import { computed, ref } from 'vue';
 
 import type { ParsedObject } from '@/lib/object-session.ts';
 
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { formatAge } from '@/lib/format.ts';
 import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
@@ -62,7 +63,10 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dd><span v-if="status" class="tag" :class="status.tone">{{ status.text }}</span><span v-else class="muted">—</span></dd>
             <dt class="lbl">Cluster</dt>
             <dd>
-                <span class="tag"><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster }}</span>
+                <span class="tag"
+                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster
+                    }}<ProtectedMark :cluster="target.cluster"
+                /></span>
             </dd>
             <template v-if="target.namespace"
                 ><dt class="lbl">Namespace</dt>
