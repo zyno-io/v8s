@@ -11,6 +11,7 @@ import {
     policyRef,
     sortDrops,
     statusHints,
+    hintsTitle,
     totalDrops,
     workloadRef
 } from '../src/lib/network.ts';
@@ -102,7 +103,14 @@ describe('status', () => {
         expect(statusHints(s({ maxFlows: 100000 }))).toEqual([]);
         expect(statusHints(s({ maxFlows: 100000, unavailableNodes: 2 }))[0]).toMatch(/2 nodes are unavailable/);
         expect(statusHints(s({ maxFlows: 300 })).join(' ')).toMatch(/buffer is small/);
+        // Cilium's default (4095 per node) is not "small": 3 connected nodes → 12,285; unavailable nodes add nothing.
+        expect(statusHints(s({ maxFlows: 12285 }))).toEqual([]);
+        expect(statusHints(s({ maxFlows: 16380, connectedNodes: 4, unavailableNodes: 1 }))).toEqual([expect.stringMatching(/1 node is unavailable/)]);
         expect(statusHints(s({ maxFlows: 100000, seenFlows: 0 })).join(' ')).toMatch(/no flows yet/);
+    });
+    it('hints title', () => {
+        expect(hintsTitle({ seenFlows: 0 })).toBe('Why are there no flows?');
+        expect(hintsTitle({ seenFlows: 291235288 })).toBe('Some flows may be missing');
     });
     it('uptime', () => {
         expect(formatUptime(90)).toBe('1m 30s');

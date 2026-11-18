@@ -31,7 +31,7 @@ The **Drops** view lists dropped flows across all selected clusters for the last
 
 ## Hubble status
 
-Per cluster: whether the relay is available, its version and uptime, flows seen and per second, the flow buffer fill, the connected and unavailable nodes with each node's state, and a "Why are there no flows?" checklist. Use it to answer that question.
+Per cluster: whether the relay is available, its version and uptime, flows seen and per second, the flow buffer fill, the connected and unavailable nodes with each node's state, and a checklist: "Why are there no flows?" when the relay has seen none, or "Some flows may be missing" when it has (unavailable nodes, a flow buffer smaller than Cilium's default of 4,095 per node).
 
 ## Network problem classes
 
