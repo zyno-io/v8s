@@ -101,20 +101,29 @@ export function clusterNamespaces(handle: ViewHandle | null, cluster: string): s
 export const fillPct = (s: Pick<HubbleStatus, 'numFlows' | 'maxFlows'>): number =>
     s.maxFlows > 0 ? Math.min(100, Math.round((s.numFlows / s.maxFlows) * 100)) : 0;
 
-/** Flows the relay can hold per node below which a busy cluster loses history quickly. */
-export const SMALL_BUFFER_PER_NODE = 4096;
+/**
+ * Cilium's default flow buffer per node (hubble.eventBufferCapacity = 4095). The relay reports the sum over its connected
+ * nodes, so a default install shows exactly 4095 per connected node: only less than that is worth a hint.
+ */
+export const DEFAULT_BUFFER_PER_NODE = 4095;
 
-/** "Why are there no flows?" hints for an available relay. */
+/** Heading of the hints box: "no flows" only when the relay has really seen none. */
+export function hintsTitle(s: Pick<HubbleStatus, 'seenFlows'>): string {
+    return s.seenFlows === 0 ? 'Why are there no flows?' : 'Some flows may be missing';
+}
+
+/** Hints for an available relay: why flows are missing, or why some of them may be. */
 export function statusHints(s: HubbleStatus): string[] {
     const out: string[] = [];
     if (s.unavailableNodes > 0)
         out.push(
             `${s.unavailableNodes} node${s.unavailableNodes === 1 ? ' is' : 's are'} unavailable: flows from those nodes are missing. Check the Cilium agent pods on them.`
         );
-    const nodes = s.connectedNodes + s.unavailableNodes;
-    if (s.maxFlows > 0 && nodes > 0 && s.maxFlows / nodes < SMALL_BUFFER_PER_NODE)
+    // maxFlows is the sum of the connected nodes' buffers; unavailable nodes contribute nothing to it.
+    const perNode = s.connectedNodes > 0 ? Math.round(s.maxFlows / s.connectedNodes) : 0;
+    if (s.maxFlows > 0 && perNode > 0 && perNode < DEFAULT_BUFFER_PER_NODE)
         out.push(
-            `The flow buffer is small (${Math.round(s.maxFlows / nodes)} flows per node). Raise hubble.eventBufferCapacity in the Cilium config to keep more history.`
+            `The flow buffer is small (${perNode} flows per node, below Cilium's default of ${DEFAULT_BUFFER_PER_NODE}). Raise hubble.eventBufferCapacity in the Cilium config to keep more history.`
         );
     if (s.connectedNodes > 0 && s.seenFlows === 0)
         out.push('The relay has seen no flows yet. Check that Hubble is enabled in the Cilium agents and traffic is flowing.');

@@ -6,7 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue';
 import { getAgent } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
-import { fillPct, formatUptime, nodeTone, statusHints } from '@/lib/network.ts';
+import { fillPct, formatUptime, hintsTitle, nodeTone, statusHints } from '@/lib/network.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
 
@@ -102,7 +102,7 @@ const ordered = computed(() =>
                     </dd>
                 </dl>
                 <div v-if="statusHints(e.status).length" class="hints" data-testid="hubble-hints">
-                    <strong>Why are there no flows?</strong>
+                    <strong>{{ hintsTitle(e.status) }}</strong>
                     <ul>
                         <li v-for="h in statusHints(e.status)" :key="h">{{ h }}</li>
                     </ul>
