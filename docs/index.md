@@ -3,8 +3,8 @@ layout: home
 
 hero:
     name: v8s
-    text: A fast, multi-cluster Kubernetes manager
-    tagline: Smooth on 10k+ objects per cluster, several clusters at a time, on the desktop, in a browser, and on your phone.
+    text: Visual k8s
+    tagline: A fast, multi-cluster Kubernetes manager. Smooth on 10k+ objects per cluster, several clusters at a time, on the desktop, in a browser, and on your phone.
     image:
         src: /logo.svg
         alt: v8s

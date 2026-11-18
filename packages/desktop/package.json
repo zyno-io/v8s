@@ -2,7 +2,7 @@
     "name": "@v8s/desktop",
     "version": "0.1.0",
     "private": true,
-    "description": "v8s desktop shell",
+    "description": "Visual k8s: a fast, multi-cluster Kubernetes manager",
     "homepage": "https://docs.v8s.io/",
     "license": "MIT",
     "author": "Signal24",

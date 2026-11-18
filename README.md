@@ -1,6 +1,6 @@
 # v8s
 
-A fast, multi-cluster Kubernetes manager for desktop, web, and phone.
+**Visual k8s**: a fast, multi-cluster Kubernetes manager for desktop, web, and phone.
 
 [![CI](https://github.com/zyno-io/v8s/actions/workflows/ci.yml/badge.svg)](https://github.com/zyno-io/v8s/actions/workflows/ci.yml)
 [![Docs](https://github.com/zyno-io/v8s/actions/workflows/pages.yml/badge.svg)](https://docs.v8s.io/)
