@@ -476,6 +476,11 @@ export interface Cluster {
   server: string; // API server URL, for display
   groups: string[];
   /**
+   * FixedGroups are the groups the source puts the cluster in (hosted mode: the server's displayGroups). They are
+   * also in Groups; the user cannot rename, edit or delete them.
+   */
+  fixedGroups?: string[];
+  /**
    * WriteContext is the id of the linked write context (settings.links), if any.
    */
   writeContext?: string;

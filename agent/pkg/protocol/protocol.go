@@ -123,6 +123,9 @@ type Cluster struct {
 	Name   string   `msgpack:"name" json:"name"`     // display name
 	Server string   `msgpack:"server" json:"server"` // API server URL, for display
 	Groups []string `msgpack:"groups" json:"groups"`
+	// FixedGroups are the groups the source puts the cluster in (hosted mode: the server's displayGroups). They are
+	// also in Groups; the user cannot rename, edit or delete them.
+	FixedGroups []string `msgpack:"fixedGroups,omitempty" json:"fixedGroups,omitempty"`
 	// WriteContext is the id of the linked write context (settings.links), if any.
 	WriteContext string `msgpack:"writeContext,omitempty" json:"writeContext,omitempty"`
 }

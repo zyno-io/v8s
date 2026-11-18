@@ -26,6 +26,12 @@ const visible = computed(() => {
 });
 
 const groups = computed(() => groupList(settings.groups).map(([g, ids]) => [g, ids.filter(id => clusters.byId.has(id))] as [string, string[]]));
+// Groups the server puts clusters in (hosted mode's displayGroups): selectable like any group, but read-only here.
+const fixedGroups = computed(() => {
+    const m = new Map<string, string[]>();
+    for (const c of clusters.list) for (const g of c.fixedGroups ?? []) m.set(g, [...(m.get(g) ?? []), c.id]);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+});
 function stateText(id: string): string {
     const s = clusters.stateById.get(id);
     if (!s) return 'not connected';
@@ -148,6 +154,17 @@ const suggestions = computed(() =>
                     </button>
                 </div>
                 <div class="gchips">
+                    <button
+                        v-for="[g, ids] in fixedGroups"
+                        :key="'fixed:' + g"
+                        class="chip fixed"
+                        type="button"
+                        title="Set by the server; read-only"
+                        data-testid="fixed-group"
+                        @click="pickGroup(ids, $event)"
+                    >
+                        {{ g }} <span class="muted">{{ ids.length }}</span>
+                    </button>
                     <button v-for="[g, ids] in groups" :key="g" class="chip" type="button" @click="pickGroup(ids, $event)">
                         {{ g }} <span class="muted">{{ ids.length }}</span>
                     </button>
@@ -184,6 +201,9 @@ const suggestions = computed(() =>
                         </template>
                     </li>
                 </ul>
+                <p v-if="managing && fixedGroups.length" class="muted small fixnote">
+                    Groups with a dashed border are set by the server and can't be changed here.
+                </p>
                 <p v-if="gerr" class="err" role="alert">{{ gerr }}</p>
                 <label class="field">
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
@@ -303,6 +323,12 @@ const suggestions = computed(() =>
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
+}
+.chip.fixed {
+    border-style: dashed;
+}
+.fixnote {
+    margin: 0;
 }
 .list {
     list-style: none;
