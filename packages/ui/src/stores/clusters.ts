@@ -27,6 +27,8 @@ export const useClustersStore = defineStore('clusters', () => {
     const states = computed<ClusterState[]>(() => (loaded.value ? getAgent().clusterStates.value : []));
     const stateById = computed(() => new Map(states.value.map(s => [s.id, s])));
     const activeIds = computed(() => states.value.map(s => s.id));
+    /** At least one selected cluster is connected (listing or listed): search has something to look through. */
+    const anyConnected = computed(() => states.value.some(s => s.phase === 'syncing' || s.phase === 'ready' || s.phase === 'degraded'));
     const nameById = computed(() => new Map(list.value.map(c => [c.id, c.name])));
     const byId = computed(() => new Map(list.value.map(c => [c.id, c])));
 
@@ -98,6 +100,7 @@ export const useClustersStore = defineStore('clusters', () => {
         states,
         stateById,
         activeIds,
+        anyConnected,
         nameById,
         byId,
         groupsOf,

@@ -59,15 +59,16 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
             class="field search"
             type="button"
             aria-haspopup="dialog"
-            aria-label="Search objects and commands (Ctrl-K)"
+            :aria-label="clusters.anyConnected ? 'Search objects and commands (Ctrl-K)' : 'Search (connect a cluster first)'"
             data-testid="search-btn"
+            :disabled="!clusters.anyConnected"
             @click="ui.paletteOpen = true"
         >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <circle cx="7" cy="7" r="4.5" />
                 <path d="M10.5 10.5L14 14" />
             </svg>
-            <span class="ph">Search objects, kinds and commands</span>
+            <span class="ph">{{ clusters.anyConnected ? 'Search objects, kinds and commands' : 'Connect a cluster to search' }}</span>
             <span class="kbd">{{ isMac ? '⌘K' : 'Ctrl K' }}</span>
         </button>
         <div class="grow"></div>
@@ -110,6 +111,13 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
     font-size: 13px;
     cursor: pointer;
     text-align: left;
+}
+.search:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+.search:disabled .kbd {
+    visibility: hidden;
 }
 .search .ph {
     flex-grow: 1;
