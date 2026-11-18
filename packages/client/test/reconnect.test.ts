@@ -491,6 +491,32 @@ describe('DataCore reconnect: cluster selection', () => {
         expect(h.sent.slice(before)[0].payload).toMatchObject({ method: 'clusters.select', params: { ids: ['x'] } });
     });
 
+    it('forgets clusters another tab deselected: an empty states frame means nothing to restore', () => {
+        const h = harness();
+        h.open();
+        h.frame(KindClusterState, 0, 2, { states: [{ id: 'x', phase: 'ready', synced: 1 }] });
+        h.frame(KindClusterState, 0, 3, { states: [] });
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        const before = h.sent.length;
+        h.hello(false);
+        expect(methods(h, before)).toEqual(['view.subscribe']);
+    });
+
+    it('an update between resubscribe and the first snapshot carries no old-id anchor', () => {
+        const h = harness();
+        h.open();
+        h.subscribe(1);
+        h.frame(KindPatch, 1, 2, { gen: 1, total: 900, offset: 120, rows: [[42, 1, 0, 'a']], ids: encodeIds([42]) });
+        h.dropAndReconnect();
+        const before = h.sent.length;
+        h.main({ t: 'update', qid: 1, gen: 1, window: { anchorId: 77, offset: -10, limit: 50 } });
+        const upd = h.sent.slice(before).find(s => (s.payload as { method: string }).method === 'view.update')!;
+        const w = (upd.payload as { params: { window: object } }).params.window;
+        expect(w).toEqual({ offset: 120, limit: 50 });
+    });
+
     it('records views opened while waiting for the states and sends them once, in order', () => {
         const h = harness();
         h.open();

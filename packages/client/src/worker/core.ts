@@ -184,10 +184,12 @@ export class DataCore {
             case 'update': {
                 const view = this.views.get(msg.qid);
                 if (!view) break;
-                this.noteUpdate(view, msg);
+                // Between a resubscribe and its first snapshot the page still holds ids of the old connection: an anchor made of one is meaningless.
+                const window = view.reset && msg.window?.anchorId ? { offset: view.offset, limit: msg.window.limit } : msg.window;
+                this.noteUpdate(view, { ...msg, window });
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'ignore' });
-                this.sendRequest(rid, 'view.update', { qid: msg.qid, gen: msg.gen, query: msg.query, window: msg.window });
+                this.sendRequest(rid, 'view.update', { qid: msg.qid, gen: msg.gen, query: msg.query, window });
                 break;
             }
             case 'log.open': {
@@ -380,7 +382,7 @@ export class DataCore {
                 const states = (f.payload as ClusterStates).states ?? [];
                 if (this.awaitStates) this.restore(states.length > 0);
                 // What the agent really has connected (this page may have loaded onto an agent another tab already connected).
-                else if (states.length) this.selected = states.map(s => s.id);
+                else this.selected = states.map(s => s.id); // including none: another tab may have deselected everything
                 this.io.post({ t: 'clusterStates', states });
                 break;
             }

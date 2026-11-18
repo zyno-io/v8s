@@ -387,6 +387,7 @@ watch(
         collapseAll();
         focusId.value = 0;
         anchor.id = 0;
+        pending.value = new Map(); // keyed by wire id
     },
     { flush: 'sync' }
 );

@@ -351,7 +351,11 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
             }
             case 'reset': {
                 const v = views.get(m.qid);
-                if (v) v.epoch.value++;
+                if (v) {
+                    // Old ids may be reused by the new snapshot, which can arrive in several chunks: drop rows keyed by them now.
+                    v.rows.clear();
+                    v.epoch.value++;
+                }
                 break;
             }
             case 'rows': {
