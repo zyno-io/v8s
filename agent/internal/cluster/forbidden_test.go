@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,9 +18,10 @@ import (
 
 // toggleDeny refuses List and Watch of one kind while on is set, counting the calls.
 type toggleDeny struct {
-	gvr   string
-	on    atomic.Bool
-	calls atomic.Int64
+	gvr    string
+	on     atomic.Bool
+	unauth atomic.Bool // answer 401 instead (a credential that is being refreshed)
+	calls  atomic.Int64
 }
 
 type toggleAPI struct {
@@ -32,6 +34,9 @@ func (a toggleAPI) List(ctx context.Context, o metav1.ListOptions) (runtime.Obje
 		return nil, err // a call on a cancelled (parked) run is not a request to the server
 	}
 	a.d.calls.Add(1)
+	if a.d.unauth.Load() {
+		return nil, apierrors.NewUnauthorized("token expired")
+	}
 	if a.d.on.Load() {
 		return forbiddenAPI{}.List(ctx, o)
 	}
@@ -43,6 +48,9 @@ func (a toggleAPI) Watch(ctx context.Context, o metav1.ListOptions) (watch.Inter
 		return nil, err
 	}
 	a.d.calls.Add(1)
+	if a.d.unauth.Load() {
+		return nil, apierrors.NewUnauthorized("token expired")
+	}
 	if a.d.on.Load() {
 		return forbiddenAPI{}.Watch(ctx, o)
 	}
@@ -79,19 +87,26 @@ const denyGVR = "apps/v1/daemonsets" // a tier-0 kind
 
 func newDenyManager(t *testing.T, retry time.Duration) (*Manager, *toggleDeny) {
 	t.Helper()
+	m, d := newToggleManager(t, retry, func(d *toggleDeny) { d.on.Store(true) })
+	readyAndDiscovered(t, m, "prod-us")
+	return m, d
+}
+
+// newToggleManager selects prod-us with one kind's API wrapped by a toggleDeny; it does not wait for readiness.
+func newToggleManager(t *testing.T, retry time.Duration, setup func(*toggleDeny)) (*Manager, *toggleDeny) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	eng := view.NewEngine()
 	go eng.Run(ctx)
 	d := &toggleDeny{gvr: denyGVR}
-	d.on.Store(true)
+	setup(d)
 	m := NewManager(ctx, toggleSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 50}), d}, eng, nil)
 	m.ForbiddenRetry = retry
 	t.Cleanup(m.Close)
 	if _, err := m.Select([]string{"prod-us"}); err != nil {
 		t.Fatal(err)
 	}
-	readyAndDiscovered(t, m, "prod-us")
 	return m, d
 }
 
@@ -180,5 +195,21 @@ func TestForbiddenViewHeldWatchKeepsRetrying(t *testing.T) {
 	waitFor(t, "retries while held", func() bool { return d.calls.Load() >= n+3 })
 	if parked(m) {
 		t.Fatal("a watch held by a view must not be parked")
+	}
+}
+
+// A 401 is often transient (an exec credential being refreshed) and cluster-wide: it must not park a watch, which
+// would freeze the kind for ForbiddenRetry after the credential recovers.
+func TestUnauthorizedDoesNotPark(t *testing.T) {
+	m, d := newToggleManager(t, time.Hour, func(d *toggleDeny) { d.unauth.Store(true) })
+	waitFor(t, "the 401 seen", func() bool { return d.calls.Load() > 0 })
+	time.Sleep(300 * time.Millisecond)
+	if parked(m) {
+		t.Fatal("a 401 parked the watch")
+	}
+	d.unauth.Store(false)
+	waitFor(t, "the watch recovers on its own", func() bool { return m.runnerForTest("prod-us").watchErr(denyGVR) == nil && d.calls.Load() > 1 })
+	if parked(m) {
+		t.Fatal("parked after recovery")
 	}
 }

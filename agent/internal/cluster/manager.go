@@ -40,7 +40,7 @@ type Manager struct {
 	EventsLinger   time.Duration // the linger of object-events watches
 	Budget         int
 	DiscoveryEvery time.Duration
-	// ForbiddenRetry is how long an unreferenced watch whose LIST was refused (Forbidden, Unauthorized, NotFound)
+	// ForbiddenRetry is how long an unreferenced watch whose LIST was refused (Forbidden, NotFound)
 	// stays stopped before it is retried (default DefaultForbiddenRetry).
 	ForbiddenRetry time.Duration
 
