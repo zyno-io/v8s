@@ -121,7 +121,11 @@ func TestCapacityDemandPublishesTheRowAndPollsOnlyNodes(t *testing.T) {
 	if r["cpuUse"] < 0 || r["nodesReporting"] == 0 {
 		t.Fatalf("the first capacity row must already carry node usage (no requested-to-used flip): %v", r)
 	}
-	if r["nodes"] != 150 || r["nodesReporting"] != 150 || r["cpuAlloc"] != 150*15890 || r["memAlloc"] != 150*63<<10 {
+	// the fake sizes its nodes from its pods: the same cluster (usageManager's 300 pods, seed 1) gives the same shape
+	fc := fake.NewCluster("prod-us", 300, 0, 1)
+	ac, am := fc.NodeAllocatable()
+	fc.Stop()
+	if r["nodes"] != 150 || r["nodesReporting"] != 150 || r["cpuAlloc"] != 150*ac || r["memAlloc"] != 150*am {
 		t.Errorf("allocatable cells = %v", r)
 	}
 	if r["podsCounted"] == 0 || r["cpuReq"] == 0 || r["cpuLim"] == 0 || r["memReq"] == 0 || r["podsNoCPULim"] == 0 {
