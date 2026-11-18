@@ -44,7 +44,7 @@ function openClusters() {
 }
 function openSearch() {
     sheet.value = '';
-    ui.paletteOpen = true;
+    if (clusters.anyConnected) ui.paletteOpen = true;
 }
 const on = (prefix: string) => route.path === prefix || route.path.startsWith(prefix + '/');
 </script>

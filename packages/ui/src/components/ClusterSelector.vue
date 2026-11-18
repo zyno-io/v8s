@@ -216,11 +216,9 @@ const suggestions = computed(() =>
                         <span class="dot" :style="{ background: phaseColor(clusters.stateById.get(c.id)?.phase ?? '') }"></span>
                         <span class="ctext">
                             <span class="cname">{{ c.name }}<span v-for="g in c.groups" :key="g" class="tag">{{ g }}</span></span>
-                            <span class="muted small sub"
-                                ><span class="mono">{{ c.server }}</span
-                                ><template v-if="c.writeContext"
-                                    ><span>·</span><span class="tag warning">write</span><span class="mono">{{ c.writeContext }}</span></template
-                                ></span
+                            <span class="muted small sub"><span class="mono url">{{ c.server }}</span></span>
+                            <span v-if="c.writeContext" class="muted small sub"
+                                ><span class="tag warning">write</span><span class="mono">{{ c.writeContext }}</span></span
                             >
                         </span>
                         <span class="small state" :class="{ bad: stateBad(c.id) }" :title="stateTitle(c.id)">{{ stateText(c.id) }}</span>
@@ -341,6 +339,14 @@ const suggestions = computed(() =>
     align-items: center;
     gap: 6px;
     min-width: 0;
+}
+.sub + .sub {
+    margin-top: 2px;
+}
+.url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .lrow {
     display: flex;

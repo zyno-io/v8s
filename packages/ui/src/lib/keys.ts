@@ -53,7 +53,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         const clusters = useClustersStore();
         if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
             e.preventDefault();
-            ui.paletteOpen = !ui.paletteOpen;
+            if (ui.paletteOpen || clusters.anyConnected) ui.paletteOpen = !ui.paletteOpen;
             return;
         }
         if (e.key === 'Escape') {

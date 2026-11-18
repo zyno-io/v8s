@@ -60,6 +60,7 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
             return null;
         }
         case 'ip':
+            if (!useClustersStore().anyConnected) return 'connect a cluster first';
             ui.commandBarOpen = false;
             ui.paletteQuery = cmd.text;
             ui.paletteOpen = true;
