@@ -23,8 +23,8 @@ const (
 	DefaultLinger         = 5 * time.Minute
 	DefaultBudget         = 96
 	DefaultDiscoveryEvery = 5 * time.Minute
-	// DefaultForbiddenRetry is how long an unreferenced (baseline) watch whose LIST was refused (Forbidden,
-	// Unauthorized, NotFound) stays parked before it is tried again.
+	// DefaultForbiddenRetry is how long an unreferenced (baseline) watch whose LIST was refused (Forbidden or
+	// NotFound) stays parked before it is tried again.
 	DefaultForbiddenRetry = 5 * time.Minute
 )
 
@@ -272,7 +272,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			} else if r.everOK.Load() && p != protocol.PhaseAuthRequired {
 				p = protocol.PhaseDegraded
 			}
-			r.m.log.Warn("cluster error", "cluster", r.id, "phase", p, "err", msg)
+			r.m.log.Warn("cluster error", "cluster", r.id, "phase", p, "err", msg, "detail", err.Error())
 			r.setPhase(p, msg)
 		},
 	}
@@ -346,9 +346,10 @@ func (r *runner) runLocked(w *watchEntry) {
 }
 
 // terminalListErr: the API refused the list for this user (or does not serve the kind); retrying every few
-// seconds cannot help.
+// seconds cannot help. Unauthorized is not included: it is often transient (credentials refreshing) and
+// cluster-wide, and the pods watch drives the auth-required phase.
 func terminalListErr(err error) bool {
-	return apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) || apierrors.IsNotFound(err)
+	return apierrors.IsForbidden(err) || apierrors.IsNotFound(err)
 }
 
 // parkIfUnheld stops the reflector of a watch nobody is looking at after a terminal LIST error, instead of
@@ -385,7 +386,16 @@ func (r *runner) unparkLocked(w *watchEntry) {
 		w.retry.Stop()
 		w.retry = nil
 	}
+	w.errv.Store(listErr{}) // do not answer scopeFailure / IP search from the stale refusal before the new LIST lands
 	r.runLocked(w)
+}
+
+// retryIfGoneLocked restarts a baseline watch parked on NotFound: discovery now serves the kind again (a CRD or
+// APIService was reinstalled). Caller holds r.mu.
+func (r *runner) retryIfGoneLocked(w *watchEntry) {
+	if w.parked && apierrors.IsNotFound(w.lastErr()) {
+		r.unparkLocked(w)
+	}
 }
 
 // unavailableReason explains a watch error that makes a kind unreadable for the problems engine ("" for
@@ -567,6 +577,7 @@ func (r *runner) startOptionalBaseline() {
 		}
 		if w := r.watches[m.GVR]; w != nil { // an on-demand watch (a user opened the kind) becomes baseline
 			r.promoteLocked(w)
+			r.retryIfGoneLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {
@@ -591,6 +602,7 @@ func (r *runner) startGatedBaseline() {
 		}
 		if w := r.watches[m.GVR]; w != nil {
 			r.promoteLocked(w)
+			r.retryIfGoneLocked(w)
 			continue
 		}
 		if _, err := r.startLocked(m.GVR, true); err != nil {

@@ -28,6 +28,9 @@ type toggleAPI struct {
 }
 
 func (a toggleAPI) List(ctx context.Context, o metav1.ListOptions) (runtime.Object, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err // a call on a cancelled (parked) run is not a request to the server
+	}
 	a.d.calls.Add(1)
 	if a.d.on.Load() {
 		return forbiddenAPI{}.List(ctx, o)
@@ -36,6 +39,9 @@ func (a toggleAPI) List(ctx context.Context, o metav1.ListOptions) (runtime.Obje
 }
 
 func (a toggleAPI) Watch(ctx context.Context, o metav1.ListOptions) (watch.Interface, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	a.d.calls.Add(1)
 	if a.d.on.Load() {
 		return forbiddenAPI{}.Watch(ctx, o)
