@@ -59,13 +59,6 @@ export const useClustersStore = defineStore('clusters', () => {
         if (!states.value.length) popoverOpen.value = true;
     }
 
-    /** After a reconnect: a restarted agent (or an evicted hosted engine) has no live clusters; connect the remembered selection again. */
-    async function restoreAfterReconnect() {
-        await refreshList();
-        // The agent pushes its cluster states right after Hello, so they are in by the time this response is.
-        if (!getAgent().clusterStates.value.length && remembered.value.length) await getAgent().selectClusters(remembered.value);
-    }
-
     function open() {
         // A context linked as another one's write context is not listed, so it must not stay checked.
         const ids = activeIds.value.length ? activeIds.value : remembered.value;
@@ -121,7 +114,6 @@ export const useClustersStore = defineStore('clusters', () => {
         writeContextOf,
         isProtected,
         refreshList,
-        restoreAfterReconnect,
         takeFocusTarget,
         load,
         open,

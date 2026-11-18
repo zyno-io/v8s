@@ -150,6 +150,8 @@ export type WorkerToMain =
     | { t: 'flow.opened'; sid: number; usedContext?: string }
     | { t: 'flow.error'; sid: number; error: ErrorBody }
     | { t: 'columns'; qid: number; columns: Column[]; error?: ErrorBody }
+    /** The view was resubscribed on a new connection: wire ids restarted, so ids held by the page no longer mean what they did. Precedes the first rows. */
+    | { t: 'reset'; qid: number }
     /** Up to 500 rows; applied immediately without a version bump. */
     | { t: 'rows'; qid: number; gen: number; rows: Row[] }
     /** Last message of a flush: ids/total/offset/removed, then the main thread bumps the view version. */

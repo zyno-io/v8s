@@ -30,8 +30,8 @@ export const RECONNECT_BASE_MS = 500;
 export const RECONNECT_MAX_MS = 15_000;
 /** A reconnect attempt that has not completed its handshake by then is abandoned (a half-open network). */
 export const RECONNECT_ATTEMPT_MS = 10_000;
-/** After a resubscribe, a view that received no patch this long after its response is empty: clear what the page still shows. */
-export const RESYNC_EMPTY_MS = 2000;
+/** After a reconnect's Hello the cluster states normally follow at once; views are resubscribed without them after this long. */
+export const STATES_WAIT_MS = 2000;
 
 /** Delay before reconnect attempt number `attempt` (0-based). `rand` is in [0, 1). Never above RECONNECT_MAX_MS. */
 export function backoffMs(attempt: number, rand: number): number {
@@ -69,9 +69,8 @@ interface View {
     /** The query and window as the page last set them: what a resubscribe after a reconnect sends. */
     query: ViewQuery;
     window: Window;
-    /** Resubscribed after a reconnect and no patch received yet. */
-    fresh: boolean;
-    resync: unknown;
+    /** Resubscribed after a reconnect: the next flush first tells the page that wire ids restarted. */
+    reset: boolean;
     rows: Map<number, Row>;
     dirty: Set<number>;
     removed: Set<number>;
@@ -85,7 +84,7 @@ interface View {
 }
 
 type Pending =
-    | { kind: 'passthrough'; rid: number }
+    | { kind: 'passthrough'; rid: number; select?: string[] }
     | { kind: 'subscribe'; qid: number }
     | { kind: 'logopen'; sid: number; capacity: number; maxBytes?: number; multi: boolean }
     | { kind: 'flowopen'; sid: number; capacity: number }
@@ -118,6 +117,11 @@ export class DataCore {
     private socketLive = false;
     private retryTimer: unknown = null;
     private attemptTimer: unknown = null;
+    /** The clusters the agent last reported live or this page last selected successfully: all the worker restores after a reconnect (never a merely pre-checked set). */
+    private selected: string[] = [];
+    /** Reconnected, waiting for the agent's first cluster states before resubscribing views. */
+    private awaitStates = false;
+    private statesTimer: unknown = null;
     private logs = new Map<number, LogSession>();
     private cancelledLogs = new Set<number>();
     private flows = new Map<number, FlowSession>();
@@ -149,14 +153,24 @@ export class DataCore {
             this.reconnectNow();
             return;
         }
+        // Reconnected, views not resubscribed yet: they are recorded locally and sent once, in order, by `restore`.
+        if (this.awaitStates && (msg.t === 'subscribe' || msg.t === 'update' || msg.t === 'unsubscribe') && this.localOnly(msg)) return;
         if (!this.ready) {
-            if (this.everReady && this.localOnly(msg)) return;
-            this.queued.push(msg);
-            return;
+            // Before the first Hello everything waits for it. After that nothing queues: requests fail, view bookkeeping is
+            // local, and log/flow session controls (scroll, search, pause, close) act on their local sessions below.
+            if (!this.everReady) {
+                this.queued.push(msg);
+                return;
+            }
+            if (this.localOnly(msg)) return;
         }
         switch (msg.t) {
             case 'request':
-                this.pending.set(msg.rid, { kind: 'passthrough', rid: msg.rid });
+                this.pending.set(msg.rid, {
+                    kind: 'passthrough',
+                    rid: msg.rid,
+                    select: msg.method === 'clusters.select' ? ((msg.params as { ids?: string[] } | undefined)?.ids ?? []) : undefined
+                });
                 this.sendRequest(msg.rid, msg.method, msg.params);
                 break;
             case 'subscribe': {
@@ -295,8 +309,7 @@ export class DataCore {
 
     private dropView(view: View): void {
         if (view.timer) this.io.cancel(view.timer);
-        if (view.resync) this.io.cancel(view.resync);
-        view.timer = view.resync = null;
+        view.timer = null;
     }
 
     private newView(qid: number, gen: number, query: ViewQuery, window: Window): View {
@@ -305,8 +318,7 @@ export class DataCore {
             gen,
             query,
             window,
-            fresh: false,
-            resync: null,
+            reset: false,
             columns: null,
             dictCols: [],
             rows: new Map(),
@@ -339,6 +351,7 @@ export class DataCore {
                     this.io.closeSocket();
                     return;
                 }
+                const reconnected = this.everReady;
                 this.ready = true;
                 this.everReady = true;
                 this.reconnecting = false;
@@ -347,7 +360,12 @@ export class DataCore {
                 // Dictionary ids and wire view ids are per connection: nothing from the previous socket carries over.
                 this.dict = [];
                 this.io.post({ t: 'status', status: 'open', agentVersion: hello.agentVersion, mode: hello.mode });
-                for (const view of this.views.values()) this.resubscribe(view);
+                if (reconnected && (this.views.size || this.selected.length)) {
+                    // The agent pushes its cluster states right after Hello; if it came back with none live (a restart, an evicted
+                    // hosted engine) select this page's clusters again BEFORE resubscribing, so each view resolves against them.
+                    this.awaitStates = true;
+                    this.statesTimer = this.io.schedule(() => this.restore(false), STATES_WAIT_MS);
+                }
                 const q = this.queued;
                 this.queued = [];
                 for (const m of q) this.handleMain(m);
@@ -358,9 +376,14 @@ export class DataCore {
                 for (let i = 0; i < add.strings.length; i++) this.dict[add.base + i] = add.strings[i];
                 break;
             }
-            case KindClusterState:
-                this.io.post({ t: 'clusterStates', states: (f.payload as ClusterStates).states ?? [] });
+            case KindClusterState: {
+                const states = (f.payload as ClusterStates).states ?? [];
+                if (this.awaitStates) this.restore(states.length > 0);
+                // What the agent really has connected (this page may have loaded onto an agent another tab already connected).
+                else if (states.length) this.selected = states.map(s => s.id);
+                this.io.post({ t: 'clusterStates', states });
                 break;
+            }
             case KindObject:
                 // Not acknowledged; object payloads are single objects, so they go to the main thread as they come.
                 this.io.post({ t: 'object', oid: f.channel, frame: f.payload as ObjectFrameWire });
@@ -389,13 +412,33 @@ export class DataCore {
         view.removed.clear();
         view.ids = null;
         view.early = [];
-        view.fresh = true;
+        view.reset = true;
+        // Wire ids restart on the new connection, so an anchorId from the old one would point at a different row (or none):
+        // ask for the same absolute range the last patch covered instead.
+        const window = { offset: view.window.anchorId ? view.offset : view.window.offset, limit: view.window.limit };
         const rid = this.nextRid++;
         this.pending.set(rid, { kind: 'subscribe', qid: view.qid });
-        this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window: view.window });
+        this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window });
+    }
+
+    /** Reselects this page's clusters if none are live, then resubscribes every view in order. */
+    private restore(live: boolean): void {
+        if (!this.awaitStates) return;
+        this.awaitStates = false;
+        if (this.statesTimer) this.io.cancel(this.statesTimer);
+        this.statesTimer = null;
+        if (!live && this.selected.length) {
+            const rid = this.nextRid++;
+            this.pending.set(rid, { kind: 'ignore' });
+            this.sendRequest(rid, 'clusters.select', { ids: this.selected });
+        }
+        for (const view of this.views.values()) this.resubscribe(view);
     }
 
     private clearTimers(): void {
+        this.awaitStates = false;
+        if (this.statesTimer) this.io.cancel(this.statesTimer);
+        this.statesTimer = null;
         if (this.retryTimer) this.io.cancel(this.retryTimer);
         if (this.attemptTimer) this.io.cancel(this.attemptTimer);
         this.retryTimer = this.attemptTimer = null;
@@ -428,6 +471,9 @@ export class DataCore {
     handleClosed(message?: string): void {
         this.ready = false;
         this.socketLive = false;
+        this.awaitStates = false;
+        if (this.statesTimer) this.io.cancel(this.statesTimer);
+        this.statesTimer = null;
         if (this.attemptTimer) this.io.cancel(this.attemptTimer);
         this.attemptTimer = null;
         for (const [, p] of this.pending) {
@@ -448,7 +494,6 @@ export class DataCore {
             this.io.post({ t: 'status', status: 'closed', message });
             return;
         }
-        this.queued = [];
         this.reconnecting = true;
         this.io.post({ t: 'status', status: 'reconnecting', message });
         this.scheduleRetry();
@@ -473,6 +518,7 @@ export class DataCore {
         if (!p) return;
         this.pending.delete(rid);
         if (p.kind === 'passthrough') {
+            if (p.select && !res.error) this.selected = p.select;
             this.io.post({ t: 'response', rid: p.rid, result: res.result, error: res.error });
         } else if (p.kind === 'logopen') {
             if (this.cancelledLogs.delete(p.sid)) return;
@@ -540,18 +586,6 @@ export class DataCore {
             view.dictCols = [];
             columns.forEach((c, i) => c.type === ColDict && view.dictCols.push(i + 2));
             this.io.post({ t: 'columns', qid: p.qid, columns });
-            if (view.fresh) {
-                view.resync = this.io.schedule(() => {
-                    view.resync = null;
-                    if (!view.fresh) return;
-                    // The new snapshot is empty (no patch comes for an empty view): drop what the page still shows from before.
-                    view.fresh = false;
-                    view.total = 0;
-                    view.offset = 0;
-                    view.ids = new Uint32Array(0);
-                    this.scheduleFlush(view);
-                }, RESYNC_EMPTY_MS);
-            }
             const early = view.early;
             view.early = [];
             for (const patch of early) this.applyPatch(view, patch);
@@ -571,11 +605,6 @@ export class DataCore {
 
     private applyPatch(view: View, patch: ViewPatch): void {
         if (patch.gen < view.gen) return;
-        if (view.fresh) {
-            view.fresh = false;
-            if (view.resync) this.io.cancel(view.resync);
-            view.resync = null;
-        }
         const dictCols = view.dictCols;
         const dict = this.dict;
         const rows = patch.rows;
@@ -636,6 +665,10 @@ export class DataCore {
             v.timer = null;
         }
         v.lastFlush = this.io.now();
+        if (v.reset) {
+            v.reset = false;
+            this.io.post({ t: 'reset', qid: v.qid });
+        }
         let chunk: Row[] = [];
         for (const id of v.dirty) {
             const row = v.rows.get(id);

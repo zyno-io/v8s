@@ -380,6 +380,17 @@ watch(
     { flush: 'post' }
 );
 
+// Resubscribed after a reconnect: wire ids restarted, so an open evidence panel, the focus and the anchor would point at another problem.
+watch(
+    () => h.epoch.value,
+    () => {
+        collapseAll();
+        focusId.value = 0;
+        anchor.id = 0;
+    },
+    { flush: 'sync' }
+);
+
 function collapseAll() {
     expandedId.value = 0;
     sheetId.value = 0;

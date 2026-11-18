@@ -55,6 +55,11 @@ export interface ViewHandle {
     readonly columns: ShallowRef<Column[] | null>;
     /** The subscribe failure (the agent refused the query, or an involved-object events view could not load); null while fine. */
     readonly error: ShallowRef<ErrorBody | null>;
+    /**
+     * Bumped when the view was resubscribed after a reconnect. Row ids are per subscription, so an id the page remembers (a focused
+     * or expanded row, a scroll anchor) may name a different row now: clear such state when this changes.
+     */
+    readonly epoch: ShallowRef<number>;
     readonly gen: number;
     readonly query: ViewQuery;
     readonly window: Window;
@@ -344,6 +349,11 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 }
                 break;
             }
+            case 'reset': {
+                const v = views.get(m.qid);
+                if (v) v.epoch.value++;
+                break;
+            }
             case 'rows': {
                 const v = views.get(m.qid);
                 if (!v || m.gen < v.gen) break;
@@ -430,6 +440,7 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
                 offset: shallowRef(0),
                 columns: shallowRef<Column[] | null>(null),
                 error: shallowRef<ErrorBody | null>(null),
+                epoch: shallowRef(0),
                 gen: 1,
                 query,
                 window,

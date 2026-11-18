@@ -3,6 +3,7 @@ package wire
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -61,7 +62,7 @@ type Options struct {
 	// Tick is the per-subscription patch interval (default 100 ms).
 	Tick time.Duration
 	// PingInterval is how often each data and stream socket is pinged (default 25 s, below common proxy idle timeouts);
-	// a ping not answered within PingTimeout (default 10 s) closes the socket.
+	// a ping not answered within PingTimeout (default 15 s, the write timeout) closes the socket.
 	PingInterval time.Duration
 	PingTimeout  time.Duration
 }
@@ -82,7 +83,7 @@ func NewServer(opt Options) *Server {
 		opt.PingInterval = 25 * time.Second
 	}
 	if opt.PingTimeout <= 0 {
-		opt.PingTimeout = 10 * time.Second
+		opt.PingTimeout = writeTimeout
 	}
 	if opt.Log == nil {
 		opt.Log = slog.New(slog.DiscardHandler)
@@ -186,7 +187,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 // keepalive pings ws every PingInterval until ctx ends; a failed or unanswered ping drops the socket (which unblocks
 // its reader). One ticker per socket; the pong is read by the socket's own reader, so a reader must be running.
-func (s *Server) keepalive(ctx context.Context, ws *websocket.Conn) {
+func (s *Server) keepalive(ctx context.Context, ws *websocket.Conn, closeOnFail bool) {
 	t := time.NewTicker(s.opt.PingInterval)
 	defer t.Stop()
 	for {
@@ -198,7 +199,13 @@ func (s *Server) keepalive(ctx context.Context, ws *websocket.Conn) {
 			err := ws.Ping(pctx)
 			cancel()
 			if err != nil {
-				if ctx.Err() == nil {
+				// A stream body may not read yet (a debug container or node-shell pod can take up to 90 s to start), and
+				// pongs are only processed inside Read: an unanswered ping there is not proof the client is gone. Stream
+				// reads and writes detect a dead client themselves, so only the data socket closes on a timeout.
+				if !closeOnFail && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+					continue
+				}
+				if closeOnFail && ctx.Err() == nil {
 					_ = ws.CloseNow()
 				}
 				return
@@ -277,7 +284,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	defer ws.CloseNow()
 	kctx, stop := context.WithCancel(r.Context())
 	defer stop()
-	go s.keepalive(kctx, ws)
+	go s.keepalive(kctx, ws, false)
 	_ = s.opt.Streams.Serve(r.Context(), id, wsTransport{ws})
 }
 

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { MainToWorker, WorkerToMain } from '../src/types.ts';
 import type { CoreIO } from '../src/worker/core.ts';
 
-import { decodeFrame, encodeFrame, encodeIds, KindDict, KindHello, KindPatch, KindRequest, KindResponse } from '../src/codec.ts';
-import { backoffMs, DataCore, RECONNECT_ATTEMPT_MS, RECONNECT_MAX_MS, RESYNC_EMPTY_MS } from '../src/worker/core.ts';
+import { decodeFrame, encodeFrame, encodeIds, KindClusterState, KindDict, KindHello, KindPatch, KindRequest, KindResponse } from '../src/codec.ts';
+import { backoffMs, DataCore, RECONNECT_ATTEMPT_MS, RECONNECT_MAX_MS, STATES_WAIT_MS } from '../src/worker/core.ts';
 
 const QUERY = { clusters: [], gvr: 'v1/pods', namespaces: [], text: '', filters: [], sort: [] };
 const QUERY2 = { ...QUERY, text: 'api' };
@@ -20,6 +20,7 @@ function harness(opts: { token?: string; sessionEnded?: () => Promise<boolean> }
     const timers = new Map<number, { fn: () => void; at: number }>();
     const connects: { url: string; token: string }[] = [];
     let closeSocketCalls = 0;
+    const closedStreams: number[] = [];
     let t = 1000;
     let tid = 0;
     const io: CoreIO = {
@@ -29,7 +30,7 @@ function harness(opts: { token?: string; sessionEnded?: () => Promise<boolean> }
         closeSocket: () => closeSocketCalls++,
         connectStream: () => {},
         sendStream: () => {},
-        closeStream: () => {},
+        closeStream: sid => closedStreams.push(sid),
         schedule: (fn, ms) => {
             timers.set(++tid, { fn, at: t + ms });
             return tid;
@@ -46,6 +47,7 @@ function harness(opts: { token?: string; sessionEnded?: () => Promise<boolean> }
         posted,
         connects,
         timers,
+        closedStreams,
         get closeSocketCalls() {
             return closeSocketCalls;
         },
@@ -71,6 +73,11 @@ function harness(opts: { token?: string; sessionEnded?: () => Promise<boolean> }
             api.main({ t: 'connect', url: 'ws://h/ws', token: opts.token ?? 'tok' });
             api.frame(KindHello, 0, 1, HELLO);
         },
+        /** The reconnect Hello, followed (as the agent does at once) by its cluster states: `live` clusters, or none. */
+        hello(live = true) {
+            api.frame(KindHello, 0, 1, HELLO);
+            api.frame(KindClusterState, 0, 2, { states: live ? [{ id: 'a', phase: 'ready', synced: 1 }] : [] });
+        },
         /** subscribe + response with columns. */
         subscribe(qid: number, gen = 1) {
             api.main({ t: 'subscribe', qid, gen, query: QUERY, window: { offset: 0, limit: 50 } });
@@ -81,7 +88,7 @@ function harness(opts: { token?: string; sessionEnded?: () => Promise<boolean> }
         dropAndReconnect() {
             api.core.handleClosed('gone');
             api.advance(RECONNECT_MAX_MS);
-            api.frame(KindHello, 0, 1, HELLO);
+            api.hello();
         }
     };
     return api;
@@ -128,7 +135,7 @@ describe('DataCore reconnect', () => {
         h.advance(375);
         h.core.handleClosed('x');
         h.advance(750);
-        h.frame(KindHello, 0, 1, HELLO);
+        h.hello();
         expect(h.statuses().at(-1)).toBe('open');
         h.core.handleClosed('x');
         h.advance(375);
@@ -256,7 +263,7 @@ describe('DataCore reconnect', () => {
         expect(h.of('log.error')[0]).toMatchObject({ sid: 3, error: { code: 'unavailable' } });
         const before = h.sent.length;
         h.advance(375);
-        h.frame(KindHello, 0, 1, HELLO);
+        h.hello();
         expect(h.sent.slice(before).filter(s => (s.payload as { method: string }).method === 'settings.set')).toHaveLength(0);
     });
 });
@@ -300,7 +307,7 @@ describe('DataCore resubscribe', () => {
 
         h.core.handleClosed('lost');
         h.advance(375);
-        h.frame(KindHello, 0, 1, HELLO);
+        h.hello();
         expect(h.core.rowCount(1)).toBe(0); // reset until the new snapshot arrives
         const req = h.requests().at(-1)!;
         h.frame(KindResponse, req.channel, 2, { result: { columns: COLUMNS } });
@@ -321,7 +328,7 @@ describe('DataCore resubscribe', () => {
         h.subscribe(1);
         h.core.handleClosed('lost');
         h.advance(375);
-        h.frame(KindHello, 0, 1, HELLO);
+        h.hello();
         const req = h.requests().at(-1)!;
         h.frame(KindPatch, 1, 2, { gen: 1, total: 1, offset: 0, rows: [[1, 1, 0, 'x']], ids: encodeIds([1]) });
         expect(h.core.rowCount(1)).toBe(0);
@@ -349,29 +356,59 @@ describe('DataCore resubscribe', () => {
         h.main({ t: 'subscribe', qid: 2, gen: 1, query: QUERY2, window: { offset: 0, limit: 9 } });
         const before = h.sent.length;
         h.advance(375);
-        h.frame(KindHello, 0, 1, HELLO);
+        h.hello();
         const methods = h.sent.slice(before).map(s => s.payload as { method: string; params: { qid: number } });
         expect(methods.map(m => [m.method, m.params.qid])).toEqual([['view.subscribe', 2]]);
     });
 
-    it('clears a view that is empty after the reconnect once no patch arrives', () => {
+    it('resubscribes with an absolute window: the old anchorId names a different row on the new connection', () => {
+        const h = harness();
+        h.open();
+        h.subscribe(1);
+        h.main({ t: 'update', qid: 1, gen: 1, window: { anchorId: 42, offset: -3, limit: 60 } });
+        h.frame(KindPatch, 1, 2, { gen: 1, total: 900, offset: 120, rows: [[42, 1, 0, 'a']], ids: encodeIds([42]) });
+        const before = h.sent.length;
+        h.dropAndReconnect();
+        const sub = h.sent.slice(before).find(s => (s.payload as { method: string }).method === 'view.subscribe')!;
+        expect(sub.payload).toMatchObject({ params: { window: { offset: 120, limit: 60 } } });
+        expect((sub.payload as { params: { window: object } }).params.window).not.toHaveProperty('anchorId');
+    });
+
+    it('posts one reset before the first rows of the new snapshot, so the page drops ids it remembers', () => {
         const h = harness();
         h.open();
         h.subscribe(1);
         h.frame(KindPatch, 1, 2, { gen: 1, total: 1, offset: 0, rows: [[1, 1, 0, 'a']], ids: encodeIds([1]) });
         h.advance(20);
-        h.core.handleClosed('lost');
-        h.advance(375);
-        h.frame(KindHello, 0, 1, HELLO);
+        expect(h.of('reset')).toHaveLength(0);
+        h.dropAndReconnect();
         const req = h.requests().at(-1)!;
         h.frame(KindResponse, req.channel, 2, { result: { columns: COLUMNS } });
-        const commits = h.of('commit').length;
-        h.advance(RESYNC_EMPTY_MS + 20);
-        h.advance(20); // the flush the resync scheduled
-        const c = h.of('commit');
-        expect(c.length).toBe(commits + 1);
-        expect(c.at(-1)).toMatchObject({ total: 0 });
-        expect([...c.at(-1)!.ids!]).toEqual([]);
+        h.frame(KindPatch, 1, 2, { gen: 1, total: 1, offset: 0, rows: [[1, 1, 0, 'other']], ids: encodeIds([1]) });
+        h.advance(20);
+        const kinds = h.posted.map(m => m.t).filter(t => t === 'reset' || t === 'rows' || t === 'commit');
+        expect(kinds.slice(-3)).toEqual(['reset', 'rows', 'commit']);
+        h.frame(KindPatch, 1, 3, { gen: 1, total: 1, offset: 0, rows: [[1, 2, 0, 'other2']] });
+        h.advance(20);
+        expect(h.of('reset')).toHaveLength(1);
+    });
+
+    it('log and flow session controls keep working while disconnected: close releases the session and its stream socket', () => {
+        const h = harness();
+        h.open();
+        h.main({ t: 'log.open', sid: 7, params: { type: 'logs' } as never, capacity: 100, multi: false });
+        const req = h.requests().at(-1)!;
+        h.frame(KindResponse, req.channel, 2, { result: { streamId: 'abc' } });
+        expect(h.core.logSession(7)).toBeDefined();
+        h.core.handleClosed('lost');
+        h.main({ t: 'log.view', sid: 7, first: 0, count: 10, follow: true });
+        h.main({ t: 'log.pause', sid: 7, paused: true });
+        h.main({ t: 'log.close', sid: 7 });
+        expect(h.core.logSession(7)).toBeUndefined();
+        expect(h.closedStreams).toContain(7);
+        h.advance(375);
+        h.hello();
+        expect(h.core.logSession(7)).toBeUndefined(); // nothing replayed after the Hello either
     });
 
     it('does not flash an empty table while the views wait for their snapshot', () => {
@@ -386,5 +423,100 @@ describe('DataCore resubscribe', () => {
         h.advance(500);
         expect(h.of('commit').length).toBe(commits);
         expect(h.of('rows').length).toBe(rows);
+    });
+});
+
+describe('DataCore reconnect: cluster selection', () => {
+    const methods = (h: ReturnType<typeof harness>, from: number) => h.sent.slice(from).map(s => (s.payload as { method: string }).method);
+
+    function selected(h: ReturnType<typeof harness>, ids: string[]) {
+        h.main({ t: 'request', rid: 9, method: 'clusters.select', params: { ids } });
+        h.frame(KindResponse, 9, 3, { result: { states: [] } });
+    }
+
+    it('selects the clusters this page last selected again before resubscribing when the agent came back with none live', () => {
+        const h = harness();
+        h.open();
+        selected(h, ['prod-us', 'prod-eu']);
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        const before = h.sent.length;
+        h.hello(false);
+        expect(methods(h, before)).toEqual(['clusters.select', 'view.subscribe']);
+        expect(h.sent.slice(before)[0].payload).toMatchObject({ params: { ids: ['prod-us', 'prod-eu'] } });
+    });
+
+    it('does not select when clusters are live, when the page never selected, or when the select failed', () => {
+        const h = harness();
+        h.open();
+        selected(h, ['a']);
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        let before = h.sent.length;
+        h.hello(true);
+        expect(methods(h, before)).toEqual(['view.subscribe']);
+
+        const g = harness();
+        g.open();
+        g.subscribe(1);
+        g.core.handleClosed('lost');
+        g.advance(375);
+        before = g.sent.length;
+        g.hello(false);
+        expect(methods(g, before)).toEqual(['view.subscribe']);
+
+        const f = harness();
+        f.open();
+        f.main({ t: 'request', rid: 9, method: 'clusters.select', params: { ids: ['x'] } });
+        f.frame(KindResponse, 9, 3, { error: { code: 'not_found', message: 'nope' } });
+        f.subscribe(1);
+        f.core.handleClosed('lost');
+        f.advance(375);
+        before = f.sent.length;
+        f.hello(false);
+        expect(methods(f, before)).toEqual(['view.subscribe']);
+    });
+
+    it('also restores clusters the agent reported live to a page that never selected any itself', () => {
+        const h = harness();
+        h.open();
+        h.frame(KindClusterState, 0, 2, { states: [{ id: 'x', phase: 'ready', synced: 1 }] });
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        const before = h.sent.length;
+        h.hello(false);
+        expect(h.sent.slice(before)[0].payload).toMatchObject({ method: 'clusters.select', params: { ids: ['x'] } });
+    });
+
+    it('records views opened while waiting for the states and sends them once, in order', () => {
+        const h = harness();
+        h.open();
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        const before = h.sent.length;
+        h.frame(KindHello, 0, 1, HELLO);
+        h.main({ t: 'subscribe', qid: 2, gen: 1, query: QUERY2, window: { offset: 0, limit: 10 } });
+        h.main({ t: 'unsubscribe', qid: 1 });
+        expect(methods(h, before)).toEqual([]);
+        h.frame(KindClusterState, 0, 2, { states: [] });
+        const subs = h.sent.slice(before).map(s => s.payload as { method: string; params: { qid: number } });
+        expect(subs.map(s => [s.method, s.params.qid])).toEqual([['view.subscribe', 2]]);
+    });
+
+    it('resubscribes anyway when the states never arrive', () => {
+        const h = harness();
+        h.open();
+        h.subscribe(1);
+        h.core.handleClosed('lost');
+        h.advance(375);
+        const before = h.sent.length;
+        h.frame(KindHello, 0, 1, HELLO);
+        expect(methods(h, before)).toEqual([]);
+        h.advance(STATES_WAIT_MS + 1);
+        expect(methods(h, before)).toEqual(['view.subscribe']);
     });
 });

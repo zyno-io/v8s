@@ -7,8 +7,32 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/zyno-io/v8s/agent/internal/fake"
+	"github.com/zyno-io/v8s/agent/internal/streams"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
+
+// A stream body that does not read for longer than interval+timeout (a debug container or node-shell pod that is still
+// starting) must not lose its socket: pongs are only processed inside Read.
+func TestKeepaliveStreamSurvivesBodyThatDoesNotReadYet(t *testing.T) {
+	e := startEnv(t, fake.Config{Clusters: 1, Pods: 10}, func(o *Options) {
+		o.PingInterval = 30 * time.Millisecond
+		o.PingTimeout = 60 * time.Millisecond
+		o.Streams.Register("slow", func(ctx context.Context, p protocol.StreamOpenParams, claim func(run func(ctx context.Context, t streams.Transport)) string) (protocol.StreamOpenResult, error) {
+			id := claim(func(ctx context.Context, tr streams.Transport) {
+				time.Sleep(500 * time.Millisecond) // many intervals and timeouts without a reader
+				if err := tr.Write(ctx, false, []byte("still here")); err != nil {
+					return
+				}
+				_, _, _ = tr.Read(ctx)
+			})
+			return protocol.StreamOpenResult{StreamID: id}, nil
+		})
+	})
+	c := connect(t, e)
+	res := openStream(t, c, protocol.StreamOpenParams{Type: "slow"})
+	ws := e.dialStream(t, res.StreamID)
+	readUntil(t, ws, 5*time.Second, func(bin bool, b []byte) bool { return !bin && string(b) == "still here" })
+}
 
 func dialRaw(t *testing.T, e *env) *websocket.Conn {
 	t.Helper()

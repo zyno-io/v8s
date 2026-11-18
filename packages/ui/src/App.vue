@@ -58,13 +58,12 @@ watch(reconnecting, on => {
 });
 const retryNow = () => getAgent().reconnectNow();
 
-// Back after a drop: the views are resubscribed by the client; re-read what is derived from the connection (kinds, cluster selection).
+// Back after a drop: the views are resubscribed by the client; re-read what is derived from the connection (kinds).
 watch(
     () => (bootState.value === 'ready' ? getAgent().reconnects.value : 0),
     n => {
         if (!n) return;
         refreshKinds(0);
-        void clusters.restoreAfterReconnect().catch(() => {});
     }
 );
 
