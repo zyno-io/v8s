@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
@@ -47,6 +48,7 @@ type Norm struct {
 	filters    []filterSpec
 	sort       []sortKey
 	nsSet      map[string]struct{}
+	ip         *ipx.Query // Text read as an IP query on a kind with IPs (derived from Text, so not part of Key)
 }
 
 func filterValues(v any) ([]string, error) {
@@ -85,6 +87,11 @@ func Normalize(q protocol.ViewQuery) (*Norm, error) {
 		return nil, bad("unsupported gvr %q", q.GVR)
 	}
 	n := &Norm{GVR: gvr, Mod: mod, Text: strings.ToLower(strings.TrimSpace(q.Text))}
+	if n.Text != "" && mod.IPs {
+		if iq, ok := ipx.Parse(n.Text); ok {
+			n.ip = iq
+		}
+	}
 	n.Clusters = sortedUnique(q.Clusters)
 	n.Namespaces = sortedUnique(q.Namespaces)
 	if len(n.Namespaces) > 0 {

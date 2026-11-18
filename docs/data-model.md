@@ -14,6 +14,21 @@ resourceVersion                                                                 
 - Inside the agent, rows are addressed by dense `u32` **handles** per `(cluster, GVR)`, mapped from `uid`. Handles never leave the agent. The wire carries **per-subscription ids** that are never reused ([performance.md §9](performance.md#9-wire-protocol-and-sync)), and actions resolve them back to `(cluster, uid)` in the agent.
 - A **cluster** has a stable local id assigned when it is first added, and a user-assigned name. A cluster can have a linked write context alongside its read context ([auth.md](auth.md#linked-contexts-read-and-write)); otherwise each context is its own cluster.
 
+## IP addresses
+
+Kinds with IPs keep the addresses of each object next to its row (IP search, the IP-aware list filter, the Pods `ip` column). Fields:
+
+| Kind | Fields |
+| --- | --- |
+| Pod | `status.podIPs` (falls back to `podIP`); Multus secondary networks from `k8s.v1.cni.cncf.io/network-status` (non-default entries; annotations over 16 KiB skipped, at most 32). `hostIP` is not indexed: the Node stands in for it |
+| Service | `spec.clusterIPs` (`None` skipped), `externalIPs`, `loadBalancerIP`, the `metallb.universe.tf`, `metallb.io`, `kube-vip.io` and Cilium LB-IPAM annotations, `status.loadBalancer.ingress[].ip` |
+| EndpointSlice | `endpoints[].addresses` (FQDN slices skipped) |
+| Node | `InternalIP`, `ExternalIP`, `spec.podCIDRs` (falls back to `podCIDR`), CNI annotations (Calico, Flannel, Cilium, Kube-OVN) |
+| Ingress | `status.loadBalancer.ingress[].ip` |
+| Gateway | `status.addresses`, `spec.addresses` of type IPAddress |
+
+At most 1024 tokens are kept per row.
+
 ## Resource tiers
 
 Each resource type has a **view spec** (columns, projection, sort keys, actions, detail tabs). Types without one get the generic CRD treatment from `additionalPrinterColumns`.

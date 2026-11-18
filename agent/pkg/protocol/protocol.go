@@ -173,9 +173,10 @@ type Kind struct {
 	Plural     string   `msgpack:"plural" json:"plural"`
 	ShortNames []string `msgpack:"shortNames" json:"shortNames"` // from discovery: "po", "deploy", …
 	Namespaced bool     `msgpack:"namespaced" json:"namespaced"`
-	Available  bool     `msgpack:"available" json:"available"` // true for every listable kind
-	Curated    bool     `msgpack:"curated" json:"curated"`     // hand-written columns (mode A) vs Table columns (mode C)
-	Clusters   []string `msgpack:"clusters" json:"clusters"`   // selected clusters that serve it
+	Available  bool     `msgpack:"available" json:"available"`         // true for every listable kind
+	Curated    bool     `msgpack:"curated" json:"curated"`             // hand-written columns (mode A) vs Table columns (mode C)
+	Clusters   []string `msgpack:"clusters" json:"clusters"`           // selected clusters that serve it
+	IPs        bool     `msgpack:"ips,omitempty" json:"ips,omitempty"` // rows carry IPs (IP search, IP-aware filter)
 }
 
 type KindsListResult struct {
@@ -304,6 +305,7 @@ var PodColumns = []Column{
 	{Key: "statusTone", Type: ColTone, Label: "Tone", Width: 40},
 	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 76, Align: "right"},
 	{Key: "node", Type: ColDict, Label: "Node", Width: 160},
+	{Key: "ip", Type: ColStr, Label: "IP", Width: 130}, // pod IPs, comma-separated; sorts numerically
 	{Key: "createdAt", Type: ColTime, Label: "Age", Width: 72, Align: "right"},
 }
 
@@ -525,6 +527,8 @@ type SettingsSetParams struct {
 type SearchParams struct {
 	Text  string `msgpack:"text" json:"text"`
 	Limit int    `msgpack:"limit" json:"limit"`
+	// IPPerKind caps the hits per kind of an IP search (default 5, max 50).
+	IPPerKind int `msgpack:"ipPerKind,omitempty" json:"ipPerKind,omitempty"`
 }
 
 type SearchHit struct {
@@ -537,6 +541,62 @@ type SearchHit struct {
 
 type SearchResult struct {
 	Results []SearchHit `msgpack:"results" json:"results"`
+	// IP is set when Text reads as an IP address, a partial address, a CIDR or an a-b range.
+	IP *IPSearch `msgpack:"ip,omitempty" json:"ip,omitempty"`
+}
+
+type IPQueryMode string
+
+const (
+	IPQueryAddr   IPQueryMode = "addr"
+	IPQueryCIDR   IPQueryMode = "cidr"
+	IPQueryRange  IPQueryMode = "range"
+	IPQueryPrefix IPQueryMode = "prefix"
+)
+
+type IPMatch string
+
+const (
+	IPMatchExact    IPMatch = "exact"
+	IPMatchContains IPMatch = "contains"
+	IPMatchWithin   IPMatch = "within"
+	IPMatchOverlap  IPMatch = "overlap"
+	IPMatchPrefix   IPMatch = "prefix"
+)
+
+// IPSearch is the IP half of a search result: the objects holding the queried address, grouped by kind.
+type IPSearch struct {
+	Query   string      `msgpack:"query" json:"query"` // normalized
+	Mode    IPQueryMode `msgpack:"mode" json:"mode"`
+	Groups  []IPGroup   `msgpack:"groups" json:"groups"`
+	Pending []IPSource  `msgpack:"pending,omitempty" json:"pending,omitempty"` // still loading: ask again shortly
+	Skipped []IPSource  `msgpack:"skipped,omitempty" json:"skipped,omitempty"` // not searched
+}
+
+type IPGroup struct {
+	GVR   string  `msgpack:"gvr" json:"gvr"` // of the first hit; "Show all" opens it
+	Kind  string  `msgpack:"kind" json:"kind"`
+	Total int     `msgpack:"total" json:"total"` // matching objects across clusters
+	Hits  []IPHit `msgpack:"hits" json:"hits"`
+}
+
+type IPHit struct {
+	Cluster   string  `msgpack:"cluster" json:"cluster"`
+	GVR       string  `msgpack:"gvr" json:"gvr"`
+	Namespace string  `msgpack:"namespace,omitempty" json:"namespace,omitempty"`
+	Name      string  `msgpack:"name" json:"name"`
+	Field     string  `msgpack:"field" json:"field"` // "status.podIPs", "status.loadBalancer.ingress"
+	Label     string  `msgpack:"label" json:"label"` // "Pod IP", "LB ingress IP"
+	Value     string  `msgpack:"value" json:"value"` // "10.0.0.5" | "10.0.0.0/24" | "10.0.0.10-10.0.0.50"
+	Match     IPMatch `msgpack:"match" json:"match"`
+	Detail    string  `msgpack:"detail,omitempty" json:"detail,omitempty"`
+}
+
+// IPSource names a source an IP search could not read yet (Pending) or at all (Skipped).
+type IPSource struct {
+	Cluster string `msgpack:"cluster" json:"cluster"`
+	Kind    string `msgpack:"kind,omitempty" json:"kind,omitempty"`     // "" = the cluster (discovery or sync)
+	Reason  string `msgpack:"reason,omitempty" json:"reason,omitempty"` // skipped: forbidden | not found | budget
 }
 
 // Flow control (agent side): at most MaxUnacked patch frames or MaxInFlightBytes in flight per socket.

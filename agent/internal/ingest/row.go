@@ -3,8 +3,10 @@
 package ingest
 
 import (
+	"strings"
 	"unique"
 
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -53,7 +55,8 @@ type Row struct {
 	tone          uint8
 	flags         uint8
 	cells         []Cell
-	facts         any // kind-specific facts for the problems engine (see facts.go)
+	facts         any      // kind-specific facts for the problems engine (see facts.go)
+	ips           *ipx.Set // addresses the object holds (see ips.go); set at projection only
 }
 
 // PodRow is the pod projection (a Row with the pod cell layout).
@@ -64,6 +67,13 @@ func allocRow(n int) *Row {
 	switch {
 	case n == 0:
 		return &Row{}
+	case n == 5: // pods
+		x := &struct {
+			Row
+			c [5]Cell
+		}{}
+		x.cells = x.c[:0]
+		return &x.Row
 	case n <= 2:
 		x := &struct {
 			Row
@@ -107,12 +117,30 @@ func allocRow(n int) *Row {
 
 // newRow creates a row for an object with room for n cells. One allocation backs uid, name and
 // resourceVersion; the owner (controller reference, else the first) is recorded for every kind.
-func newRow(m *metav1.ObjectMeta, n int) *Row {
+func newRow(m *metav1.ObjectMeta, n int) *Row { return initRow(m, allocRow(n)) }
+
+// newRowIP1 is newRow for a 5-cell row whose single IP token lives in the same allocation (pods: the common
+// case of one address costs no extra object).
+func newRowIP1(m *metav1.ObjectMeta, t ipx.Tok) *Row {
+	x := &struct {
+		Row
+		c [5]Cell
+		s ipx.Set
+		t [1]ipx.Tok
+	}{}
+	x.cells = x.c[:0]
+	x.t[0] = t
+	x.s.T = x.t[:]
+	x.ips = &x.s
+	return initRow(m, &x.Row)
+}
+
+func initRow(m *metav1.ObjectMeta, r *Row) *Row {
 	var created int64
 	if !m.CreationTimestamp.IsZero() {
 		created = m.CreationTimestamp.UnixMilli()
 	}
-	r := newRowRaw(string(m.UID), m.Name, m.ResourceVersion, m.Namespace, created, m.DeletionTimestamp != nil, n)
+	setRowRaw(r, string(m.UID), m.Name, m.ResourceVersion, m.Namespace, created, m.DeletionTimestamp != nil)
 	if len(m.OwnerReferences) > 0 {
 		o := &m.OwnerReferences[0]
 		for i := range m.OwnerReferences {
@@ -127,8 +155,13 @@ func newRow(m *metav1.ObjectMeta, n int) *Row {
 }
 
 func newRowRaw(uid, name, rv, ns string, created int64, deleting bool, n int) *Row {
-	all := uid + name + rv
 	r := allocRow(n)
+	setRowRaw(r, uid, name, rv, ns, created, deleting)
+	return r
+}
+
+func setRowRaw(r *Row, uid, name, rv, ns string, created int64, deleting bool) {
+	all := uid + name + rv
 	r.uid = all[:len(uid)]
 	r.name = all[len(uid) : len(uid)+len(name)]
 	r.rv = all[len(uid)+len(name):]
@@ -138,7 +171,6 @@ func newRowRaw(uid, name, rv, ns string, created int64, deleting bool, n int) *R
 	if deleting {
 		r.flags |= flagDeleting
 	}
-	return r
 }
 
 var emptyStr = intern("")
@@ -178,6 +210,53 @@ func (r *Row) Status() Str     { return r.Cell(2).S }
 func (r *Row) Restarts() int32 { return int32(r.Cell(3).N) }
 func (r *Row) Node() Str       { return r.Cell(4).S }
 
+// IPs returns the row's IP tokens (nil when it holds none). The slice is immutable.
+func (r *Row) IPs() []ipx.Tok {
+	if r.ips == nil {
+		return nil
+	}
+	return r.ips.T
+}
+
+// SetIPs sets the row's tokens; projection only, before the row is published.
+func (r *Row) SetIPs(s *ipx.Set) { r.ips = s }
+
+// IPText joins the tokens of field f with ",".
+func (r *Row) IPText(f ipx.Field) string {
+	var one string
+	n := 0
+	var sb strings.Builder
+	for _, t := range r.IPs() {
+		if t.Field != f {
+			continue
+		}
+		if n == 0 {
+			one = t.String()
+		} else {
+			if n == 1 {
+				sb.WriteString(one)
+			}
+			sb.WriteByte(',')
+			sb.WriteString(t.String())
+		}
+		n++
+	}
+	if n <= 1 {
+		return one
+	}
+	return sb.String()
+}
+
+// FirstIP returns the lowest address of field f (for sorting).
+func (r *Row) FirstIP(f ipx.Field) (ipx.U128, bool) {
+	for i := range r.IPs() {
+		if t := &r.ips.T[i]; t.Field == f {
+			return t.Lo, true
+		}
+	}
+	return ipx.U128{}, false
+}
+
 // CellsEqual reports whether every displayed cell (and owner) is identical.
 func (r *Row) CellsEqual(o *Row) bool {
 	if r.name != o.name || r.ns != o.ns || r.tone != o.tone || r.created != o.created ||
@@ -187,6 +266,15 @@ func (r *Row) CellsEqual(o *Row) bool {
 	}
 	for i := range r.cells {
 		if r.cells[i] != o.cells[i] {
+			return false
+		}
+	}
+	a, b := r.IPs(), o.IPs()
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
 			return false
 		}
 	}
@@ -304,12 +392,13 @@ func (r *Row) SetTone(t uint8) { r.tone = t }
 func (r *Row) SetOwner(kind, name string) { r.ownerKind, r.ownerName = intern(kind), intern(name) }
 
 // ColDict, ColStr, ColInt, ColTime and ColTone construct columns for modules outside this package.
-func ColCluster() Col                          { return cCluster() }
-func ColName() Col                             { return cName() }
-func ColNS() Col                               { return cNS() }
-func ColTone() Col                             { return cTone() }
-func ColAge() Col                              { return cAge() }
-func ColDict(key, label string, w int) Col     { return cDict(key, label, w) }
-func ColStr(key, label string, w int) Col      { return cStr(key, label, w) }
-func ColInt(key, label string, w int) Col      { return cInt(key, label, w) }
-func ColTimeCell(key, label string, w int) Col { return cTime(key, label, w) }
+func ColIP(key, label string, w int, f ipx.Field) Col { return cIP(key, label, w, f) }
+func ColCluster() Col                                 { return cCluster() }
+func ColName() Col                                    { return cName() }
+func ColNS() Col                                      { return cNS() }
+func ColTone() Col                                    { return cTone() }
+func ColAge() Col                                     { return cAge() }
+func ColDict(key, label string, w int) Col            { return cDict(key, label, w) }
+func ColStr(key, label string, w int) Col             { return cStr(key, label, w) }
+func ColInt(key, label string, w int) Col             { return cInt(key, label, w) }
+func ColTimeCell(key, label string, w int) Col        { return cTime(key, label, w) }

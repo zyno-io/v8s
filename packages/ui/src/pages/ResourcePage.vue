@@ -170,7 +170,7 @@ function star() {
                     id="pods-filter"
                     v-model="state.text"
                     type="search"
-                    :placeholder="'Filter by name'"
+                    :placeholder="kind?.ips ? 'Filter by name or IP' : 'Filter by name'"
                     :aria-label="`Filter ${title.toLowerCase()}`"
                     autocomplete="off"
                     spellcheck="false"

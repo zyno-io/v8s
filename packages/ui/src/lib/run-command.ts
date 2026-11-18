@@ -59,9 +59,18 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
             }
             return null;
         }
+        case 'ip':
+            ui.commandBarOpen = false;
+            ui.paletteQuery = cmd.text;
+            ui.paletteOpen = true;
+            return null;
         case 'open-kind': {
             await router.push(gvrPath(cmd.gvr));
             const st = table.of(cmd.gvr);
+            if (cmd.text) {
+                st.namespaces = [];
+                st.text = cmd.text;
+            }
             if (cmd.namespace) st.namespaces = [cmd.namespace];
             if (cmd.name) {
                 st.text = cmd.name;

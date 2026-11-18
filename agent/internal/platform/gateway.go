@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	"github.com/zyno-io/v8s/agent/internal/problems"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -77,8 +78,12 @@ func decodeRoute(raw []byte) (runtime.Object, error) {
 func decodeGateway(raw []byte) (runtime.Object, error) {
 	var w struct {
 		meta
+		Spec struct {
+			Addresses []gatewayAddress `json:"addresses"`
+		} `json:"spec"`
 		Status struct {
-			Conditions []condition `json:"conditions"`
+			Conditions []condition      `json:"conditions"`
+			Addresses  []gatewayAddress `json:"addresses"`
 		} `json:"status"`
 	}
 	if err := decodeInto(raw, &w); err != nil {
@@ -96,8 +101,34 @@ func decodeGateway(raw []byte) (runtime.Object, error) {
 	r.PutS(st)
 	r.SetTone(tone)
 	r.SetFacts(f)
+	var b ipx.Builder
+	for _, a := range w.Status.Addresses {
+		a.add(&b, FGatewayStatus)
+	}
+	for _, a := range w.Spec.Addresses {
+		a.add(&b, FGatewaySpec)
+	}
+	r.SetIPs(b.Set())
 	return w.obj(r), nil
 }
+
+// gatewayAddress is a Gateway API address; only IPAddress entries (type "" or "IPAddress") are indexed.
+type gatewayAddress struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+func (a gatewayAddress) add(b *ipx.Builder, f ipx.Field) {
+	if a.Type == "" || a.Type == "IPAddress" {
+		b.Addr(a.Value, f)
+	}
+}
+
+// IP fields of Gateways.
+var (
+	FGatewayStatus = ipx.RegisterField("status.addresses", "Gateway address", false)
+	FGatewaySpec   = ipx.RegisterField("spec.addresses", "Requested address", false)
+)
 
 func evalRoute(c *problems.Ctx, k problems.Key, r *ingest.Row) []problems.Draft {
 	f, _ := r.Facts().(*RouteFacts)
@@ -122,7 +153,7 @@ func init() {
 	register(kind{group: "gateway.networking.k8s.io", resource: "httproutes", kind: "HTTPRoute", versions: []string{"v1", "v1beta1"}, namespaced: true, cols: routeCols, decode: decodeRoute})
 	register(kind{group: "gateway.networking.k8s.io", resource: "grpcroutes", kind: "GRPCRoute", versions: []string{"v1", "v1alpha2"}, namespaced: true, cols: routeCols, decode: decodeRoute})
 	register(kind{group: "gateway.networking.k8s.io", resource: "gateways", kind: "Gateway", versions: []string{"v1", "v1beta1"}, namespaced: true,
-		cols: []ingest.Col{ingest.ColDict("status", "Status", 140), ingest.ColTone(), ingest.ColAge()}, decode: decodeGateway})
+		cols: []ingest.Col{ingest.ColDict("status", "Status", 140), ingest.ColTone(), ingest.ColAge()}, ips: true, order: 55, decode: decodeGateway})
 	problems.Register(&problems.Detector{Class: "gateway.route-unaccepted", Family: problems.FamNetwork, Default: true, Severity: problems.SevError,
 		Title: "Gateway API routes not accepted", Inputs: []string{GRHTTPRoutes, GRGRPCRoutes}, Evaluate: evalRoute})
 }

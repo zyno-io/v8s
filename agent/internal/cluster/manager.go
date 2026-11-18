@@ -388,7 +388,7 @@ func addKind(by map[string]*protocol.Kind, r disco.Resource, cluster string) {
 			short = []string{}
 		}
 		k = &protocol.Kind{GVR: gvr, Group: r.Group, Version: r.Version, Kind: r.Kind, Plural: r.Resource, ShortNames: short,
-			Namespaced: r.Namespaced, Available: true, Curated: mod != nil && mod.Curated, Clusters: []string{}}
+			Namespaced: r.Namespaced, Available: true, Curated: mod != nil && mod.Curated, Clusters: []string{}, IPs: mod != nil && mod.IPs}
 		by[gvr] = k
 	}
 	k.Clusters = append(k.Clusters, cluster)

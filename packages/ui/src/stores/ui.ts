@@ -83,6 +83,8 @@ export const useUiStore = defineStore('ui', () => {
     const commandBarOpen = ref(false);
     const shortcutsOpen = ref(false);
     const paletteOpen = ref(false);
+    /** Text the palette starts with (`:ip 10.0.0.5` opens it filled in); consumed on mount. */
+    const paletteQuery = ref('');
     const createOpen = ref(false);
     const dialog = shallowRef<DialogState | null>(null);
     const toasts = shallowRef<Toast[]>([]);
@@ -103,5 +105,5 @@ export const useUiStore = defineStore('ui', () => {
         setTimeout(() => dismissToast(id), ms);
     }
 
-    return { theme, commandBarOpen, shortcutsOpen, paletteOpen, createOpen, dialog, toasts, cycleTheme, toast, dismissToast };
+    return { theme, commandBarOpen, shortcutsOpen, paletteOpen, paletteQuery, createOpen, dialog, toasts, cycleTheme, toast, dismissToast };
 });

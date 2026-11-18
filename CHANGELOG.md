@@ -6,6 +6,7 @@ release notes when the tag has no annotation.
 ## Unreleased
 
 - The Events tab of a resource now shows all of its events, Normal and Warning, newest first, with the component that reported each one (the new Source column also appears in the global Events list). The events load when you open the tab and stay live while it is open; the always-on watch still keeps Warning events only. Events of cluster-scoped objects come from the `default` namespace, and Event objects themselves no longer offer an Events tab.
+- Search by IP: type an address, a partial address (`10.42.`), a CIDR, a range or an IPv6 address in the search palette to find the Pods, Services, EndpointSlices, Nodes, Ingresses and Gateways that hold it, grouped by kind, with exact matches first. List filters take the same text (`:po 10.42.`), `:ip <address>` opens the palette, and Pods have a new IP column.
 
 ## 0.1.0 — 2026-11-17
 

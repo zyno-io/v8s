@@ -93,6 +93,8 @@ type kind struct {
 	namespaced            bool
 	short                 []string
 	cols                  []ingest.Col
+	ips                   bool // rows carry IP tokens (IP search)
+	order                 int  // IP search group order
 	decode                func(raw []byte) (runtime.Object, error)
 }
 
@@ -103,7 +105,7 @@ func (k kind) module(version string) *ingest.Module {
 	}
 	cols = append(cols, k.cols...)
 	m := &ingest.Module{GVR: k.group + "/" + version + "/" + k.resource, Kind: k.kind, Namespaced: k.namespaced, Short: k.short,
-		Curated: true, Optional: true, Tier0: true, NoWatchList: true,
+		Curated: true, Optional: true, Tier0: true, NoWatchList: true, IPs: k.ips, IPOrder: k.order,
 		Cols: cols, NewAPI: ingest.NewPartialAPI(k.decode), DecodeJSON: k.decode}
 	m.ProjectObj = func(o runtime.Object) *ingest.Row {
 		if x, ok := o.(*Obj); ok {

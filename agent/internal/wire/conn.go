@@ -986,7 +986,7 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 			return bad(err)
 		}
 		c.async(id, func(ctx context.Context) (any, error) {
-			return protocol.SearchResult{Results: opt.Manager.Search(p.Text, p.Limit)}, nil
+			return opt.Manager.SearchAll(ctx, p), nil
 		})
 		return nil
 	}

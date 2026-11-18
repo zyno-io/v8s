@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,13 +27,15 @@ const (
 	SrcTone
 	SrcCell  // Row.cells[Idx]
 	SrcOwner // the controlling owner's name (dict)
+	SrcIP    // the row's IP tokens of Col.IPField, formatted at encode time (not a cell)
 )
 
 // Col is one column of a kind's view: the wire schema plus how to read, sort and filter it.
 type Col struct {
 	protocol.Column
 	Src        ColSrc
-	Idx        int // cell index for SrcCell
+	Idx        int       // cell index for SrcCell
+	IPField    ipx.Field // SrcIP: the field whose tokens the column shows
 	Sortable   bool
 	Filterable bool
 }
@@ -61,6 +64,14 @@ type Module struct {
 	// GateClass names a problem class: the kind is watched as part of the baseline only while that class is enabled
 	// (hpa.unable, pv.failed); otherwise it is watched on demand like any other kind.
 	GateClass string
+	// IPs marks a kind whose rows carry IP tokens (Row.IPs): IP search scans it and IP-like list filters match it.
+	IPs bool
+	// IPOnDemand marks a CRD-backed IP source (pools, ranges) that is watched only while an IP search needs it.
+	IPOnDemand bool
+	// IPOrder orders the kind's group among IP search results (lower first).
+	IPOrder int
+	// IPDetailCol names the cell column whose value is shown as the hit's detail (EndpointSlice: service).
+	IPDetailCol string
 	// NoWatchList forces a paginated LIST + watch (no streaming list) for kinds whose list is not a plain API list.
 	NoWatchList bool
 	// NewAPI builds the list/watch source on a real REST client (mode B and virtual kinds). Nil: typed or Table.
@@ -150,6 +161,11 @@ func cDict(key, label string, w int) Col {
 // cStr is an inline string cell (high cardinality or long).
 func cStr(key, label string, w int) Col {
 	return Col{Column: protocol.Column{Key: key, Type: protocol.ColStr, Label: label, Width: w}, Src: SrcCell, Sortable: true, Filterable: true}
+}
+
+// cIP is the IP column of tokens with field f: sortable numerically, filterable by text.
+func cIP(key, label string, w int, f ipx.Field) Col {
+	return Col{Column: protocol.Column{Key: key, Type: protocol.ColStr, Label: label, Width: w}, Src: SrcIP, IPField: f, Sortable: true, Filterable: true}
 }
 
 func cInt(key, label string, w int) Col {

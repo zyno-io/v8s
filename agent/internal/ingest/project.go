@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unique"
 
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -14,7 +15,15 @@ var intern = unique.Make[string]
 // Project turns a decoded pod into its row. managedFields, annotations, labels, spec and the
 // rest of the object are dropped here; nothing of p is retained.
 func Project(p *corev1.Pod) *Row {
-	r := newRow(&p.ObjectMeta, 5)
+	var b ipx.Builder
+	collectPodIPs(p, &b)
+	var r *Row
+	if t, ok := b.Single(); ok {
+		r = newRowIP1(&p.ObjectMeta, t) // the usual single address shares the row's allocation
+	} else {
+		r = newRow(&p.ObjectMeta, 5)
+		r.ips = b.Set()
+	}
 	reason, restarts, ready, total := PodStatus(p)
 	r.putN(int64(ready))
 	r.putN(int64(total))
