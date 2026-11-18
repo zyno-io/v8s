@@ -50,7 +50,7 @@ const unavailable = computed(() => handle.columns.value !== null && handle.colum
 const filtered = computed(() => isFiltered(state));
 const summary = computed(() => {
     const n = clusters.activeIds.length;
-    const scope = isPhone.value ? '' : ` across ${n} cluster${n === 1 ? '' : 's'}`;
+    const scope = isPhone.value ? '' : ` in ${n} cluster${n === 1 ? '' : 's'}`;
     if (podsAll) {
         const base = `${formatCount(podsAll.total.value)}${scope}`;
         return filtered.value ? `${base} · ${formatCount(handle.total.value)} match` : base;

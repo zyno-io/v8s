@@ -665,7 +665,8 @@ async function main() {
                 before,
                 { timeout: 10000 }
             );
-            await page.getByTestId('show-acked').check();
+            await page.getByTestId('show-acked').click();
+            assert.equal(await page.getByTestId('show-acked').getAttribute('aria-pressed'), 'true');
             await page
                 .getByRole('button', { name: /^Restore/ })
                 .first()
@@ -674,7 +675,7 @@ async function main() {
                 .getByRole('button', { name: /^Restore/ })
                 .first()
                 .click();
-            await page.getByTestId('show-acked').uncheck();
+            await page.getByTestId('show-acked').click();
             await page.waitForFunction(
                 n => Number(document.querySelector('[data-testid=nav-problems-count]')?.textContent?.replace(/\D/g, '')) >= n,
                 before,

@@ -118,8 +118,8 @@ These need Hubble. `hubble.relay-down` is on by default but only raises where a 
 - **Search.** Matches the object name. Press `/` to focus it.
 - **Group by.** No grouping, class, cluster, or namespace. Namespace grouping is unavailable above 100 namespaces.
 - **Order.** Newest change first (the default), or oldest first.
-- **Across clusters.** Merges problems with the same class, kind, namespace, and name across clusters into one row with cluster tags, so "the `ingress-nginx` webhook is failing in 4 clusters" is one row. Needs at least two clusters and at most 2,000 problems; narrow the filters if the box is disabled.
-- **Show acknowledged.** Brings acknowledged and snoozed problems back, faded.
+- **Merge across clusters** (in the grouping menu). Merges problems with the same class, kind, namespace, and name across clusters into one row with cluster tags, so "the `ingress-nginx` webhook is failing in 4 clusters" is one row. Needs at least two clusters and at most 2,000 problems; narrow the filters if the option is disabled.
+- **Acknowledged** (the toggle after the family chips). Brings acknowledged and snoozed problems back, faded.
 
 ### Keyboard
 
@@ -140,7 +140,7 @@ Vulnerability problems are per image: "nginx:1.25 · 4 critical, 31 high · 12 w
 
 - **Acknowledge** hides a problem for you until it materially changes: its severity rises, or its count grows by 50% (at least one more). A problem that resolves and comes back is a new problem.
 - **Snooze** hides it for 1 hour, 1 day, or 1 week.
-- **Show acknowledged** brings them back, faded, with a **Restore** button.
+- The **Acknowledged** toggle brings them back, faded, with a **Restore** button.
 
 Acknowledgements belong to you and persist across restarts (stored in your local settings file on desktop, in your per-user settings file on the server in hosted mode). A problem keeps its identity when GitOps deletes and recreates its object, and an acknowledgement is kept while the problem is not live (an object being recreated, a restart, or a class switched off for a while). It is collected only after the problem has gone unseen for 7 days.
 

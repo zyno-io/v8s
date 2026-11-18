@@ -312,7 +312,8 @@ h1 {
         font-weight: 600;
         color: var(--text);
     }
-    &.on {
+    &.on,
+    &[aria-pressed='true'] {
         border-color: var(--accent);
         background: var(--accent-soft);
         color: var(--text);

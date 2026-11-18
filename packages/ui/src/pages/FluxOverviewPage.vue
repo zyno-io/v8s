@@ -268,7 +268,7 @@ const openRow = (r: ObjRow) => openObject(router, { cluster: r.cluster, gvr: r.g
                 <h1>Flux</h1>
                 <p class="muted" aria-live="polite">
                     <template v-if="detected">
-                        {{ formatCount(overview.totals.total) }} objects across {{ clusters.activeIds.length }} cluster{{
+                        {{ formatCount(overview.totals.total) }} objects in {{ clusters.activeIds.length }} cluster{{
                             clusters.activeIds.length === 1 ? '' : 's'
                         }}<template v-if="overview.totals.notready"> · {{ formatCount(overview.totals.notready) }} not ready</template>
                     </template>
