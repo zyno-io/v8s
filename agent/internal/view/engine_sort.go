@@ -61,6 +61,9 @@ func (e *Engine) colString(c *ingest.Col) func(r *ingest.Row, cl uint16) string 
 		return func(r *ingest.Row, _ uint16) string { return r.NS().Value() }
 	case ingest.SrcOwner:
 		return func(r *ingest.Row, _ uint16) string { return r.OwnerName().Value() }
+	case ingest.SrcIP:
+		f := c.IPField
+		return func(r *ingest.Row, _ uint16) string { return r.IPText(f) }
 	case ingest.SrcCell:
 		idx := c.Idx
 		if c.Type == protocol.ColInt || c.Type == protocol.ColTime {
@@ -90,7 +93,11 @@ func (e *Engine) buildMatch(n *Norm) func(r *ingest.Row, cl uint16) bool {
 	}
 	if n.Text != "" {
 		t := n.Text
-		preds = append(preds, func(r *ingest.Row, _ uint16) bool { return containsFold(r.Name(), t) })
+		if q := n.ip; q != nil { // IP-like text on a kind with IPs: name contains it, or an address matches
+			preds = append(preds, func(r *ingest.Row, _ uint16) bool { return containsFold(r.Name(), t) || q.Any(r.IPs()) })
+		} else {
+			preds = append(preds, func(r *ingest.Row, _ uint16) bool { return containsFold(r.Name(), t) })
+		}
 	}
 	for _, f := range n.filters {
 		f := f
@@ -172,6 +179,21 @@ func (e *Engine) buildCmp(n *Norm) cmpFn {
 			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.row.CreatedMs(), b.row.CreatedMs()), desc) })
 		case ingest.SrcTone:
 			keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.rank, b.rank), desc) })
+		case ingest.SrcIP:
+			f := c.IPField
+			keys = append(keys, func(a, b *entry) int {
+				x, okx := a.row.FirstIP(f)
+				y, oky := b.row.FirstIP(f)
+				switch {
+				case okx && oky:
+					return dir(x.Cmp(y), desc)
+				case okx:
+					return -1 // rows without an address sort last either way
+				case oky:
+					return 1
+				}
+				return 0
+			})
 		case ingest.SrcCell:
 			idx := c.Idx
 			if c.Type == protocol.ColInt || c.Type == protocol.ColTime {

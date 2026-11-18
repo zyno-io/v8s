@@ -242,6 +242,8 @@ func (w *World) generate(c *Cluster) {
 		count                      int
 	}
 	var fails []failing
+	type livePod struct{ ns, name, ip string }
+	appPods := make([][]livePod, apps) // the first live pods of each app (EndpointSlice targets)
 	c.mu.Lock()
 	for i := range c.pods {
 		p := &c.pods[i]
@@ -249,6 +251,9 @@ func (w *World) generate(c *Cluster) {
 			continue
 		}
 		perApp[int(p.app)%apps]++
+		if a := int(p.app) % apps; len(appPods[a]) < 3 && p.state != stPending && p.state != stCompleted {
+			appPods[a] = append(appPods[a], livePod{"team-" + strconv.Itoa(int(p.ns)), p.name(), podIP(int(p.node), p.host)})
+		}
 		var f failing
 		switch p.state {
 		case stCrash:
@@ -273,7 +278,7 @@ func (w *World) generate(c *Cluster) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for _, ns := range []string{"kube-system", "default", "flux-system", "podinfo", "monitoring"} {
+	for _, ns := range []string{"kube-system", "default", "flux-system", "podinfo", "monitoring", "ingress-nginx", "metallb-system"} {
 		w.putLocked("v1/namespaces", map[string]any{"metadata": objMeta("", ns, map[string]string{"kubernetes.io/metadata.name": ns}), "status": map[string]any{"phase": "Active"}})
 	}
 	for i := 0; i < namespaces; i++ {
@@ -292,11 +297,19 @@ func (w *World) generate(c *Cluster) {
 		if i%47 == 5 {
 			ready = "False"
 		}
-		w.putLocked("v1/nodes", map[string]any{"metadata": objMeta("", "node-"+strconv.Itoa(i), labels),
-			"spec": map[string]any{},
+		nmeta := objMeta("", "node-"+strconv.Itoa(i), labels)
+		if clusterIndex(c.name)%2 == 1 {
+			nmeta["annotations"] = map[string]any{"projectcalico.org/IPv4VXLANTunnelAddr": nodeCNIAddr(i)}
+		}
+		addrs := []any{map[string]any{"type": "InternalIP", "address": nodeIP(i)}}
+		if i < 3 {
+			addrs = append(addrs, map[string]any{"type": "ExternalIP", "address": nodeExternalIP(i)})
+		}
+		w.putLocked("v1/nodes", map[string]any{"metadata": nmeta,
+			"spec": map[string]any{"podCIDR": nodePodCIDR(i), "podCIDRs": []any{nodePodCIDR(i)}},
 			"status": map[string]any{
 				"conditions":  []any{map[string]any{"type": "Ready", "status": ready}},
-				"addresses":   []any{map[string]any{"type": "InternalIP", "address": fmt.Sprintf("10.0.%d.%d", i/200, 10+i%200)}},
+				"addresses":   addrs,
 				"allocatable": map[string]any{"cpu": "15890m", "memory": "63Gi", "pods": "110"},
 				"nodeInfo": map[string]any{"kubeletVersion": "v1.31.4", "osImage": "Ubuntu 24.04 LTS", "kernelVersion": "6.8.0-51-generic",
 					"containerRuntimeVersion": "containerd://1.7.24"},
@@ -378,15 +391,16 @@ func (w *World) generate(c *Cluster) {
 			"spec": map[string]any{"type": "ClusterIP", "clusterIP": fmt.Sprintf("10.96.%d.%d", a/250, 1+a%250), "selector": map[string]any{"app": name},
 				"ports": []any{map[string]any{"port": int64(80), "protocol": "TCP", "targetPort": int64(8080)}}}})
 		eps := []any{}
-		for e := int64(0); e < min(replicas, 3); e++ {
-			eps = append(eps, map[string]any{"addresses": []any{fmt.Sprintf("10.244.%d.%d", a%250, 1+e)}, "conditions": map[string]any{"ready": e < avail}})
+		for e, lp := range appPods[a] {
+			eps = append(eps, map[string]any{"addresses": []any{lp.ip}, "conditions": map[string]any{"ready": int64(e) < avail},
+				"targetRef": map[string]any{"kind": "Pod", "namespace": lp.ns, "name": lp.name}})
 		}
 		esm := objMeta(ns, name+"-x"+strconv.Itoa(a%10), map[string]string{"kubernetes.io/service-name": name})
 		w.putLocked("discovery.k8s.io/v1/endpointslices", map[string]any{"metadata": esm, "addressType": "IPv4", "endpoints": eps})
 		if a%7 == 0 {
 			w.putLocked("networking.k8s.io/v1/ingresses", map[string]any{"metadata": objMeta(ns, name, labels),
 				"spec":   map[string]any{"ingressClassName": "nginx", "rules": []any{map[string]any{"host": name + "." + ns + ".example.com"}}, "tls": []any{map[string]any{}}},
-				"status": map[string]any{"loadBalancer": map[string]any{"ingress": []any{map[string]any{"ip": "203.0.113.10"}}}}})
+				"status": map[string]any{"loadBalancer": map[string]any{"ingress": []any{map[string]any{"ip": "192.168.100.10"}}}}})
 		}
 		if a%40 == 0 {
 			w.putLocked("autoscaling/v2/horizontalpodautoscalers", map[string]any{"metadata": objMeta(ns, name, labels),

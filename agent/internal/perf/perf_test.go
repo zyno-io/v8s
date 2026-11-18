@@ -14,6 +14,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/cluster"
 	"github.com/zyno-io/v8s/agent/internal/fake"
 	"github.com/zyno-io/v8s/agent/internal/ingest"
+	"github.com/zyno-io/v8s/agent/internal/ipx"
 	"github.com/zyno-io/v8s/agent/internal/store"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
@@ -137,6 +138,47 @@ func TestBudgets(t *testing.T) {
 			t.Fatalf("retained heap %.1f MB exceeds budget %d MB", float64(got)/1048576, limit>>20)
 		}
 	})
+	t.Run("IP search 50k", func(t *testing.T) {
+		mgr, done := ipSearchMgr(t, 50000)
+		defer done()
+		for _, in := range []string{"10.64.1.5", "10.64.1.", "10.64.0.0/16"} {
+			q, _ := ipx.Parse(in)
+			var ds []time.Duration
+			for i := 0; i < 15; i++ {
+				start := time.Now()
+				res := mgr.SearchIP(context.Background(), q, 5)
+				ds = append(ds, time.Since(start))
+				if len(res.Groups) == 0 {
+					t.Fatalf("%s: no hits", in)
+				}
+			}
+			best := slices.Min(ds)
+			t.Logf("IP search %s at 50k pods: best %v, median %v", in, best, median(ds))
+			if best > 5*time.Millisecond {
+				t.Fatalf("IP search %s at 50k pods took %v (best of %d), budget 5ms", in, best, len(ds))
+			}
+		}
+	})
+	t.Run("view rebuild 50k with IP text", func(t *testing.T) {
+		e, _ := engineWithRows(t, 50000, 1)
+		for _, text := range []string{"10.64.1.5", "10.64.", "10.64.0.0/16"} {
+			var ds []time.Duration
+			for i := 0; i < 15; i++ {
+				start := time.Now()
+				s, err := e.Subscribe(protocol.ViewQuery{Text: text}, 1, protocol.Window{Limit: 300})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ds = append(ds, time.Since(start))
+				s.Close()
+			}
+			best := slices.Min(ds)
+			t.Logf("view rebuild at 50k rows, text %q: best %v, median %v", text, best, median(ds))
+			if best > 20*time.Millisecond {
+				t.Fatalf("view rebuild with text %q took %v (best of %d), budget 20ms", text, best, len(ds))
+			}
+		}
+	})
 	t.Run("view rebuild 50k", func(t *testing.T) {
 		for _, clusters := range []int{1, 3} {
 			e, _ := engineWithRows(t, 50000, clusters)
@@ -160,6 +202,52 @@ func TestBudgets(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ipSearchMgr starts a one-cluster fake manager of n pods and waits until its IP kinds are synced.
+func ipSearchMgr(tb testing.TB, n int) (*cluster.Manager, func()) {
+	tb.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr := cluster.NewManager(ctx, fake.NewSource(fake.Config{Clusters: 1, Pods: n}), view.NewEngine(), nil)
+	if _, err := mgr.Select([]string{"prod-us"}); err != nil {
+		tb.Fatal(err)
+	}
+	waitReady(tb, mgr)
+	q, _ := ipx.Parse("10.64.1.5")
+	for deadline := time.Now().Add(60 * time.Second); ; {
+		if res := mgr.SearchIP(ctx, q, 5); len(res.Pending) == 0 && len(res.Groups) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			tb.Fatal("IP kinds never synced")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return mgr, func() { cancel(); mgr.Close() }
+}
+
+// BenchmarkSearchIP50k: an IP search over 50k pods plus their services, endpoints, nodes and ingresses
+// (budget: 5 ms).
+func BenchmarkSearchIP50k(b *testing.B) {
+	mgr, done := ipSearchMgr(b, 50000)
+	defer done()
+	for _, in := range []string{"10.64.1.5", "10.64.1.", "10.64.0.0/16", "192.168.100.10"} {
+		q, ok := ipx.Parse(in)
+		if !ok {
+			b.Fatal(in)
+		}
+		b.Run(in, func(b *testing.B) {
+			b.ReportAllocs()
+			var res *protocol.IPSearch
+			for i := 0; i < b.N; i++ {
+				res = mgr.SearchIP(context.Background(), q, 5)
+			}
+			if len(res.Groups) == 0 {
+				b.Fatal("no hits")
+			}
+			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/1e6, "ms/search")
+		})
+	}
 }
 
 func BenchmarkProject10k(b *testing.B) {

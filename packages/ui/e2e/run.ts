@@ -253,6 +253,51 @@ async function main() {
             await page.getByTestId('drawer').waitFor();
         });
 
+        // ---- IP search ----
+        const openPalette = async (text: string) => {
+            await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+            const input = page.getByTestId('palette-input');
+            await input.waitFor();
+            await input.fill(text);
+            return input;
+        };
+
+        await step('IP search: a pod IP finds the pod, Enter opens the drawer', async () => {
+            await page.keyboard.press('Escape');
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            const rows = page.locator('.scroller .row:not(.sk)');
+            await rows.first().waitFor({ timeout: 30000 });
+            let podName = '';
+            let podIP = '';
+            for (const row of await rows.all()) {
+                const cells = await row.locator('[role=cell]').allInnerTexts();
+                const ip = cells.map(c => c.trim()).find(c => /^\d+\.\d+\.\d+\.\d+$/.test(c));
+                if (ip) {
+                    podIP = ip;
+                    podName = (await row.locator('.name').first().innerText()).trim();
+                    break;
+                }
+            }
+            assert.ok(podIP, 'no pod row shows an IP');
+            const input = await openPalette(podIP);
+            const hit = page.getByTestId('palette-ip-hit').filter({ hasText: podName }).first();
+            await hit.waitFor({ timeout: 10000 });
+            await input.press('Enter');
+            await page.getByTestId('drawer').waitFor();
+            await page.keyboard.press('Escape');
+        });
+
+        await step('IP search: a prefix shows "Show all", which opens the filtered list', async () => {
+            await openPalette('10.96.0.');
+            const all = page.getByTestId('palette-ip-showall').first();
+            await all.waitFor({ timeout: 10000 });
+            await all.click();
+            await page.waitForURL(/\/r\/v1\/services/);
+            assert.equal(await page.locator('#pods-filter').inputValue(), '10.96.0.');
+            await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 10000 });
+        });
+
         // ---- T2: logs, shell, drain, Flux, Helm ----
         const openFromTable = async (command: string, urlPart: string, name: string | RegExp, filter?: string) => {
             await page.keyboard.press(':');

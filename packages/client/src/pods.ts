@@ -11,7 +11,8 @@ export const POD = {
     statusTone: 8,
     restarts: 9,
     node: 10,
-    createdAt: 11
+    ip: 11,
+    createdAt: 12
 } as const;
 
 export const POD_COLUMN_KEYS = [
@@ -24,6 +25,7 @@ export const POD_COLUMN_KEYS = [
     'statusTone',
     'restarts',
     'node',
+    'ip',
     'createdAt'
 ] as const;
 

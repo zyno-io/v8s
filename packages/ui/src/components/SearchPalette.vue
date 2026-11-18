@@ -1,37 +1,49 @@
 <script setup lang="ts">
-import type { SearchHit, SearchResult } from '@v8s/client';
+import type { IPSearch, SearchHit, SearchResult } from '@v8s/client';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { rank } from '@/lib/fuzzy.ts';
+import { ipItems, looksLikeIP, pendingText, skippedText } from '@/lib/ip-search.ts';
 import { kindLabel } from '@/lib/kinds.ts';
 import { gvrPath } from '@/lib/route.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
+import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 interface Item {
     key: string;
-    section: 'Objects' | 'Kinds' | 'Commands';
+    section: string;
     label: string;
     detail?: string;
+    /** A matched address: mono chip, bold when `strong`. */
+    value?: string;
+    strong?: boolean;
+    testid?: string;
     cluster?: string;
     run: () => void;
 }
 
 const ui = useUiStore();
 const clusters = useClustersStore();
+const table = useTableStore();
 const router = useRouter();
 const input = ref('');
 const sel = ref(0);
 const inputEl = ref<HTMLInputElement | null>(null);
 const hits = ref<SearchHit[]>([]);
+const ipRes = shallowRef<IPSearch | undefined>();
 const searching = ref(false);
 
 onMounted(async () => {
+    if (ui.paletteQuery) {
+        input.value = ui.paletteQuery;
+        ui.paletteQuery = '';
+    }
     await nextTick();
     inputEl.value?.focus();
 });
@@ -108,6 +120,36 @@ const kindItems = computed<Item[]>(() =>
         }))
 );
 
+const isIP = computed(() => looksLikeIP(input.value));
+
+const ipRows = computed<Item[]>(() =>
+    ipRes.value
+        ? ipItems(ipRes.value, kinds.value).map(it => ({
+              key: it.key,
+              section: it.section,
+              label: it.label,
+              detail: it.detail,
+              value: it.value,
+              strong: it.strong,
+              testid: it.testid,
+              cluster: it.cluster,
+              run: () => {
+                  close();
+                  const a = it.action;
+                  if (a.type === 'open') {
+                      void openObject(router, a.ref);
+                  } else {
+                      table.clearFilters(a.gvr);
+                      table.of(a.gvr).text = a.text;
+                      void router.push(gvrPath(a.gvr));
+                  }
+              }
+          }))
+        : []
+);
+
+const notes = computed(() => [pendingText(ipRes.value), skippedText(ipRes.value)].filter(Boolean));
+
 const items = computed<Item[]>(() => {
     const q = input.value.trim();
     const objects: Item[] = hits.value.map(h => ({
@@ -121,6 +163,7 @@ const items = computed<Item[]>(() => {
             void openObject(router, { cluster: h.cluster, gvr: h.gvr, namespace: h.namespace || undefined, name: h.name });
         }
     }));
+    if (isIP.value) return [...ipRows.value, ...objects]; // Kinds and Commands are noise while typing an address
     const k = q ? rank(q, kindItems.value, i => i.label + ' ' + i.detail).slice(0, 6) : kindItems.value.slice(0, 5);
     const c = q ? rank(q, commands.value, i => i.label) : commands.value;
     return [...objects, ...k, ...c];
@@ -137,26 +180,48 @@ watch(input, q => {
     clearTimeout(timer);
     // Results belong to the previous text: drop them so Enter can never open a stale hit.
     hits.value = [];
+    ipRes.value = undefined;
     seq++;
     const text = q.trim();
     if (text.length < 2) {
-        hits.value = [];
         searching.value = false;
         return;
     }
     searching.value = true;
-    timer = setTimeout(async () => {
-        const my = ++seq;
-        try {
-            const res = await getAgent().call<SearchResult>('search', { text, limit: 20 });
-            if (my === seq) hits.value = res.results ?? [];
-        } catch {
-            if (my === seq) hits.value = [];
-        } finally {
-            if (my === seq) searching.value = false;
-        }
-    }, 150);
+    timer = setTimeout(() => void search(text, 0), 150);
 });
+
+// Sources that are still loading (pending) are asked again shortly, a few times at most.
+const MAX_RETRIES = 5;
+async function search(text: string, attempt: number) {
+    const my = ++seq;
+    let again = false;
+    try {
+        const res = await getAgent().call<SearchResult>('search', { text, limit: 20, ipPerKind: 5 });
+        if (my !== seq) return;
+        hits.value = res.results ?? [];
+        ipRes.value = res.ip;
+        searching.value = false; // Enter works on what is shown; the re-asks below only refine it
+        again = !!res.ip?.pending?.length && attempt < MAX_RETRIES;
+    } catch {
+        if (my === seq) {
+            hits.value = [];
+            ipRes.value = undefined;
+        }
+    } finally {
+        if (my === seq) searching.value = false;
+    }
+    if (again) {
+        timer = setTimeout(() => {
+            if (my === seq) void search(text, attempt + 1);
+        }, 600);
+    }
+}
+
+watch(
+    () => ui.paletteOpen,
+    () => clearTimeout(timer)
+);
 
 function onKey(e: KeyboardEvent) {
     if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
@@ -213,6 +278,7 @@ const multi = computed(() => clusters.activeIds.length > 1);
                     role="option"
                     :aria-selected="i === sel"
                     :class="{ on: i === sel }"
+                    :data-testid="it.testid"
                     @mousedown.prevent="it.run()"
                     @mousemove="sel = i"
                 >
@@ -220,10 +286,12 @@ const multi = computed(() => clusters.activeIds.length > 1);
                         ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ it.cluster }}</span
                     >
                     <span class="lab">{{ it.label }}</span>
+                    <span v-if="it.value" class="val mono" :class="{ strong: it.strong }">{{ it.value }}</span>
                     <span class="muted detail">{{ it.detail }}</span>
                 </li>
             </template>
             <li v-if="!items.length" class="muted none" role="presentation">{{ searching ? 'Searching…' : 'No matches' }}</li>
+            <li v-for="n in notes" :key="n" class="muted note" role="presentation">{{ n }}</li>
         </ul>
     </section>
 </template>
@@ -293,13 +361,35 @@ input {
 .lab {
     font-size: 13px;
     font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .detail {
     font-size: 12px;
     margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.val {
+    font-size: 12px;
+    color: var(--text2);
+    white-space: nowrap;
+}
+.val.strong {
+    font-weight: 600;
+    color: var(--text);
 }
 .none {
     padding: 12px;
     text-align: center;
+}
+.note {
+    padding: 6px 8px 4px;
+    font-size: 12px;
 }
 </style>

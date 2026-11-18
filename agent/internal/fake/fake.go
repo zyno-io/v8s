@@ -181,6 +181,7 @@ type fakePod struct {
 	rv       uint64
 	created  int64
 	app      uint16
+	host     uint16 // pods created on its node before it (its pod IP)
 	ns       uint8
 	node     uint8
 	nc       uint8
@@ -208,6 +209,7 @@ type Cluster struct {
 	logStart uint64     // rv of the oldest retained event (0 = none dropped)
 	watchers map[*watcher]struct{}
 	cancel   context.CancelFunc
+	nodeSeq  [nodes]uint16 // pods created per node (pod IPs)
 }
 
 // NewCluster generates a cluster of n pods and starts churn at rate events/s (0 = static).
@@ -242,6 +244,8 @@ func (c *Cluster) newPod(app, k int) fakePod {
 	c.rv++
 	p := fakePod{id: c.nextID, h1: rsHash(app), h2: uint32(c.nextID*2654435761) & 0xfffff, rv: c.rv,
 		created: time.Now().UnixMilli(), app: uint16(app), ns: uint8(app % 37), node: uint8(c.rng.IntN(150)), nc: uint8(1 + app%3)}
+	p.host = c.nodeSeq[p.node] % 500
+	c.nodeSeq[p.node]++
 	switch r := k % 1000; {
 	case r < 5:
 		p.state, p.restarts = stCrash, int32(3+c.rng.IntN(100))
@@ -290,6 +294,14 @@ func (c *Cluster) pod(p *fakePod) *corev1.Pod {
 	}
 	if p.state == stPending {
 		pod.Spec.NodeName = ""
+	} else {
+		pod.Status.PodIP = podIP(int(p.node), p.host)
+		pod.Status.PodIPs = []corev1.PodIP{{IP: pod.Status.PodIP}}
+		pod.Status.HostIP = nodeIP(int(p.node))
+		pod.Status.HostIPs = []corev1.HostIP{{IP: pod.Status.HostIP}}
+		if p.app%200 == 7 {
+			pod.Annotations = map[string]string{"k8s.v1.cni.cncf.io/network-status": podNetworkStatus(pod.Status.PodIP, p.host)}
+		}
 	}
 	for i := 0; i < int(p.nc); i++ {
 		name := app

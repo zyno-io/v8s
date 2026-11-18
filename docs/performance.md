@@ -103,7 +103,7 @@ Every projection drops `managedFields` and `kubectl.kubernetes.io/last-applied-c
   | Gateway API (Gateway, HTTPRoute, GRPCRoute), cert-manager Certificate | ≤ 4 |
   | Hosted shared-cache clusters only: Roles, ClusterRoles, RoleBindings, ClusterRoleBindings (authz cache invalidation) | 4 |
   | **Total** | **~20 bare cluster; ≤ 50 with everything installed** |
-- **On demand.** Any other resource type a view opens. Reference-counted by subscriptions; **lingers** after the last subscriber leaves (desktop 5 min, hosted 2 min) so flicking between views is instant. The lingering set is LRU-evicted to stay inside the watch budget (§5). An open Events tab holds one more kind of on-demand watch: the events of that one object (§5, "Events"), which counts against the same budget but lingers only 30 s.
+- **On demand.** Any other resource type a view opens. (IP search starts no watches in this release: it scans the Pod, Service, EndpointSlice, Node, Ingress and Gateway rows that are already watched.) Reference-counted by subscriptions; **lingers** after the last subscriber leaves (desktop 5 min, hosted 2 min) so flicking between views is instant. The lingering set is LRU-evicted to stay inside the watch budget (§5). An open Events tab holds one more kind of on-demand watch: the events of that one object (§5, "Events"), which counts against the same budget but lingers only 30 s.
 - **Never watched**: Hubble flows (streamed on demand, §8), SbomReports, full vulnerability reports, Kubescape manifests, `metrics.k8s.io` (polled, §5).
 
 ### Cluster deselect and GC
@@ -147,6 +147,7 @@ A custom `cache.Store` implementation per `(cluster, GVR)`:
 - Rows are projection structs addressed by `u32` handles; `uid → handle` map.
 - **`Replace` diffs instead of clearing and refilling**, so a relist after a 410 produces a handful of updates, not a full-view flash and a full detector re-run.
 - Secondary indexes, maintained incrementally: namespace; node (pods); owner (any owned kind); selected label `k=v` pairs (configurable set: `app`, `app.kubernetes.io/*`, plus any label currently used in an open filter); EndpointSlice by Service; Ingress by backend Service; HelmRelease/Kustomization inventory reverse index.
+- **IP tokens.** Rows of kinds with IPs carry a pointer to an immutable, sorted `ipx.Set` of 40-byte tokens: an address or a CIDR or range span as 128-bit big-endian (IPv4 is `::ffff:a.b.c.d`), plus the field it came from. A pod with one IP stores its token inside the row's own allocation (no extra object) (about 1.5 MB per 10k pods including the EndpointSlice and Service tokens). There is no IP index: an IP search scans the tokens of the selected clusters' IP kinds, a few ns per token (budget: 5 ms at 50k pods, `BenchmarkSearchIP50k`), which is cheaper than any per-address map and covers prefix, CIDR and range queries without a second structure. Revisit only if a single selection exceeds about 200k pods. Tokens are set at projection, so rows stay immutable, and `CellsEqual` compares them so an IP-only change still produces an update.
 - **Per-namespace** counts (per GVR, per problem class), from which every displayed count is derived. A count shown to a user is always the sum over namespaces that user may see (§10); there is no cluster-wide count that bypasses the authorization filter.
 
 ### View engine

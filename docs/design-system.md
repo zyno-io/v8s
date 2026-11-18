@@ -82,6 +82,8 @@ Typing `:` anywhere opens a one-line command bar at the top of the content (Floa
 | `:<type>` | open a resource type by plural, kind, or short name (`:pods`, `:po`, `:deploy`, `:svc`, `:hr`, `:ks`); CRDs complete from discovery |
 | `:<type> <ns>` | open the type filtered to a namespace (`:po payments`) |
 | `:<type> <ns>/<name>` | open one object's detail |
+| `:ip <address\|cidr\|range>` | search objects by IP in the palette (`:ip 10.0.0.5`, `:ip 10.0.0.0/16`) |
+| `:<type> <ip\|cidr>` | open the type filtered by address (`:po 10.42.`, `:svc 10.96.0.0/12`); kinds with IPs only |
 | `:ns <ns>` / `:ns all` | set or clear the namespace filter on the current view |
 | `:problems` (`:pb`) | open Problems |
 | `:star` / `:unstar` | star or unstar the current type |

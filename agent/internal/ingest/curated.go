@@ -114,7 +114,8 @@ func registerPods() {
 	m := &Module{GVR: PodsGVR, Kind: "Pod", Namespaced: true, Short: []string{"po"}, Tier0: true,
 		Cols: []Col{cCluster(), cName(), cNS(),
 			cInt("ready", "Ready", 64), cInt("containers", "Containers", 84), cDict("status", "Status", 140),
-			cTone(), cInt("restarts", "Restarts", 76), cDict("node", "Node", 160), cAge()}}
+			cTone(), cInt("restarts", "Restarts", 76), cDict("node", "Node", 160), cIP("ip", "IP", 130, FPodIP), cAge()},
+		IPs: true, IPOrder: 10}
 	typed(m, func(l *corev1.PodList) []corev1.Pod { return l.Items }, Project)
 }
 
@@ -260,7 +261,7 @@ func servicePorts(ports []corev1.ServicePort) string {
 }
 
 func registerNetworking() {
-	typed(&Module{GVR: "v1/services", Kind: "Service", Namespaced: true, Short: []string{"svc"}, Tier0: true,
+	typed(&Module{GVR: "v1/services", Kind: "Service", Namespaced: true, Short: []string{"svc"}, Tier0: true, IPs: true, IPOrder: 20,
 		Cols: []Col{cCluster(), cName(), cNS(), cDict("type", "Type", 100), cStr("clusterIP", "Cluster IP", 120), cStr("externalIP", "External IP", 130),
 			cStr("ports", "Ports", 160), cStr("selector", "Selector", 200), cTone(), cAge()}},
 		func(l *corev1.ServiceList) []corev1.Service { return l.Items },
@@ -283,10 +284,11 @@ func registerNetworking() {
 			if s.Spec.Type == corev1.ServiceTypeLoadBalancer && len(s.Status.LoadBalancer.Ingress) == 0 {
 				r.tone = ToneWarning
 			}
+			r.ips = serviceIPs(s)
 			return r
 		})
 
-	typed(&Module{GVR: "networking.k8s.io/v1/ingresses", Kind: "Ingress", Namespaced: true, Short: []string{"ing"}, Tier0: true,
+	typed(&Module{GVR: "networking.k8s.io/v1/ingresses", Kind: "Ingress", Namespaced: true, Short: []string{"ing"}, Tier0: true, IPs: true, IPOrder: 50,
 		Cols: []Col{cCluster(), cName(), cNS(), cDict("class", "Class", 100), cStr("hosts", "Hosts", 260), cStr("address", "Address", 140),
 			cDict("ports", "Ports", 80), cTone(), cAge()}},
 		func(l *networkingv1.IngressList) []networkingv1.Ingress { return l.Items },
@@ -324,10 +326,11 @@ func registerNetworking() {
 				r.tone = ToneWarning
 			}
 			setFacts(r, ingressFacts(in))
+			r.ips = ingressIPs(in)
 			return r
 		})
 
-	typed(&Module{GVR: "discovery.k8s.io/v1/endpointslices", Kind: "EndpointSlice", Namespaced: true, Tier0: true,
+	typed(&Module{GVR: "discovery.k8s.io/v1/endpointslices", Kind: "EndpointSlice", Namespaced: true, Tier0: true, IPs: true, IPOrder: 40, IPDetailCol: "service",
 		Cols: []Col{cCluster(), cName(), cNS(), cDict("service", "Service", 200), cDict("addressType", "Address type", 100),
 			cInt("ready", "Ready", 60), cInt("total", "Total", 60), cTone(), cAge()}},
 		func(l *discoveryv1.EndpointSliceList) []discoveryv1.EndpointSlice { return l.Items },
@@ -348,6 +351,7 @@ func registerNetworking() {
 			} else if rd < len(e.Endpoints) {
 				r.tone = ToneWarning
 			}
+			r.ips = endpointSliceIPs(e)
 			return r
 		})
 
@@ -393,7 +397,7 @@ func nodeRoles(l map[string]string) string {
 }
 
 func registerClusterKinds() {
-	typed(&Module{GVR: "v1/nodes", Kind: "Node", Short: []string{"no"}, Tier0: true,
+	typed(&Module{GVR: "v1/nodes", Kind: "Node", Short: []string{"no"}, Tier0: true, IPs: true, IPOrder: 30,
 		Cols: []Col{cCluster(), cName(), cDict("status", "Status", 130), cDict("roles", "Roles", 120), cDict("version", "Version", 110),
 			cStr("internalIP", "Internal IP", 120), cDict("os", "OS image", 180), cDict("kernel", "Kernel", 130), cDict("runtime", "Runtime", 140),
 			cDict("cpu", "CPU", 60), cDict("memory", "Memory", 80), cInt("pods", "Pods", 60), cInt("taints", "Taints", 64), cTone(), cAge()}},
@@ -438,6 +442,7 @@ func registerClusterKinds() {
 			r.putN(int64(len(n.Spec.Taints)))
 			r.tone = tone
 			setFacts(r, nodeFacts(n))
+			r.ips = nodeIPs(n)
 			return r
 		})
 

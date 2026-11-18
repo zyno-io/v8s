@@ -35,6 +35,8 @@ func EncodeRow(enc *msgpack.Encoder, d Dict, mod *ingest.Module, r *PendRow) err
 			_ = enc.EncodeUint8(row.Tone())
 		case ingest.SrcCreated:
 			_ = enc.EncodeInt(row.CreatedMs())
+		case ingest.SrcIP:
+			_ = enc.EncodeString(row.IPText(c.IPField))
 		case ingest.SrcCell:
 			cell := row.Cell(c.Idx)
 			switch c.Type {

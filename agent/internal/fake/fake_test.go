@@ -38,7 +38,7 @@ func TestFakeWorldConsistency(t *testing.T) {
 	for gvr, m := range w.objs {
 		counts[gvr] = len(m)
 	}
-	if counts["v1/nodes"] != 150 || counts["v1/namespaces"] != 42 || counts["apps/v1/deployments"] < 400 || counts["apps/v1/replicasets"] != 800 ||
+	if counts["v1/nodes"] != 150 || counts["v1/namespaces"] != 44 || counts["apps/v1/deployments"] < 400 || counts["apps/v1/replicasets"] != 800 ||
 		counts["apps/v1/statefulsets"] == 0 || counts["apps/v1/daemonsets"] == 0 || counts["v1/services"] < 400 || counts["networking.k8s.io/v1/ingresses"] == 0 ||
 		counts["batch/v1/cronjobs"] == 0 || counts["batch/v1/jobs"] == 0 || counts["v1/configmaps"] == 0 || counts["v1/secrets"] == 0 || counts["v1/events"] == 0 ||
 		counts["kustomize.toolkit.fluxcd.io/v1/kustomizations"] == 0 || counts["helm.toolkit.fluxcd.io/v2/helmreleases"] == 0 || counts["apiextensions.k8s.io/v1/customresourcedefinitions"] != 7 {

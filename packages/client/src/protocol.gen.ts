@@ -525,6 +525,7 @@ export interface Kind {
   available: boolean; // true for every listable kind
   curated: boolean; // hand-written columns (mode A) vs Table columns (mode C)
   clusters: string[]; // selected clusters that serve it
+  ips?: boolean; // rows carry IPs (IP search, IP-aware filter)
 }
 export interface KindsListResult {
   kinds: Kind[];
@@ -860,6 +861,10 @@ export interface SettingsSetParams {
 export interface SearchParams {
   text: string;
   limit: number /* int */;
+  /**
+   * IPPerKind caps the hits per kind of an IP search (default 5, max 50).
+   */
+  ipPerKind?: number /* int */;
 }
 export interface SearchHit {
   cluster: string;
@@ -870,6 +875,56 @@ export interface SearchHit {
 }
 export interface SearchResult {
   results: SearchHit[];
+  /**
+   * IP is set when Text reads as an IP address, a partial address, a CIDR or an a-b range.
+   */
+  ip?: IPSearch;
+}
+export type IPQueryMode = string;
+export const IPQueryAddr: IPQueryMode = "addr";
+export const IPQueryCIDR: IPQueryMode = "cidr";
+export const IPQueryRange: IPQueryMode = "range";
+export const IPQueryPrefix: IPQueryMode = "prefix";
+export type IPMatch = string;
+export const IPMatchExact: IPMatch = "exact";
+export const IPMatchContains: IPMatch = "contains";
+export const IPMatchWithin: IPMatch = "within";
+export const IPMatchOverlap: IPMatch = "overlap";
+export const IPMatchPrefix: IPMatch = "prefix";
+/**
+ * IPSearch is the IP half of a search result: the objects holding the queried address, grouped by kind.
+ */
+export interface IPSearch {
+  query: string; // normalized
+  mode: IPQueryMode;
+  groups: IPGroup[];
+  pending?: IPSource[]; // still loading: ask again shortly
+  skipped?: IPSource[]; // not searched
+}
+export interface IPGroup {
+  gvr: string; // of the first hit; "Show all" opens it
+  kind: string;
+  total: number /* int */; // matching objects across clusters
+  hits: IPHit[];
+}
+export interface IPHit {
+  cluster: string;
+  gvr: string;
+  namespace?: string;
+  name: string;
+  field: string; // "status.podIPs", "status.loadBalancer.ingress"
+  label: string; // "Pod IP", "LB ingress IP"
+  value: string; // "10.0.0.5" | "10.0.0.0/24" | "10.0.0.10-10.0.0.50"
+  match: IPMatch;
+  detail?: string;
+}
+/**
+ * IPSource names a source an IP search could not read yet (Pending) or at all (Skipped).
+ */
+export interface IPSource {
+  cluster: string;
+  kind?: string; // "" = the cluster (discovery or sync)
+  reason?: string; // skipped: forbidden | not found | budget
 }
 /**
  * Flow control (agent side): at most MaxUnacked patch frames or MaxInFlightBytes in flight per socket.

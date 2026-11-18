@@ -17,6 +17,7 @@ const ctx: CommandContext = {
             group: '',
             version: 'v1',
             curated: true,
+            ips: true,
             clusters: []
         },
         {
@@ -157,6 +158,27 @@ describe('parseCommand', () => {
         expect(parseCommand('nodes x', nodes)).toEqual({ type: 'open-kind', gvr: 'v1/nodes', plural: 'nodes', name: 'x' });
         expect(complete('nodes ', nodes)).toEqual([]);
         expect(parseCommand('nodes', nodes)).toMatchObject({ type: 'open-kind', gvr: 'v1/nodes' });
+    });
+});
+
+describe('IP commands', () => {
+    it(':ip opens the palette search', () => {
+        expect(parseCommand('ip 10.0.0.1', ctx)).toEqual({ type: 'ip', text: '10.0.0.1' });
+        expect(parseCommand('ip 10.0.0.1 - 10.0.0.9', ctx)).toEqual({ type: 'ip', text: '10.0.0.1 - 10.0.0.9' });
+        expect(parseCommand('ip', ctx).type).toBe('error');
+    });
+    it(':<type> <ip> filters by address on kinds with IPs', () => {
+        expect(parseCommand('po 10.42.', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', text: '10.42.' });
+        expect(parseCommand('pods 10.0.0.0/16', ctx)).toMatchObject({ type: 'open-kind', text: '10.0.0.0/16' });
+    });
+    it(':<type> <namespace> is unchanged', () => {
+        expect(parseCommand('po payments', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespace: 'payments' });
+        expect(parseCommand('po payments/api-1', ctx)).toMatchObject({ namespace: 'payments', name: 'api-1' });
+    });
+    it('completes no namespaces for an IP argument, and lists :ip', () => {
+        expect(complete('po 10.4', ctx)).toEqual([]);
+        expect(complete('ip ', ctx)).toEqual([]);
+        expect(complete('i', ctx).map(c => c.label)).toContain('ip');
     });
 });
 

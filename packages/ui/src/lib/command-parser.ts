@@ -1,6 +1,7 @@
 import type { Kind } from '@v8s/client';
 
 import { rank } from './fuzzy.ts';
+import { looksLikeIP } from './ip-search.ts';
 import { preferKind } from './kinds.ts';
 
 export interface ClusterRef {
@@ -23,7 +24,8 @@ export type Command =
     | { type: 'ctx-open' }
     | { type: 'ctx-set'; ids: string[] }
     | { type: 'ctx-delta'; add: string[]; remove: string[] }
-    | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string }
+    | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string; text?: string }
+    | { type: 'ip'; text: string }
     | { type: 'ns'; namespace: string | null }
     | { type: 'problems' }
     | { type: 'star'; on: boolean }
@@ -40,6 +42,7 @@ export interface Completion {
 
 const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: string }[] = [
     { name: 'ctx', aliases: ['context'], takesArgs: true, detail: 'choose clusters' },
+    { name: 'ip', aliases: [], takesArgs: true, detail: 'find objects by IP' },
     { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'set namespace filter' },
     { name: 'pb', aliases: ['problems'], takesArgs: false, detail: 'open problems' },
     { name: 'star', aliases: [], takesArgs: false, detail: 'star the current type' },
@@ -119,6 +122,10 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
         if (typeof ids === 'string') return { type: 'error', message: ids };
         return { type: 'ctx-set', ids: [...new Set(ids)] };
     }
+    if (cmd?.name === 'ip') {
+        const text = args.join(' ');
+        return text ? { type: 'ip', text } : { type: 'error', message: 'usage: :ip <address|cidr|range>' };
+    }
     if (cmd?.name === 'ns') {
         if (args.length !== 1) return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
         return { type: 'ns', namespace: args[0].toLowerCase() === 'all' ? null : args[0] };
@@ -135,6 +142,8 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
     if (!kind.available) return { type: 'error', message: `${kind.kind} (${kind.plural}) is not available yet` };
     const arg = args[0];
     if (!arg || arg === 'all') return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural };
+    // A namespace name has no dots or colons, so an IP-like argument is an address filter (kinds with IPs only).
+    if (kind.ips && looksLikeIP(arg)) return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, text: arg };
     if (!kind.namespaced) return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, name: arg };
     const slash = arg.indexOf('/');
     if (slash >= 0) {
@@ -201,6 +210,8 @@ export function complete(input: string, ctx: CommandContext, limit = 8): Complet
         return rank(q, pool, e => e.label.replace(/^[+-]/, '')).slice(0, limit);
     }
 
+    if (cmd?.name === 'ip') return [];
+    if (cmd?.name !== 'ns' && lastIdx === 1 && looksLikeIP(typed)) return [];
     const isNsCmd = cmd?.name === 'ns';
     const kindHit = !cmd ? findKind(head, ctx.kinds) : null;
     if ((isNsCmd || (kindHit && 'kind' in kindHit && kindHit.kind.namespaced)) && lastIdx === 1) {

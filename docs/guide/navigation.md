@@ -91,6 +91,31 @@ Aliases: `:context` for `:ctx`, `:namespace` for `:ns`.
 
 Press `Ctrl+K` (`Cmd+K` on macOS) to search across everything. It finds objects by name across the selected clusters (searched in the agent, so it is fast on big clusters), resource types, and commands. Pick a result to open it.
 
+### Search by IP
+
+Type an address to find what holds it. The palette understands:
+
+- a full address (`10.42.3.7`, `fd00::5`), with an optional port (`10.42.3.7:8080`, `[fd00::5]:443`) or zone (`fe80::1%eth0`)
+- a partial address as you type (`10.42.`, `10.4`, `fd00:10:`)
+- a CIDR (`10.42.0.0/16`) or a range (`10.0.0.1-10.0.0.50`)
+
+Results come in one section per kind, `IP · Pods (3)`, with the matched value in monospace, the field it came from (`Pod IP`, `Cluster IP`, `LB ingress IP`, `Pod CIDR`), and the cluster when you have more than one connected. Exact matches come first, then objects whose CIDR or range contains the address (`contains`), objects inside your CIDR or range (`in range`), partial overlaps (`overlaps`) and prefix matches. A section shows a few hits; **Show all N** opens the full list filtered by that address. Name matches for the same text are listed after the IP hits.
+
+What is searched (no extra watches are started):
+
+| Kind           | Addresses                                                                                                                                             |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pods           | pod IPs; secondary network IPs from Multus (`k8s.v1.cni.cncf.io/network-status`)                                                                      |
+| Services       | cluster IPs, external IPs, requested load balancer IPs (`loadBalancerIP` and the MetalLB, kube-vip and Cilium annotations), load balancer ingress IPs |
+| EndpointSlices | endpoint addresses (the hit shows the Service)                                                                                                        |
+| Nodes          | internal and external IPs, pod CIDRs, CNI node addresses (Calico, Flannel, Cilium, Kube-OVN annotations)                                              |
+| Ingresses      | load balancer ingress IPs                                                                                                                             |
+| Gateways       | `status.addresses` and `spec.addresses` that are IP addresses                                                                                         |
+
+A node's own address also finds its pods only when they run on the host network; the node row stands in for the host IP.
+
+The same text works in list filters. On the Pods, Services, EndpointSlices, Nodes and Ingresses pages, "Filter by name or IP" matches names or addresses, and `:po 10.42.` opens Pods filtered that way. `:ip 10.0.0.5` opens the palette with the search filled in. Pods also have an **IP** column that sorts numerically. Right after you connect, a first search may say it is still loading some sources and refresh itself within a few seconds.
+
 ## Starred types and bookmarks
 
 - **Star a resource type** from its page header, the sidebar, or with `:star`. Starred types appear at the top of the sidebar, in your order, with live counts for the ones already being watched. Any type can be starred, including CRDs.

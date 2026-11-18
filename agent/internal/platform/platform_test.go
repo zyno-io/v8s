@@ -256,3 +256,29 @@ func TestCertTitleRefreshesDaily(t *testing.T) {
 		}
 	}
 }
+
+func TestGatewayAddresses(t *testing.T) {
+	r := rowOf(t, decodeGateway, `{"kind":"Gateway","metadata":{"name":"gw","namespace":"ns","uid":"u","resourceVersion":"1"},
+		"spec":{"addresses":[{"type":"IPAddress","value":"192.168.100.50"},{"value":"192.168.100.51"},{"type":"Hostname","value":"gw.example.com"}]},
+		"status":{"addresses":[{"type":"IPAddress","value":"192.168.100.10"},{"type":"Hostname","value":"lb.example.com"},{"type":"NamedAddress","value":"10.9.9.9"},{"value":"fd00::10"}],
+		"conditions":[{"type":"Accepted","status":"True"},{"type":"Programmed","status":"True"}]}}`)
+	var got []string
+	for _, tk := range r.IPs() {
+		got = append(got, tk.Field.Label()+"="+tk.String())
+	}
+	want := "[Gateway address=192.168.100.10 Requested address=192.168.100.50 Requested address=192.168.100.51 Gateway address=fd00::10]"
+	if fmt.Sprint(got) != want {
+		t.Fatalf("got %v, want %s", got, want)
+	}
+	m := ingest.Lookup("gateway.networking.k8s.io/v1/gateways")
+	if m == nil || !m.IPs || m.IPOrder != 55 {
+		t.Fatalf("gateway module: %+v", m)
+	}
+	if route := ingest.Lookup(gvrHTTPRoute); route.IPs {
+		t.Fatal("routes carry no IPs")
+	}
+	none := rowOf(t, decodeGateway, `{"kind":"Gateway","metadata":{"name":"gw2","uid":"u2","resourceVersion":"1"}}`)
+	if len(none.IPs()) != 0 {
+		t.Fatal("no addresses, no tokens")
+	}
+}
