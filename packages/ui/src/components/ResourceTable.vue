@@ -15,7 +15,7 @@ import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageTone } from '@/lib/format.ts';
-import { setPageKeyHandler } from '@/lib/keys.ts';
+import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { usageCardLine, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
@@ -164,6 +164,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
     clearInterval(timer);
     setPageKeyHandler(null);
+    setListNav(null);
 });
 
 // ---- windowing: hold ±pad rows around the viewport, re-request near an edge, anchor on the first visible row ----
@@ -380,16 +381,29 @@ function moveFocus(delta: number) {
     virtualizer.value.scrollToIndex(h.offset.value + cur, { align: 'auto' });
 }
 
+// Enter in the filter (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+function focusList(first: boolean): boolean {
+    const h = props.handle;
+    const ids = h.ids;
+    const el = scroller.value;
+    if (!ids.length || !el) return false;
+    const keep = !first && ui.value.focusId && ids.includes(ui.value.focusId);
+    if (!keep) ui.value.focusId = ids[0];
+    el.focus({ preventScroll: true });
+    virtualizer.value.scrollToIndex(h.offset.value + ids.indexOf(ui.value.focusId), { align: 'auto' });
+    return true;
+}
+
+setListNav({ focusList, owns: el => el instanceof Node && !!scroller.value?.contains(el) });
+
 setPageKeyHandler(e => {
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
-            if (e.key === 'ArrowDown' && document.activeElement === scroller.value) return false;
             moveFocus(1);
             return true;
         case 'k':
         case 'ArrowUp':
-            if (e.key === 'ArrowUp' && document.activeElement === scroller.value) return false;
             moveFocus(-1);
             return true;
         case 'x':

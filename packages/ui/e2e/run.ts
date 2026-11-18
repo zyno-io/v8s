@@ -754,6 +754,36 @@ async function main() {
         // Evidence and acknowledgements need the problem's string id as a view column (`problemId`); an agent without it is reported, not failed.
         let ackable = true;
 
+        await step(
+            'pods: Enter in the filter moves focus to the results, arrows move the row focus, Esc clears the filter and stays on the list',
+            async () => {
+                for (let i = 0; i < 3 && (await page.locator('dialog[open]').count()); i++) await page.keyboard.press('Escape');
+                await page
+                    .getByTestId('drawer-close')
+                    .click({ timeout: 2000 })
+                    .catch(() => {});
+                await page.getByRole('link', { name: /^Pods/ }).first().click();
+                await page.waitForURL(/\/pods/);
+                const rows = page.locator('.scroller .row:not(.sk)');
+                await rows.first().waitFor({ timeout: 30000 });
+                const prefix = (await rows.first().locator('.name').innerText()).slice(0, 3);
+                const filter = page.locator('#pods-filter');
+                await filter.fill(prefix);
+                await page.waitForFunction(() => document.querySelectorAll('.scroller .row:not(.sk)').length >= 3);
+                await filter.press('Enter');
+                assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'Enter moves focus to the list');
+                await rows.nth(0).waitFor();
+                assert.ok(await rows.nth(0).evaluate(el => el.classList.contains('focus')), 'first row has the row focus');
+                await page.keyboard.press('ArrowDown');
+                await page.keyboard.press('ArrowDown');
+                assert.ok(await rows.nth(2).evaluate(el => el.classList.contains('focus')), 'two ArrowDowns focus the third row');
+                await page.keyboard.press('Escape');
+                assert.equal(await filter.inputValue(), '');
+                assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'the list keeps focus after Esc');
+                assert.ok(await rows.nth(0).evaluate(el => el.classList.contains('focus')), 'row focus returns to the first row');
+            }
+        );
+
         await step('problems: page loads with family chips and live counts', async () => {
             // The Helm step leaves its dialog and drawer open.
             for (let i = 0; i < 3 && (await page.locator('dialog[open]').count()); i++) await page.keyboard.press('Escape');
@@ -769,6 +799,30 @@ async function main() {
             assert.match(await page.getByTestId('nav-problems-count').innerText(), /\d/);
             assert.match(await page.getByTestId('topbar-problems').innerText(), /\d/);
             await page.screenshot({ path: shot('problems') });
+        });
+
+        await step('problems: Enter in the search moves focus to the list, ArrowDown moves the row focus, Esc clears the search', async () => {
+            const name = (await page.getByTestId('problem-row').first().locator('.oname b').first().innerText()).trim();
+            const search = page.locator('#pods-filter');
+            await search.fill(name.slice(0, 3));
+            await page.getByTestId('problem-row').first().waitFor();
+            await search.press('Enter');
+            assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'Enter moves focus to the list');
+            const first = page.getByTestId('problem-row').first();
+            assert.ok(await first.evaluate(el => el.classList.contains('focus')), 'first row has the row focus');
+            const rowCount = await page.getByTestId('problem-row').count();
+            await page.keyboard.press('ArrowDown');
+            if (rowCount > 1)
+                assert.ok(
+                    await page
+                        .getByTestId('problem-row')
+                        .nth(1)
+                        .evaluate(el => el.classList.contains('focus')),
+                    'ArrowDown moves the row focus'
+                );
+            await page.keyboard.press('Escape');
+            assert.equal(await search.inputValue(), '');
+            assert.ok(await page.locator('.scroller').evaluate(el => el === document.activeElement), 'the list keeps focus after Esc');
         });
 
         await step('problems: group by class inserts header rows into the same list', async () => {

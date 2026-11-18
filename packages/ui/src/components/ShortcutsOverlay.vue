@@ -19,6 +19,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['s', 'open a shell in the focused pod'],
             ['e', 'edit the YAML of the focused or open object'],
             ['d', 'describe: open the focused object, Overview tab'],
+            ['Enter', 'in the filter: move focus to the results'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['[', 'pin or unpin the sidebar'],

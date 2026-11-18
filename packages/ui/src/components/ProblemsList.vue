@@ -17,7 +17,7 @@ import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
-import { setPageKeyHandler } from '@/lib/keys.ts';
+import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { setAcked, subjectRef } from '@/lib/problems-actions.ts';
 import { aggFlatIndexOfView, aggregateRows, buildAggFlat, groupClusters } from '@/lib/problems-aggregate.ts';
 import { buildLayout, flatIndexOfView, itemAt, pixelOffset, viewRangeOfFlat } from '@/lib/problems-groups.ts';
@@ -615,6 +615,38 @@ function moveFocus(delta: number) {
     }
 }
 
+// Enter in the search box (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+function focusList(first: boolean): boolean {
+    const el = scroller.value;
+    const m = model.value;
+    if (!el) return false;
+    if (!first && flatOfId(focusId.value) >= 0) {
+        el.focus({ preventScroll: true });
+        virtualizer.value.scrollToIndex(flatOfId(focusId.value), { align: 'auto' });
+        return true;
+    }
+    for (let j = 0; j < m.count; j++) {
+        const meta = describe(m, j);
+        if (meta.kind !== 'row' && meta.kind !== 'child') continue;
+        const id = idAtView(meta.vi);
+        if (!id) return false;
+        focusId.value = id;
+        el.focus({ preventScroll: true });
+        virtualizer.value.scrollToIndex(j, { align: 'auto' });
+        return true;
+    }
+    return false;
+}
+
+setListNav({
+    focusList,
+    owns: el => el instanceof Node && !!scroller.value?.contains(el),
+    filterText: () => store.text,
+    clearFilter: () => {
+        store.text = '';
+    }
+});
+
 function focusedItem(): Item | undefined {
     return slice.value.find(x => x.id === focusId.value && (x.kind === 'row' || x.kind === 'child'));
 }
@@ -623,12 +655,10 @@ setPageKeyHandler(e => {
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
-            if (e.key === 'ArrowDown' && document.activeElement === scroller.value) return false;
             moveFocus(1);
             return true;
         case 'k':
         case 'ArrowUp':
-            if (e.key === 'ArrowUp' && document.activeElement === scroller.value) return false;
             moveFocus(-1);
             return true;
         case 'Enter': {
@@ -664,6 +694,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
     clearInterval(timer);
     setPageKeyHandler(null);
+    setListNav(null);
 });
 
 // ---- empty states ----
