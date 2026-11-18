@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/zyno-io/v8s/agent/internal/disco"
 	"github.com/zyno-io/v8s/agent/internal/fake"
@@ -75,7 +76,7 @@ func TestSearchIPPodEndpointNode(t *testing.T) {
 		t.Fatalf("mode/query: %s %s", res.Mode, res.Query)
 	}
 	// exact groups come before the node's contains match
-	if res.Groups[len(res.Groups)-1].Kind != "Node" {
+	if last := res.Groups[len(res.Groups)-1]; last.Hits[0].Match != protocol.IPMatchContains {
 		t.Fatalf("group order: %+v", res.Groups)
 	}
 
@@ -294,5 +295,144 @@ func TestSearchAllNameAndIP(t *testing.T) {
 	// a wrong detection costs nothing: "1.2" is a prefix, and the name search finds nothing
 	if r := m.SearchAll(context.Background(), protocol.SearchParams{Text: "1.2", Limit: 5}); r.IP == nil || r.IP.Mode != protocol.IPQueryPrefix {
 		t.Fatalf("1.2: %+v", r.IP)
+	}
+}
+
+const (
+	gvrPools = "metallb.io/v1beta1/ipaddresspools"
+	gvrNADs  = "k8s.cni.cncf.io/v1/network-attachment-definitions"
+)
+
+// onDemandIPWatches lists the running watches of on-demand IP kinds.
+func onDemandIPWatches(m *Manager, cl string) map[string]WatchInfo {
+	out := map[string]WatchInfo{}
+	for _, w := range m.WatchInfo(cl) {
+		if mod := ingest.Lookup(w.GVR); mod != nil && mod.IPOnDemand {
+			out[w.GVR] = w
+		}
+	}
+	return out
+}
+
+func TestWeakIPQueryStartsNothing(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 200})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	for _, text := range []string{"10.", "1.2", "10.96", "fd00::"} {
+		if res := searchIP(t, m, text, 5); res.Mode != protocol.IPQueryPrefix {
+			t.Fatalf("%s: %+v", text, res)
+		}
+	}
+	if w := onDemandIPWatches(m, "prod-us"); len(w) != 0 {
+		t.Fatalf("a weak query started watches: %+v", w)
+	}
+}
+
+func TestStrongIPQueryTouchesSourcesAndTheyLinger(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 200})
+	m.Linger = 400 * time.Millisecond
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	res := searchIP(t, m, "192.168.100.10", 5)
+	// the MetalLB pool `public` (192.168.100.0/24) contains the address; the Service holds it
+	pool := group(res, "IPAddressPool")
+	if pool == nil || pool.Hits[0].Name != "public" || pool.Hits[0].Match != protocol.IPMatchContains || pool.Hits[0].Label != "Pool range" || pool.Hits[0].Value != "192.168.100.0/24" {
+		t.Fatalf("pool group: %+v (all: %+v)", pool, res.Groups)
+	}
+	if svc := group(res, "Service"); svc == nil || svc.Hits[0].Match != protocol.IPMatchExact {
+		t.Fatalf("service group: %+v", res.Groups)
+	}
+	if res.Groups[0].Kind != "Service" && res.Groups[0].Kind != "Ingress" {
+		t.Fatalf("exact matches first: %+v", res.Groups)
+	}
+	ws := onDemandIPWatches(m, "prod-us")
+	for _, gvr := range []string{gvrPools, gvrNADs, "networking.k8s.io/v1/servicecidrs"} {
+		if w, ok := ws[gvr]; !ok || w.Tier0 || w.Refs != 0 {
+			t.Fatalf("%s: %+v (%v)", gvr, w, ws)
+		}
+	}
+	// a later keystroke of the same query restarts the linger instead of starting anything new
+	time.Sleep(250 * time.Millisecond)
+	searchIP(t, m, "192.168.100.10", 5)
+	time.Sleep(250 * time.Millisecond)
+	if _, ok := onDemandIPWatches(m, "prod-us")[gvrPools]; !ok {
+		t.Fatal("a repeated query must reset the linger")
+	}
+	// and they stop after the linger
+	waitFor(t, "sources stop", func() bool { return len(onDemandIPWatches(m, "prod-us")) == 0 })
+}
+
+func TestNADHitAndOddEvenClusters(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 2, Pods: 200})
+	if _, err := m.Select([]string{"prod-us", "prod-eu"}); err != nil {
+		t.Fatal(err)
+	}
+	// 192.168.50.7 is in team-1/macvlan-conf's range (and may be a pod's secondary address)
+	res := searchIP(t, m, "192.168.50.7", 5)
+	nad := group(res, "NetworkAttachmentDefinition")
+	if nad == nil || nad.Total != 2 || nad.Hits[0].Name != "macvlan-conf" || nad.Hits[0].Namespace != "team-1" || nad.Hits[0].Match != protocol.IPMatchContains {
+		t.Fatalf("nad: %+v", res.Groups)
+	}
+	// Calico runs on the odd-index cluster only, Cilium on the even-index one
+	res = searchIP(t, m, "10.64.1.5", 5)
+	if g := group(res, "IPPool"); g == nil || g.Total != 1 || g.Hits[0].Cluster != "prod-eu" {
+		t.Fatalf("calico pool: %+v", res.Groups)
+	}
+	res = searchIP(t, m, "172.18.250.9", 5)
+	if g := group(res, "CiliumLoadBalancerIPPool"); g == nil || g.Total != 1 || g.Hits[0].Cluster != "prod-us" {
+		t.Fatalf("cilium lb pool: %+v", res.Groups)
+	}
+}
+
+func TestStrongQueryReportsBudgetSkips(t *testing.T) {
+	m := ipManager(t, fake.Config{Clusters: 1, Pods: 100})
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	m.Budget = len(m.WatchInfo("prod-us")) // exactly the baseline: nothing lingering can be evicted
+	res := searchIP(t, m, "192.168.100.10", 5)
+	budget := 0
+	for _, s := range res.Skipped {
+		if s.Reason == "budget" {
+			budget++
+		}
+	}
+	if budget == 0 || len(onDemandIPWatches(m, "prod-us")) != 0 {
+		t.Fatalf("skipped=%+v watches=%v", res.Skipped, onDemandIPWatches(m, "prod-us"))
+	}
+	if group(res, "Service") == nil {
+		t.Fatal("the baseline kinds are still searched")
+	}
+}
+
+func TestForbiddenOnDemandSourceIsSkipped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := view.NewEngine()
+	go eng.Run(ctx)
+	m := NewManager(ctx, denyKindSource{fake.NewSource(fake.Config{Clusters: 1, Pods: 100}), gvrPools}, eng, nil)
+	defer m.Close()
+	if _, err := m.Select([]string{"prod-us"}); err != nil {
+		t.Fatal(err)
+	}
+	readyAndDiscovered(t, m, "prod-us")
+	q, _ := ipx.Parse("192.168.100.10")
+	var res *protocol.IPSearch
+	waitFor(t, "forbidden pools skipped", func() bool {
+		res = m.SearchIP(ctx, q, 5)
+		for _, s := range res.Skipped {
+			if s.Kind == "IPAddressPool" && s.Reason == "forbidden" {
+				return true
+			}
+		}
+		return false
+	})
+	if group(res, "NetworkAttachmentDefinition") != nil && group(res, "IPAddressPool") != nil {
+		t.Fatalf("pools must be absent: %+v", res.Groups)
 	}
 }

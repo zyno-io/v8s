@@ -101,20 +101,25 @@ Type an address to find what holds it. The palette understands:
 
 Results come in one section per kind, `IP · Pods (3)`, with the matched value in monospace, the field it came from (`Pod IP`, `Cluster IP`, `LB ingress IP`, `Pod CIDR`), and the cluster when you have more than one connected. Exact matches come first, then objects whose CIDR or range contains the address (`contains`), objects inside your CIDR or range (`in range`), partial overlaps (`overlaps`) and prefix matches. A section shows a few hits; **Show all N** opens the full list filtered by that address. Name matches for the same text are listed after the IP hits.
 
-What is searched (no extra watches are started):
+What is searched. The first group of kinds is always watched already. The pools, ranges and CRD kinds from ServiceCIDRs down are read only while you search: a full address, CIDR or range (or a prefix with two complete parts such as `10.42.`) starts watching the ones your clusters have and keeps them for a few minutes. Typing a short prefix such as `10.` never starts anything. Kinds a cluster does not have are skipped.
 
-| Kind           | Addresses                                                                                                                                             |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pods           | pod IPs; secondary network IPs from Multus (`k8s.v1.cni.cncf.io/network-status`)                                                                      |
-| Services       | cluster IPs, external IPs, requested load balancer IPs (`loadBalancerIP` and the MetalLB, kube-vip and Cilium annotations), load balancer ingress IPs |
-| EndpointSlices | endpoint addresses (the hit shows the Service)                                                                                                        |
-| Nodes          | internal and external IPs, pod CIDRs, CNI node addresses (Calico, Flannel, Cilium, Kube-OVN annotations)                                              |
-| Ingresses      | load balancer ingress IPs                                                                                                                             |
-| Gateways       | `status.addresses` and `spec.addresses` that are IP addresses                                                                                         |
+| Kind                                          | Addresses                                                                                                                                             |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pods                                          | pod IPs; secondary network IPs from Multus (`k8s.v1.cni.cncf.io/network-status`)                                                                      |
+| Services                                      | cluster IPs, external IPs, requested load balancer IPs (`loadBalancerIP` and the MetalLB, kube-vip and Cilium annotations), load balancer ingress IPs |
+| EndpointSlices                                | endpoint addresses (the hit shows the Service)                                                                                                        |
+| Nodes                                         | internal and external IPs, pod CIDRs, CNI node addresses (Calico, Flannel, Cilium, Kube-OVN annotations)                                              |
+| Ingresses                                     | load balancer ingress IPs                                                                                                                             |
+| Gateways                                      | `status.addresses` and `spec.addresses` that are IP addresses                                                                                         |
+| ServiceCIDRs                                  | `spec.cidrs`                                                                                                                                          |
+| MetalLB IPAddressPools, BGPPeers              | pool addresses (CIDRs and ranges, IPv4 and IPv6); the peer address and source address                                                                 |
+| Multus NetworkAttachmentDefinitions           | the IPAM ranges, static addresses and gateways of `spec.config` (host-local, static, whereabouts, conflists)                                          |
+| Cilium LoadBalancerIPPools, PodIPPools, Nodes | pool blocks and CIDRs; a node's Cilium internal IP, pod CIDRs and allocated pool CIDRs                                                                |
+| Calico IPPools                                | `spec.cidr`                                                                                                                                           |
 
 A node's own address also finds its pods only when they run on the host network; the node row stands in for the host IP.
 
-The same text works in list filters. On the Pods, Services, EndpointSlices, Nodes and Ingresses pages, "Filter by name or IP" matches names or addresses, and `:po 10.42.` opens Pods filtered that way. `:ip 10.0.0.5` opens the palette with the search filled in. Pods also have an **IP** column that sorts numerically. Right after you connect, a first search may say it is still loading some sources and refresh itself within a few seconds.
+The same text works in list filters. On the Pods, Services, EndpointSlices, Nodes and Ingresses pages, "Filter by name or IP" matches names or addresses, and `:po 10.42.` opens Pods filtered that way. `:ip 10.0.0.5` opens the palette with the search filled in. Pods also have an **IP** column that sorts numerically. The first strong search on a cluster may say it is still loading some sources and refresh itself within a few seconds; if the cluster is at its watch limit it says which sources it could not read.
 
 ## Starred types and bookmarks
 

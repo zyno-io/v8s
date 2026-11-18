@@ -1,0 +1,22 @@
+{
+    "apiVersion": "cilium.io/v2",
+    "kind": "CiliumLoadBalancerIPPool",
+    "metadata": {
+        "name": "lb",
+        "uid": "u-lb",
+        "resourceVersion": "7",
+        "creationTimestamp": "2026-01-01T00:00:00Z"
+    },
+    "spec": {
+        "blocks": [
+            {
+                "cidr": "172.18.250.0/24"
+            },
+            {
+                "start": "172.18.251.10",
+                "stop": "172.18.251.20"
+            }
+        ],
+        "disabled": true
+    }
+}

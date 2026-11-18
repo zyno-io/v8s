@@ -1,0 +1,17 @@
+{
+    "apiVersion": "metallb.io/v1beta2",
+    "kind": "BGPPeer",
+    "metadata": {
+        "name": "tor-a",
+        "uid": "u-tor-a",
+        "resourceVersion": "7",
+        "creationTimestamp": "2026-01-01T00:00:00Z",
+        "namespace": "metallb-system"
+    },
+    "spec": {
+        "peerAddress": "192.168.0.1",
+        "sourceAddress": "192.168.0.2",
+        "peerASN": 64512,
+        "myASN": 64513
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "cniVersion": "1.0.0",
+    "name": "chain",
+    "plugins": [
+        {
+            "type": "macvlan",
+            "ipam": {
+                "type": "host-local",
+                "subnet": "192.168.55.0/24"
+            }
+        },
+        {
+            "type": "tuning"
+        }
+    ]
+}

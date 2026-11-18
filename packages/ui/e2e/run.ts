@@ -298,6 +298,22 @@ async function main() {
             await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 10000 });
         });
 
+        await step('IP search: an address held by a Service and contained in a MetalLB pool and a NAD range', async () => {
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            await openPalette('192.168.100.10');
+            // the on-demand sources start with this query; the palette re-asks while they load
+            const svc = page.getByTestId('palette-ip-hit').filter({ hasText: 'ingress-nginx-controller' }).first();
+            await svc.waitFor({ timeout: 15000 });
+            const pool = page.getByTestId('palette-ip-hit').filter({ hasText: 'public' }).filter({ hasText: 'contains' }).first();
+            await pool.waitFor({ timeout: 15000 });
+            assert.match(await pool.innerText(), /192\.168\.100\.0\/24/);
+            const input = page.getByTestId('palette-input');
+            await input.fill('192.168.50.7');
+            await page.getByTestId('palette-ip-hit').filter({ hasText: 'macvlan-conf' }).first().waitFor({ timeout: 15000 });
+            await page.keyboard.press('Escape');
+        });
+
         // ---- T2: logs, shell, drain, Flux, Helm ----
         const openFromTable = async (command: string, urlPart: string, name: string | RegExp, filter?: string) => {
             await page.keyboard.press(':');

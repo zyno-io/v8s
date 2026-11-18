@@ -1,0 +1,13 @@
+{
+    "apiVersion": "networking.k8s.io/v1",
+    "kind": "ServiceCIDR",
+    "metadata": {
+        "name": "kubernetes",
+        "uid": "u-kubernetes",
+        "resourceVersion": "7",
+        "creationTimestamp": "2026-01-01T00:00:00Z"
+    },
+    "spec": {
+        "cidrs": ["10.96.0.0/12", "2001:db8:42::/112"]
+    }
+}

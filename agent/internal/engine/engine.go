@@ -20,6 +20,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	_ "github.com/zyno-io/v8s/agent/internal/kubescape"
 	_ "github.com/zyno-io/v8s/agent/internal/kyverno"
+	_ "github.com/zyno-io/v8s/agent/internal/netkinds"
 	"github.com/zyno-io/v8s/agent/internal/ops"
 	_ "github.com/zyno-io/v8s/agent/internal/platform"
 	"github.com/zyno-io/v8s/agent/internal/problems"

@@ -1,0 +1,33 @@
+{
+    "apiVersion": "cilium.io/v2",
+    "kind": "CiliumNode",
+    "metadata": {
+        "name": "node-1",
+        "uid": "u-node-1",
+        "resourceVersion": "7",
+        "creationTimestamp": "2026-01-01T00:00:00Z"
+    },
+    "spec": {
+        "addresses": [
+            {
+                "type": "InternalIP",
+                "ip": "10.0.0.11"
+            },
+            {
+                "type": "CiliumInternalIP",
+                "ip": "10.64.2.1"
+            }
+        ],
+        "ipam": {
+            "podCIDRs": ["10.64.2.0/24"],
+            "pools": {
+                "allocated": [
+                    {
+                        "pool": "p",
+                        "cidrs": ["10.100.5.0/24"]
+                    }
+                ]
+            }
+        }
+    }
+}

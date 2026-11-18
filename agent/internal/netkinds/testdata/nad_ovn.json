@@ -1,0 +1,4 @@
+{
+    "type": "ovn-k8s-cni-overlay",
+    "subnets": "10.200.0.0/16,fd00:200::/64"
+}
