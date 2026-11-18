@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import SideNav from '@/components/SideNav.vue';
@@ -37,7 +37,12 @@ function panelEnter() {
 function panelLeave(e: PointerEvent) {
     if (sidebar.pinned || dragging || e.pointerType === 'touch') return;
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => (sidebar.open = false), CLOSE_DELAY);
+    closeTimer = setTimeout(() => {
+        // Someone typing in the panel (bookmark name) keeps it open.
+        const a = document.activeElement;
+        if (a && panel.value?.contains(a) && a.matches('input, textarea, select')) return;
+        sidebar.open = false;
+    }, CLOSE_DELAY);
 }
 function panelClick(e: MouseEvent) {
     if (!sidebar.pinned && e.target instanceof Element && e.target.closest('a')) sidebar.open = false;
@@ -49,6 +54,7 @@ function outside(e: PointerEvent) {
 }
 onMounted(() => document.addEventListener('pointerdown', outside, true));
 onBeforeUnmount(() => {
+    cancelDrag?.(true);
     document.removeEventListener('pointerdown', outside, true);
     clearTimers();
 });
@@ -58,12 +64,34 @@ watch(
         if (!sidebar.pinned) sidebar.open = false;
     }
 );
+const toggleEl = () => document.querySelector<HTMLElement>('[data-sidebar-toggle]');
+// Sync, so we can see whether focus was inside the panel before it is removed.
 watch(
     () => sidebar.open,
     open => {
-        if (!open) clearTimers();
-    }
+        if (open) {
+            if (sidebar.focusOnOpen) void nextTick(() => panel.value?.querySelector<HTMLElement>('[data-testid=sidebar-pin]')?.focus());
+            sidebar.focusOnOpen = false;
+            return;
+        }
+        clearTimers();
+        const had = !!panel.value && panel.value.contains(document.activeElement);
+        if (had) void nextTick(() => toggleEl()?.focus());
+    },
+    { flush: 'sync' }
 );
+watch(
+    () => sidebar.pinned || sidebar.open,
+    shown => {
+        if (!shown) cancelDrag?.(true);
+    },
+    { flush: 'sync' }
+);
+function togglePin() {
+    const wasPinned = sidebar.pinned;
+    sidebar.togglePinned();
+    if (wasPinned) void nextTick(() => toggleEl()?.focus());
+}
 
 // ---- resize ----
 // The width is a CSS variable on the host: a drag writes it straight to the element once per frame (no Vue re-render, no store churn);
@@ -71,6 +99,8 @@ watch(
 let dragging = false;
 let raf = 0;
 let pending = 0;
+/** Ends the drag in progress (if any): commit the dragged width, or restore the starting one. */
+let cancelDrag: ((commit: boolean) => void) | null = null;
 function paint(w: number) {
     pending = w;
     if (raf) return;
@@ -81,11 +111,15 @@ function paint(w: number) {
     });
 }
 function startDrag(e: PointerEvent) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || dragging) return;
     const el = handle.value;
     if (!el) return;
     e.preventDefault();
-    el.setPointerCapture(e.pointerId);
+    try {
+        el.setPointerCapture(e.pointerId);
+    } catch {
+        // the window listeners below still follow the pointer
+    }
     dragging = true;
     clearTimeout(closeTimer);
     const startX = e.clientX;
@@ -99,18 +133,36 @@ function startDrag(e: PointerEvent) {
         w = clampSidebarWidth(startW + ev.clientX - startX);
         paint(w);
     };
-    const end = () => {
-        el.removeEventListener('pointermove', move);
-        el.removeEventListener('pointerup', end);
-        el.removeEventListener('pointercancel', end);
+    const up = () => finish(true);
+    const key = (ev: KeyboardEvent) => {
+        if (ev.key !== 'Escape') return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(false);
+    };
+    function finish(commit: boolean) {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        window.removeEventListener('keydown', key, true);
+        cancelDrag = null;
         dragging = false;
         document.body.style.cursor = prevCursor;
         document.body.style.userSelect = prevSelect;
-        sidebar.commitWidth(w);
-    };
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        if (commit) {
+            if (w !== startW) sidebar.commitWidth(w);
+        } else {
+            host.value?.style.setProperty('--sidebar-w', `${startW}px`);
+            handle.value?.setAttribute('aria-valuenow', String(startW));
+        }
+    }
+    cancelDrag = finish;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    window.addEventListener('keydown', key, true);
 }
 function resizeKey(e: KeyboardEvent) {
     const w = sidebar.width;
@@ -165,10 +217,10 @@ const resetWidth = () => sidebar.commitWidth(SIDEBAR_DEFAULT);
                         :class="{ on: sidebar.pinned }"
                         type="button"
                         :aria-pressed="sidebar.pinned"
-                        :aria-label="sidebar.pinned ? 'Unpin sidebar' : 'Pin sidebar'"
-                        :title="sidebar.pinned ? 'Unpin sidebar ([)' : 'Pin sidebar ([)'"
+                        aria-label="Pin sidebar"
+                        title="Pin sidebar ([)"
                         data-testid="sidebar-pin"
-                        @click="sidebar.togglePinned()"
+                        @click="togglePin()"
                     >
                         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                             <rect x="2" y="3" width="12" height="10" rx="2" />
@@ -203,13 +255,19 @@ const resetWidth = () => sidebar.commitWidth(SIDEBAR_DEFAULT);
 .sidebar-host {
     position: relative;
     flex: none;
-    z-index: 30;
 }
+/* Pinned it sits beside the content (z 1 only so the resizer overhang is grabbable); collapsed, the overlay floats above it. */
 .sidebar-host.pinned {
     width: var(--sidebar-w);
+    z-index: 1;
 }
 .sidebar-host.collapsed {
     width: 0;
+    z-index: 30;
+}
+.panel > :deep(.side) {
+    flex: 1 1 0;
+    min-height: 0;
 }
 .edge {
     position: absolute;

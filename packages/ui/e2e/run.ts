@@ -554,6 +554,13 @@ async function main() {
                 .evaluate(el => el.getBoundingClientRect().height);
             assert.equal(Math.round(h), 72, 'phone cards are 72px');
             await p.screenshot({ path: shot('phone-pods') });
+            // The More sheet lists the resource types (its nav must not collapse to nothing).
+            await p.getByRole('navigation', { name: 'Main' }).getByText('More', { exact: true }).click();
+            const sheetLink = p.getByTestId('bottom-sheet').getByRole('link', { name: /^Deployments/ });
+            await sheetLink.waitFor();
+            assert.ok(((await sheetLink.boundingBox())?.height ?? 0) > 20, 'the More sheet lists resource types');
+            await p.keyboard.press('Escape');
+            await p.getByTestId('bottom-sheet').waitFor({ state: 'hidden' });
             await p.locator('.pcard:not(.sk)').first().click();
             const drawer = p.getByTestId('drawer');
             await drawer.waitFor();
@@ -928,6 +935,23 @@ async function main() {
             await page.keyboard.press('[');
             await panel.waitFor();
             assert.equal(await width('.content'), pinnedContent);
+
+            // A drawer opened beside the pinned sidebar is on top of it.
+            await page.mouse.move(900, 400);
+            await page
+                .locator('.scroller .row:not(.sk)')
+                .first()
+                .click({ position: { x: 300, y: 10 } });
+            const drawer = page.getByTestId('drawer');
+            await drawer.waitFor();
+            const db = (await drawer.boundingBox())!;
+            const inside = await page.evaluate(
+                ([x, y]) => !!document.elementFromPoint(x!, y!)?.closest('[data-testid=drawer]'),
+                [db.x + 3, db.y + 200]
+            );
+            assert.ok(inside, 'the drawer is above the pinned sidebar near its left edge');
+            await page.keyboard.press('Escape');
+            await drawer.waitFor({ state: 'hidden' });
         });
 
         assert.deepEqual(errors, [], 'no console or page errors');

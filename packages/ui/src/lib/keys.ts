@@ -93,7 +93,8 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         }
         if (e.key === '[') {
             e.preventDefault();
-            sidebar.togglePinned();
+            // Auto-repeat would flip it back and forth; narrow screens have no sidebar to pin.
+            if (!e.repeat && !matchMedia('(max-width: 899.98px)').matches) sidebar.togglePinned();
             return;
         }
         if (e.key === '?') {

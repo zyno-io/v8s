@@ -18,6 +18,12 @@ export const useSidebarStore = defineStore('sidebar', () => {
     const width = computed(() => draft.value ?? prefs.value.width);
     /** The collapsed sidebar is showing as an overlay. Meaningless while pinned. */
     const open = ref(false);
+    /** The overlay was opened by the toggle button, so focus should move into it. */
+    const focusOnOpen = ref(false);
+    function toggleOverlay() {
+        focusOnOpen.value = !open.value;
+        open.value = !open.value;
+    }
 
     watch([pinned, width], ([p, w]) => {
         if (settings.loaded) writeSidebarCache({ pinned: p, width: w });
@@ -37,6 +43,10 @@ export const useSidebarStore = defineStore('sidebar', () => {
     function commitWidth(w: number) {
         clearTimeout(timer);
         const c = clampSidebarWidth(w);
+        if (c === prefs.value.width) {
+            draft.value = null; // unchanged: nothing to send
+            return;
+        }
         draft.value = c;
         void save({ width: c }).finally(() => {
             if (draft.value === c) draft.value = null;
@@ -49,5 +59,5 @@ export const useSidebarStore = defineStore('sidebar', () => {
         timer = setTimeout(() => commitWidth(draft.value ?? w), 300);
     }
 
-    return { pinned, width, open, setPinned, togglePinned, commitWidth, nudgeWidth };
+    return { pinned, width, open, focusOnOpen, toggleOverlay, setPinned, togglePinned, commitWidth, nudgeWidth };
 });

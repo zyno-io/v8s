@@ -47,7 +47,7 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
             title="Show sidebar"
             data-sidebar-toggle
             data-testid="sidebar-toggle"
-            @click="sidebar.open = !sidebar.open"
+            @click="sidebar.toggleOverlay()"
         >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <rect x="2" y="3" width="12" height="10" rx="2" />
