@@ -1,0 +1,70 @@
+name: E2E (kind)
+
+# The agent's end-to-end tests against real clusters (agent/test/e2e, build tag e2e). Too slow and
+# network-heavy for every PR (the cluster is seeded with Flux, Helm, Kyverno and Trivy), so nightly and on demand.
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-kind
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.31.0
+  FLUX_VERSION: 2.7.3
+
+jobs:
+  cluster:
+    name: Kind cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Install kind and flux
+        run: .github/scripts/install-e2e-tools.sh
+      - name: Create and seed the cluster
+        run: test/e2e/cluster.sh up
+      - name: E2E tests
+        working-directory: agent
+        env:
+          V8S_E2E_KUBECONFIG: ${{ github.workspace }}/test/e2e/out/kubeconfig
+        run: go test -tags e2e -count=1 -v ./test/e2e/
+      - name: Cluster state on failure
+        if: failure()
+        env:
+          KUBECONFIG: ${{ github.workspace }}/test/e2e/out/kubeconfig
+        run: kubectl get pods -A -o wide || true
+
+  hubble:
+    name: Cilium + Hubble cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: Install kind and flux
+        run: .github/scripts/install-e2e-tools.sh
+      - name: Create the Cilium cluster
+        run: test/e2e/cluster.sh cilium-up
+      - name: Hubble e2e test
+        working-directory: agent
+        env:
+          V8S_E2E_HUBBLE_KUBECONFIG: ${{ github.workspace }}/test/e2e/out/kubeconfig
+        run: go test -tags e2e -count=1 -v -run TestHubbleOnCiliumCluster ./test/e2e/
+      - name: Cluster state on failure
+        if: failure()
+        env:
+          KUBECONFIG: ${{ github.workspace }}/test/e2e/out/kubeconfig
+        run: kubectl get pods -A -o wide || true

@@ -11,6 +11,8 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/cluster"
 	"github.com/zyno-io/v8s/agent/internal/ipx"
 	"github.com/zyno-io/v8s/agent/internal/kube"
+	// The IP-only CRD modules register at init; the agent links them through internal/engine.
+	_ "github.com/zyno-io/v8s/agent/internal/netkinds"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
@@ -100,12 +102,24 @@ func TestIPSearch(t *testing.T) {
 		"192.168.77.9":   {"NetworkAttachmentDefinition", "e2e-macvlan"},
 	} {
 		var g *protocol.IPGroup
-		waitFor(t, "IP search "+addr, 30*time.Second, func() bool {
+		var last *protocol.IPSearch
+		deadline := time.Now().Add(30 * time.Second)
+		for {
 			q, _ := ipx.Parse(addr)
-			res := m.SearchIP(ctx, q, 5)
-			g = find(res, want.kind)
-			return len(res.Pending) == 0 && g != nil
-		})
+			last = m.SearchIP(ctx, q, 5)
+			g = find(last, want.kind)
+			if len(last.Pending) == 0 && g != nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				kinds := []string{}
+				for _, x := range last.Groups {
+					kinds = append(kinds, x.Kind)
+				}
+				t.Fatalf("IP search %s: no %s group after 30 s; groups %v, pending %+v, skipped %+v", addr, want.kind, kinds, last.Pending, last.Skipped)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 		if g.Hits[0].Name != want.name || g.Hits[0].Match != protocol.IPMatchContains {
 			t.Fatalf("%s: %+v", addr, g.Hits)
 		}
