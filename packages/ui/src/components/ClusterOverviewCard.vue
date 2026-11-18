@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { ViewHandle } from '@v8s/client';
 
+import { CapacityGVR } from '@v8s/client';
 import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
+import { capacityRow, capacityView } from '@/lib/capacity.ts';
 import {
     countQuery,
     healthKinds,
@@ -20,6 +22,7 @@ import {
 import { clusterColor, phaseColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { gvrPath } from '@/lib/route.ts';
+import { usePageVisible } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
 import { useTableStore } from '@/stores/table.ts';
@@ -50,6 +53,24 @@ const pods = {
     pending: sub(countQuery(props.id, PODS_GVR, [2])),
     completed: sub(countQuery(props.id, PODS_GVR, [4]))
 };
+
+// The capacity row (CPU and memory totals of the whole cluster) is computed by the agent. `usage` drives its node-metrics poll, so
+// it is on only while this page is visible (a tab hidden for 30 s stops polling); requests and limits need no metrics-server.
+const pageVisible = usePageVisible(30_000);
+const capacity = agent.subscribeView(
+    { clusters: [props.id], gvr: CapacityGVR, namespaces: [], text: '', filters: [], sort: [] },
+    { offset: 0, limit: 1 },
+    { usage: pageVisible.value }
+);
+open.push(capacity);
+watch(pageVisible, v => capacity.update({ usage: v }));
+const capRow = computed(() => {
+    void capacity.version.value;
+    const id = capacity.ids[0];
+    return capacityRow(capacity.columns.value, id === undefined ? undefined : capacity.rows.get(id));
+});
+const cpuCap = computed(() => capacityView('cpu', capRow.value, state.value?.metrics));
+const memCap = computed(() => capacityView('mem', capRow.value, state.value?.metrics));
 const problems = Object.fromEntries(SEVERITIES.map(s => [s, sub(problemsQuery(props.id, s))])) as Record<Severity, ViewHandle>;
 
 interface Health {
@@ -115,6 +136,11 @@ const detected = computed(() => {
     if (health.value.helmSecrets) out.push('Helm');
     return out;
 });
+
+const capCells = computed(() => [
+    { key: 'cpu', label: 'CPU', v: cpuCap.value },
+    { key: 'mem', label: 'Memory', v: memCap.value }
+]);
 
 function goPods(tones: number[]) {
     table.clearFilters(PODS_GVR);
@@ -207,6 +233,28 @@ function goHealth(h: Health, tones: number[]) {
                 </div>
             </div>
         </div>
+        <div class="grid cap" :data-testid="`capacity-${id}`">
+            <div v-for="r in capCells" :key="r.key" class="cell" :title="r.v.title" :data-testid="`cap-${r.key}`">
+                <div class="lbl">{{ r.label }}</div>
+                <div class="big" :class="r.v.tone">
+                    {{ r.v.pct }}<template v-if="r.v.ok">%</template
+                    ><span v-if="r.v.ok" class="muted use">{{ r.v.usage ? 'used' : 'requested' }}</span>
+                </div>
+                <div
+                    class="bar"
+                    role="img"
+                    :aria-label="r.v.ok ? `${r.label} ${r.v.pct}% ${r.v.usage ? 'used' : 'requested'}` : `${r.label} unknown`"
+                >
+                    <i v-if="r.v.ok" :class="r.v.tone" :style="{ width: r.v.fill + '%' }"></i>
+                    <b v-if="r.v.ok" :style="{ left: r.v.tick + '%' }"></b>
+                </div>
+                <template v-if="r.v.ok">
+                    <div class="sub">{{ r.v.share }}</div>
+                    <div class="sub muted">{{ r.v.amount }}</div>
+                    <div v-if="r.v.note" class="sub muted">{{ r.v.note }}</div>
+                </template>
+            </div>
+        </div>
     </section>
 </template>
 
@@ -292,6 +340,54 @@ h2 {
     display: flex;
     gap: 8px;
     align-items: center;
+}
+.cap {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    border-top: 1px solid var(--border);
+}
+.cap .big {
+    font-variant-numeric: tabular-nums;
+}
+.cap .big.warning {
+    color: var(--warning);
+}
+.cap .big.danger {
+    color: var(--danger);
+}
+.cap .use {
+    margin-left: 6px;
+}
+.bar {
+    position: relative;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    margin: 2px 0 4px;
+}
+.bar i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 3px;
+    background: var(--text2);
+}
+.bar i.warning {
+    background: var(--warning);
+}
+.bar i.danger {
+    background: var(--danger);
+}
+.bar b {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--text);
+}
+.sub {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
 }
 .none {
     margin: 0;

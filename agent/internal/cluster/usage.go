@@ -24,7 +24,9 @@ const (
 	BigPods                 = 10_000
 	maxScopeNamespaces      = 5 // more namespaces than this is one cluster-wide list
 
-	metricsPodsGVR = "metrics.k8s.io/v1beta1/pods"
+	metricsPodsGVR  = "metrics.k8s.io/v1beta1/pods"
+	metricsNodesGVR = "metrics.k8s.io/v1beta1/nodes"
+	nodesGVR        = "v1/nodes"
 )
 
 // UsageDemand is one view's request for usage: while open (and usage is true) the clusters it covers poll
@@ -80,8 +82,8 @@ func (m *Manager) UsageDemands() int {
 type usageWant struct {
 	pods     bool
 	podScope []string // namespaces; nil with pods = all
-	nodes    bool     // phase 1b: the nodes poll
-	capacity bool     // phase 1c: the Overview capacity aggregate
+	nodes    bool     // the node metrics poll (a nodes view with usage, or a capacity card)
+	capacity bool     // the Overview capacity aggregate
 }
 
 func (m *Manager) wantFor(id string) usageWant {
@@ -91,7 +93,16 @@ func (m *Manager) wantFor(id string) usageWant {
 	all := false
 	set := map[string]struct{}{}
 	for d := range m.demands {
-		if !d.usage || (len(d.clusters) > 0 && !slices.Contains(d.clusters, id)) {
+		if len(d.clusters) > 0 && !slices.Contains(d.clusters, id) {
+			continue
+		}
+		if d.gvr == protocol.CapacityGVR {
+			// the capacity row (requests, limits, allocatable) is computed for any open card; only usage needs node metrics
+			w.capacity = true
+			w.nodes = w.nodes || d.usage
+			continue
+		}
+		if !d.usage {
 			continue
 		}
 		switch d.gvr {
@@ -103,10 +114,8 @@ func (m *Manager) wantFor(id string) usageWant {
 			for _, n := range d.namespaces {
 				set[n] = struct{}{}
 			}
-		case "v1/nodes":
+		case nodesGVR:
 			w.nodes = true
-		case protocol.CapacityGVR:
-			w.capacity, w.nodes = true, true
 		}
 	}
 	if w.pods && !all && len(set) <= maxScopeNamespaces {
@@ -161,6 +170,18 @@ type pollState struct {
 	msg      string
 }
 
+// capState is the throttled Overview capacity aggregate (docs/performance.md): a full scan of the pod and node
+// stores at most every UsageMinGap, only while a capacity card is open and only when something changed.
+type capState struct {
+	unwanted        time.Time
+	at              time.Time // last scan
+	podSeq, nodeSeq uint64    // Store.Seq at the last scan
+	nodeSnap        *usage.Snap
+	last            *ingest.Row // the published row (nil: none)
+	rv              uint64
+	buf             []store.Item
+}
+
 // usageState is one runner's usage poller. Its loop goroutine is on r.wg; step runs synchronously in it, so at
 // most one poll is in flight per cluster.
 type usageState struct {
@@ -170,9 +191,11 @@ type usageState struct {
 	want usageWant
 	kick chan struct{}
 
-	pods, nodes pollState // nodes: phase 1b (the node poller); nothing polls it yet
-	seq         uint32    // usage.VerBase and only increasing (see usage.VerBase)
+	pods, nodes pollState
+	seq         uint32 // usage.VerBase and only increasing (see usage.VerBase)
 	buf         []store.Item
+	cap         capState
+	repub       bool // republish snapshots to the engine on the next step
 }
 
 func newUsageState(r *runner) *usageState {
@@ -193,34 +216,75 @@ func (u *usageState) setWant(w usageWant) {
 	u.mu.Lock()
 	old := u.want
 	u.want = w
+	// demand restarting from nothing retries a refused list at once
 	if w.pods && !old.pods && u.pods.avail == protocol.MetricsForbidden {
-		u.pods.next = time.Time{} // demand restarting from nothing retries a refused list at once
+		u.pods.next = time.Time{}
+	}
+	if w.nodes && !old.nodes && u.nodes.avail == protocol.MetricsForbidden {
+		u.nodes.next = time.Time{}
 	}
 	u.mu.Unlock()
 	u.kickNow()
 }
 
-// avail returns the pods availability and message for ClusterState.
+// avail returns the availability and message for ClusterState. Sources something currently wants speak first (a
+// nodes page must not show the pods poll's stale verdict, nor the reverse); among them the first non-ok verdict wins,
+// then ok, then unknown. With both or neither wanted, both are consulted (discovery judges them without a demand).
 func (u *usageState) avail() (protocol.MetricsAvail, string) {
 	if u == nil {
 		return "", ""
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.pods.avail, u.pods.msg
+	c := []*pollState{&u.pods, &u.nodes}
+	switch {
+	case u.want.pods && !u.want.nodes:
+		c = c[:1]
+	case u.want.nodes && !u.want.pods:
+		c = c[1:]
+	}
+	var ok *pollState
+	for _, p := range c {
+		if p.avail == protocol.MetricsOK {
+			ok = p
+		} else if p.avail != "" {
+			return p.avail, p.msg
+		}
+	}
+	if ok != nil {
+		return ok.avail, ok.msg
+	}
+	return "", ""
 }
 
-// republish hands the current pods snapshot to the engine again: a reselect within the deselect grace keeps
-// the store but detach cleared the engine's copy. Never called with r.mu held (invariant 5).
+// republish asks the loop to hand the current snapshots to the engine again: a reselect within the deselect grace
+// keeps the stores but detach cleared the engine's copies. It runs on the loop, the only goroutine that publishes or
+// drops a snapshot, so it cannot interleave with a poll and leave an older snapshot behind. Never called with r.mu
+// held (invariant 5).
 func (u *usageState) republish() {
 	if u == nil {
 		return
 	}
 	u.mu.Lock()
-	sn := u.pods.snap
+	u.repub = true
 	u.mu.Unlock()
-	if sn != nil {
-		u.r.m.eng.SetUsage(u.r.id, ingest.PodsGVR, sn)
+	u.kickNow()
+}
+
+func (u *usageState) republishIfDue() {
+	u.mu.Lock()
+	due := u.repub
+	u.repub = false
+	ps, ns := u.pods.snap, u.nodes.snap
+	u.mu.Unlock()
+	if !due {
+		return
+	}
+	if ps != nil {
+		u.r.m.eng.SetUsage(u.r.id, ingest.PodsGVR, ps)
+	}
+	if ns != nil {
+		u.r.m.eng.SetUsage(u.r.id, nodesGVR, ns)
 	}
 }
 
@@ -243,41 +307,66 @@ func (u *usageState) loop() {
 
 const idleWait = time.Hour // nothing to do until kicked
 
+// source is what one poll source (pods or nodes) needs from a step.
+type source struct {
+	ps     *pollState
+	gvr    string // the kind whose rows the snapshot joins
+	disc   string // the metrics.k8s.io discovery key
+	wanted bool
+	scope  []string // pods: namespaces, nil = all
+	nodes  bool
+}
+
 // step does whatever is due and returns how long to sleep before the next look.
 func (u *usageState) step(now time.Time) time.Duration {
-	r, m := u.r, u.r.m
+	r := u.r
 	u.mu.Lock()
 	want := u.want
 	u.mu.Unlock()
 
-	p := &u.pods // only the loop goroutine writes the poll state; ClusterState reads under mu
+	u.republishIfDue()
+
+	// Availability is judged from discovery whether or not anything wants usage, so the UI learns that
+	// metrics-server is missing (and later that it appeared) without a poll.
+	d := r.disc.Load()
+	mr, _ := any(r.be).(kube.MetricsReader)
+	wake := idleWait
+	for _, sp := range []*source{
+		{ps: &u.pods, gvr: ingest.PodsGVR, disc: metricsPodsGVR, wanted: want.pods, scope: want.podScope},
+		{ps: &u.nodes, gvr: nodesGVR, disc: metricsNodesGVR, wanted: want.nodes, nodes: true},
+	} {
+		wake = min(wake, u.stepSource(now, sp, d, mr))
+	}
+	// After the sources: the first capacity row must not be published before the first node poll, or the card flips from
+	// "requested" to "used" and briefly claims no node reports metrics.
+	return min(wake, u.stepCapacity(time.Now(), want))
+}
+
+func (u *usageState) stepSource(now time.Time, sp *source, d *discState, mr kube.MetricsReader) time.Duration {
+	m, p := u.r.m, sp.ps // only the loop goroutine writes the poll state; ClusterState reads under mu
 	wake := idleWait
 	soonest := func(d time.Duration) { wake = min(wake, max(d, time.Millisecond)) }
 
-	// 1. availability, from discovery. It is judged whether or not anything wants usage, so the UI learns that
-	// metrics-server is missing (and later that it appeared) without a poll.
-	d := r.disc.Load()
 	if d == nil {
-		if !want.pods {
-			return u.idle(now, soonest, &wake)
+		if !sp.wanted {
+			return u.idle(now, sp)
 		}
 		return idleWait // discoverLoop kicks once it has the list
 	}
-	res := d.byG[metricsPodsGVR]
-	mr, hasReader := any(r.be).(kube.MetricsReader)
+	res := d.byG[sp.disc]
 	switch {
-	case res == nil && hasReader && metricsListed(d):
+	case res == nil && mr != nil && metricsListed(d):
 		// the group-version is listed but nothing answers: installed and down, not absent
-		u.setDiscAvail(protocol.MetricsUnavailable, "metrics-server is not responding")
-		u.dropPods()
+		u.setDiscAvail(sp, protocol.MetricsUnavailable, "metrics-server is not responding")
+		u.dropSnap(sp)
 		return idleWait
-	case res == nil || !hasReader:
-		u.setDiscAvail(protocol.MetricsAbsent, "metrics-server is not installed (no metrics.k8s.io in discovery)")
-		u.dropPods()
+	case res == nil || mr == nil:
+		u.setDiscAvail(sp, protocol.MetricsAbsent, "metrics-server is not installed (no metrics.k8s.io in discovery)")
+		u.dropSnap(sp)
 		return idleWait // a discovery refresh kicks
 	case res.Stale:
-		u.setDiscAvail(protocol.MetricsUnavailable, "the metrics API is registered but its server is not answering")
-		u.dropPods()
+		u.setDiscAvail(sp, protocol.MetricsUnavailable, "the metrics API is registered but its server is not answering")
+		u.dropSnap(sp)
 		return idleWait
 	default:
 		u.mu.Lock()
@@ -285,26 +374,29 @@ func (u *usageState) step(now time.Time) time.Duration {
 		p.fromDisc = false
 		u.mu.Unlock()
 		if was {
-			u.setAvail("", "") // it appeared (or recovered): unknown until a poll says otherwise
+			u.setAvail(p, "", "") // it appeared (or recovered): unknown until a poll says otherwise
 		}
 	}
 
-	if !want.pods {
-		return u.idle(now, soonest, &wake)
+	if !sp.wanted {
+		return u.idle(now, sp)
 	}
 	u.mu.Lock()
 	p.unwanted = time.Time{}
 	u.mu.Unlock()
 
-	interval := u.interval(want.podScope)
+	interval := m.UsageInterval
+	if !sp.nodes {
+		interval = u.interval(sp.scope)
+	}
 	// stale data is not kept past twice the interval while polls fail
 	if p.snap != nil && p.fails > 0 && now.Sub(p.at) > 2*interval {
-		u.dropPods()
+		u.dropSnap(sp)
 	}
 
-	due := p.snap == nil || !p.snap.Covers(want.podScope) || now.Sub(p.at) >= interval
+	due := p.snap == nil || !p.snap.Covers(sp.scope) || now.Sub(p.at) >= interval
 	if due {
-		ready := u.nextAt()
+		ready := u.nextAt(p)
 		if g := p.tried.Add(m.UsageMinGap); g.After(ready) {
 			ready = g
 		}
@@ -312,12 +404,16 @@ func (u *usageState) step(now time.Time) time.Duration {
 			soonest(ready.Sub(now))
 			return wake
 		}
-		u.pollPods(now, want, mr, interval)
+		if sp.nodes {
+			u.pollNodes(now, mr, interval)
+		} else {
+			u.pollPods(now, sp.scope, mr, interval)
+		}
 		now = time.Now()
-		if p.snap != nil && p.snap.Covers(want.podScope) && p.fails == 0 {
+		if p.snap != nil && p.snap.Covers(sp.scope) && p.fails == 0 {
 			soonest(max(interval-now.Sub(p.at), m.UsageMinGap))
 		} else {
-			soonest(max(u.nextAt().Sub(now), m.UsageMinGap))
+			soonest(max(u.nextAt(p).Sub(now), m.UsageMinGap))
 		}
 		return wake
 	}
@@ -325,36 +421,44 @@ func (u *usageState) step(now time.Time) time.Duration {
 	return wake
 }
 
-func (u *usageState) setAvail(a protocol.MetricsAvail, msg string) {
+func (u *usageState) setAvail(p *pollState, a protocol.MetricsAvail, msg string) {
 	u.mu.Lock()
-	changed := u.pods.avail != a || u.pods.msg != msg
-	u.pods.avail, u.pods.msg = a, msg
+	changed := p.avail != a || p.msg != msg
+	p.avail, p.msg = a, msg
 	u.mu.Unlock()
 	if changed {
 		u.r.m.kick() // ClusterStates is re-sent
 	}
 }
 
-// dropPods clears the pods snapshot and the engine's copy.
-func (u *usageState) dropPods() {
+// dropSnap clears a source's snapshot and the engine's copy.
+func (u *usageState) dropSnap(sp *source) {
 	u.mu.Lock()
-	had := u.pods.snap != nil
-	u.pods.snap = nil
+	had := sp.ps.snap != nil
+	sp.ps.snap = nil
 	u.mu.Unlock()
 	if had {
-		u.r.m.eng.SetUsage(u.r.id, ingest.PodsGVR, nil)
+		u.r.m.eng.SetUsage(u.r.id, sp.gvr, nil)
 	}
 }
 
-func (u *usageState) nodeAlloc() map[string]usage.NodeAlloc {
+func (u *usageState) store(gvr string) *store.Store {
 	u.r.mu.Lock()
-	w := u.r.watches["v1/nodes"]
+	w := u.r.watches[gvr]
 	u.r.mu.Unlock()
-	if w == nil || w.st == nil {
+	if w == nil {
+		return nil
+	}
+	return w.st
+}
+
+func (u *usageState) nodeAlloc() map[string]usage.NodeAlloc {
+	st := u.store(nodesGVR)
+	if st == nil {
 		return nil
 	}
 	out := map[string]usage.NodeAlloc{}
-	w.st.Scan(func(row *ingest.Row) bool {
+	st.Scan(func(row *ingest.Row) bool {
 		c, mem := row.Allocatable()
 		out[row.Name()] = usage.NodeAlloc{CPU: c, MemMi: uint32(min(mem>>20, 1<<32-1))}
 		return true
@@ -362,23 +466,21 @@ func (u *usageState) nodeAlloc() map[string]usage.NodeAlloc {
 	return out
 }
 
-func (u *usageState) pollPods(now time.Time, want usageWant, mr kube.MetricsReader, interval time.Duration) {
+func (u *usageState) pollPods(now time.Time, scope []string, mr kube.MetricsReader, interval time.Duration) {
 	r, m := u.r, u.r.m
 	p := &u.pods
-	r.mu.Lock()
-	w := r.watches[ingest.PodsGVR]
-	r.mu.Unlock()
-	if w == nil || w.st == nil {
-		return
+	st := u.store(ingest.PodsGVR)
+	if st == nil || !st.Synced() {
+		return // joined before the first list landed it would be an empty snapshot for a whole interval; retried at UsageMinGap
 	}
 	p.tried = now
 
 	var samples []usage.PodSample
 	var err error
-	if want.podScope == nil {
+	if scope == nil {
 		samples, err = mr.PodMetrics(r.ctx, "")
 	} else {
-		for _, ns := range want.podScope {
+		for _, ns := range scope {
 			var s []usage.PodSample
 			if s, err = mr.PodMetrics(r.ctx, ns); err != nil {
 				break
@@ -390,42 +492,79 @@ func (u *usageState) pollPods(now time.Time, want usageWant, mr kube.MetricsRead
 		return
 	}
 	if err != nil {
-		u.pollFailed(now, err, interval)
+		u.pollFailed(now, p, err, interval)
 		return
 	}
 
 	// The store snapshot is taken after the list returns so the join sees every pod the samples can name.
-	u.buf = w.st.Snapshot(u.buf, want.podScope)
+	u.buf = st.Snapshot(u.buf, scope)
 	nodes := u.nodeAlloc()
 	u.mu.Lock()
 	u.seq++
 	seq := u.seq
 	prev := p.snap
 	u.mu.Unlock()
-	sn := usage.BuildPods(w.st, u.buf, want.podScope, samples, nodes, prev, seq)
+	sn := usage.BuildPods(st, u.buf, scope, samples, nodes, prev, seq)
 	clear(u.buf)
 	u.buf = u.buf[:0]
 
 	u.mu.Lock()
 	p.snap, p.at, p.fails, p.next, p.items = sn, time.Now(), 0, time.Time{}, len(sn.Slots)
 	u.mu.Unlock()
-	u.setAvail(protocol.MetricsOK, "")
+	u.setAvail(p, protocol.MetricsOK, "")
 	m.eng.SetUsage(r.id, ingest.PodsGVR, sn)
+}
+
+// pollNodes is the node poll: one small cluster-wide NodeMetrics list (one item per node).
+func (u *usageState) pollNodes(now time.Time, mr kube.MetricsReader, interval time.Duration) {
+	r, m := u.r, u.r.m
+	p := &u.nodes
+	st := u.store(nodesGVR)
+	if st == nil || !st.Synced() {
+		return
+	}
+	p.tried = now
+	samples, err := mr.NodeMetrics(r.ctx)
+	if r.ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		u.pollFailed(now, p, err, interval)
+		return
+	}
+	u.buf = st.Snapshot(u.buf, nil)
+	u.mu.Lock()
+	u.seq++
+	seq := u.seq
+	prev := p.snap
+	u.mu.Unlock()
+	sn := usage.BuildNodes(st, u.buf, samples, prev, seq)
+	clear(u.buf)
+	u.buf = u.buf[:0]
+
+	u.mu.Lock()
+	p.snap, p.at, p.fails, p.next = sn, time.Now(), 0, time.Time{}
+	u.mu.Unlock()
+	u.setAvail(p, protocol.MetricsOK, "")
+	m.eng.SetUsage(r.id, nodesGVR, sn)
 }
 
 // pollFailed maps a failed list to the availability states of docs/performance.md §5. None of them are toasts or
 // log spam (debug level only).
-func (u *usageState) pollFailed(now time.Time, err error, interval time.Duration) {
+func (u *usageState) pollFailed(now time.Time, p *pollState, err error, interval time.Duration) {
 	r, m := u.r, u.r.m
-	p := &u.pods
-	r.m.log.Debug("metrics poll failed", "cluster", r.id, "err", err.Error())
+	sp := &source{ps: p, gvr: ingest.PodsGVR}
+	if p == &u.nodes {
+		sp.gvr = nodesGVR
+	}
+	r.m.log.Debug("metrics poll failed", "cluster", r.id, "gvr", sp.gvr, "err", err.Error())
 	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
-		u.dropPods()
+		u.dropSnap(sp)
 		u.mu.Lock()
 		p.fails = 0
 		p.next = now.Add(m.ForbiddenRetry)
 		u.mu.Unlock()
-		u.setAvail(protocol.MetricsForbidden, "you are not allowed to read metrics.k8s.io")
+		u.setAvail(p, protocol.MetricsForbidden, "you are not allowed to read metrics.k8s.io")
 		return
 	}
 	u.mu.Lock()
@@ -438,43 +577,43 @@ func (u *usageState) pollFailed(now time.Time, err error, interval time.Duration
 	p.next = now.Add(min(delay, m.UsageMaxBackoff))
 	u.mu.Unlock()
 	if fails >= 2 {
-		u.setAvail(protocol.MetricsUnavailable, "metrics-server is not answering")
+		u.setAvail(p, protocol.MetricsUnavailable, "metrics-server is not answering")
 	}
 }
 
-func (u *usageState) nextAt() time.Time {
+func (u *usageState) nextAt(p *pollState) time.Time {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.pods.next
+	return p.next
 }
 
-// idle handles a cluster nothing wants usage of: polling has stopped, the last snapshot is kept for UsageKeep.
-func (u *usageState) idle(now time.Time, soonest func(time.Duration), wake *time.Duration) time.Duration {
-	p, m := &u.pods, u.r.m
+// idle handles a source nothing wants usage of: polling has stopped, the last snapshot is kept for UsageKeep.
+func (u *usageState) idle(now time.Time, sp *source) time.Duration {
+	p, m := sp.ps, u.r.m
 	u.mu.Lock()
 	if p.unwanted.IsZero() {
 		p.unwanted = now
 	}
 	un := p.unwanted
 	u.mu.Unlock()
-	if p.snap != nil {
-		if now.Sub(un) >= m.UsageKeep {
-			u.dropPods()
-		} else {
-			soonest(m.UsageKeep - now.Sub(un))
-		}
+	if p.snap == nil {
+		return idleWait
 	}
-	return *wake
+	if now.Sub(un) >= m.UsageKeep {
+		u.dropSnap(sp)
+		return idleWait
+	}
+	return max(m.UsageKeep-now.Sub(un), time.Millisecond)
 }
 
-func (u *usageState) setDiscAvail(a protocol.MetricsAvail, msg string) {
+func (u *usageState) setDiscAvail(sp *source, a protocol.MetricsAvail, msg string) {
 	u.mu.Lock()
-	u.pods.fromDisc = true
+	sp.ps.fromDisc = true
 	u.mu.Unlock()
-	u.setAvail(a, msg)
+	u.setAvail(sp.ps, a, msg)
 }
 
-// interval is the poll interval: the long one for a cluster-wide pod list over BigPods items.
+// interval is the pods poll interval: the long one for a cluster-wide list over BigPods items.
 func (u *usageState) interval(scope []string) time.Duration {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -482,6 +621,58 @@ func (u *usageState) interval(scope []string) time.Duration {
 		return u.r.m.UsageBigInterval
 	}
 	return u.r.m.UsageInterval
+}
+
+// stepCapacity recomputes the cluster's capacity row. While a capacity card is open it looks every UsageMinGap
+// (two atomic loads when nothing changed) and rescans only when the pod store, the node store or the node usage
+// snapshot changed; the scan itself is a few milliseconds at 50k pods. Once nothing wants it for UsageKeep the
+// row is removed.
+func (u *usageState) stepCapacity(now time.Time, want usageWant) time.Duration {
+	r, m, c := u.r, u.r.m, &u.cap
+	if r.capStore == nil {
+		return idleWait
+	}
+	if !want.capacity {
+		if c.last == nil {
+			return idleWait
+		}
+		if c.unwanted.IsZero() {
+			c.unwanted = now
+		}
+		if now.Sub(c.unwanted) >= m.UsageKeep {
+			r.capStore.Apply(nil, []string{c.last.UID()})
+			*c = capState{}
+			return idleWait
+		}
+		return max(m.UsageKeep-now.Sub(c.unwanted), time.Millisecond)
+	}
+	c.unwanted = time.Time{}
+	pods, nodes := u.store(ingest.PodsGVR), u.store(nodesGVR)
+	if pods == nil || nodes == nil || !pods.Synced() || !nodes.Synced() {
+		return m.UsageMinGap // not everything is in yet: a partial total would mislead
+	}
+	u.mu.Lock()
+	ns := u.nodes.snap
+	u.mu.Unlock()
+	ps, nq := pods.Seq(), nodes.Seq()
+	if c.last != nil && ps == c.podSeq && nq == c.nodeSeq && ns == c.nodeSnap {
+		return m.UsageMinGap
+	}
+	if c.last != nil && now.Sub(c.at) < m.UsageMinGap {
+		return max(m.UsageMinGap-now.Sub(c.at), time.Millisecond)
+	}
+	// Seq is read before the scan: a change during it just triggers another one.
+	cp := usage.ScanCapacity(pods, nodes, ns, &c.buf)
+	c.rv++
+	row := cp.Row(r.id, c.rv)
+	u.mu.Lock()
+	c.at, c.podSeq, c.nodeSeq, c.nodeSnap = now, ps, nq, ns
+	u.mu.Unlock()
+	if c.last == nil || !c.last.CellsEqual(row) {
+		c.last = row
+		r.capStore.Apply([]*ingest.Row{row}, nil)
+	}
+	return m.UsageMinGap
 }
 
 // metricsListed reports whether discovery lists any metrics.k8s.io group-version, even one that is not answering.

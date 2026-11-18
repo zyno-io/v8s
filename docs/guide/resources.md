@@ -23,7 +23,11 @@ Pod tables show CPU and memory as one dense block, in the style of k9s: right-al
 - Requests and limits come from the pod spec, as in `kubectl`, not from an in-place resize status.
 - On a phone, each card gets a `cpu 16m · mem 163Mi` line.
 
-Usage needs [metrics-server](https://github.com/kubernetes-sigs/metrics-server) in the cluster, and permission to read `metrics.k8s.io`. v8s asks for it only while a table shows usage (or sorts by it), every 30 seconds, for the namespaces on screen; a tab hidden for 30 seconds stops asking. Without metrics-server the usage columns are not shown, and **Columns** says why; a cluster where it is missing or refusing shows a small "no metrics" tag next to the sync tag.
+**Nodes** use the same block: **CPU** (millicores), **%** (usage as a percentage of the node's allocatable) and **alloc** (the allocatable CPU), then the same for **MEM** (MiB). Allocatable is what pods can actually get (capacity minus reserved), so a node near 100 % is full for the scheduler. Percentages turn amber from 90 %. OS image, kernel, runtime and taints are hidden by default; turn them on from **Columns**. The allocatable columns are numbers now, so they sort numerically.
+
+The **Overview** shows, per cluster, CPU and Memory: the big number is usage as a percentage of the allocatable of all nodes (amber from 90 %, red from 100 %), the bar is allocatable with usage filled in and a tick at the requests, then `requests 62% · limits 143%` and `41.2 of 112 cores`. Without metrics-server the big number is the requested share, labelled "requested", with a note that usage needs metrics-server. Limits above 100 % mean the cluster is overcommitted on limits. Hover for how many nodes report and how many pods have no limit.
+
+Usage needs [metrics-server](https://github.com/kubernetes-sigs/metrics-server) in the cluster, and permission to read `metrics.k8s.io`. v8s asks for it only while a table shows usage (or sorts by it) or an Overview card is open, every 30 seconds, for the namespaces on screen (nodes and the Overview ask for one small node list); a tab hidden for 30 seconds stops asking. Without metrics-server the usage columns are not shown, and **Columns** says why; a cluster where it is missing or refusing shows a small "no metrics" tag next to the sync tag.
 
 Columns you hide or show are remembered per resource type. Resizing a column no longer reveals the columns that are hidden by default (the IP column, the requests and limits).
 

@@ -176,7 +176,8 @@ Every kind goes through the same engine; a **module** per kind supplies GVR, col
 | `batch/v1/cronjobs` | schedule, suspend, active, lastSchedule |
 | `v1/services` | type, clusterIP, externalIP, ports, selector |
 | `networking.k8s.io/v1/ingresses` | class, hosts, address, ports |
-| `v1/nodes` | status, roles, version, internalIP, os, kernel, runtime, cpu, memory, pods, taints |
+| `v1/nodes` | status, roles, version, internalIP, os (hidden), kernel (hidden), runtime (hidden), then the usage columns cpuUse, cpuPctAlloc, cpu (CPU allocatable), memUse, memPctAlloc, memory (memory allocatable) ([Metrics](data-model.md#metrics)), pods, taints (hidden) |
+| `v8s/v1/capacity` | the synthetic per-cluster capacity row behind the Overview CPU and Memory card: one row per cluster (name = the cluster id), integer cells nodes, nodesReporting, cpuAlloc, memAlloc, cpuReq, memReq, cpuLim, memLim, cpuUse, memUse, podsCounted, podsNoCPULim, podsNoMemLim (CPU in millicores, memory in MiB; `cpuUse` and `memUse` are -1 without node metrics). Not listed in `kinds.list`; a subscription with `usage: true` polls node metrics, without it the row still carries requests and limits |
 | `v1/namespaces` | status |
 | `v1/persistentvolumeclaims` | status, volume, capacity, accessModes, storageClass |
 | `v1/persistentvolumes` | status, claim, capacity, accessModes, reclaimPolicy, storageClass |

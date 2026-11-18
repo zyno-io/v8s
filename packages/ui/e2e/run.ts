@@ -340,10 +340,14 @@ async function main() {
             await lim.click();
             await lim.click();
             await page.getByText('Sorted by %CPU/L (desc)').waitFor();
-            // One synchronous read: the third sub-column of every rendered usage block.
+            // The rows re-sort a moment after the title changes: wait for the third sub-column of the rendered usage blocks to be in
+            // descending order before reading it.
             await page.waitForFunction(() => {
-                const v = [...document.querySelectorAll('.scroller .row .ub')].map(e => e.children[2]?.textContent?.trim() ?? '');
-                return v.length > 5 && /^\d+$/.test(v[0]) && Number(v[0]) >= 90; // the re-sorted patch, not the ascending one before it
+                const v = [...document.querySelectorAll('.scroller .row:not(.sk) .ub')]
+                    .map(e => e.children[2]?.textContent?.trim() ?? '')
+                    .filter(c => /^\d+$/.test(c))
+                    .map(Number);
+                return v.length > 5 && v.every((x, i) => i === 0 || v[i - 1] >= x);
             });
             const cells = await page.evaluate(() =>
                 [...document.querySelectorAll('.scroller .row:not(.sk) .ub')].map(e => e.children[2].textContent!.trim())
@@ -366,6 +370,84 @@ async function main() {
             // Back to the default order for the steps that follow.
             await lim.click();
             await lim.click();
+        });
+
+        // ---- node usage and the Overview capacity card ----
+        await step('nodes: usage columns show, the hidden ones are not on screen, sorting %CPU and CPU alloc orders numerically', async () => {
+            await page
+                .getByRole('link', { name: /^Nodes/ })
+                .first()
+                .click();
+            await page.waitForURL(/\/nodes/);
+            const rows = page.locator('.scroller .row:not(.sk)');
+            await rows.first().waitFor({ timeout: 30000 });
+            for (const label of ['CPU', '%CPU', 'CPU alloc', 'MEM', '%MEM', 'MEM alloc'])
+                await page.getByRole('button', { name: `Sort by ${label}`, exact: true }).waitFor();
+            await page.locator('.scroller .row .ub').filter({ hasText: /\d/ }).first().waitFor({ timeout: 30000 });
+            for (const hidden of ['OS image', 'Kernel', 'Runtime', 'Taints'])
+                assert.equal(await page.getByRole('button', { name: `Sort by ${hidden}`, exact: true }).count(), 0, `${hidden} is hidden by default`);
+
+            // The second sub-column is the percentage of allocatable: descending order, numeric, no-data last.
+            const pct = page.getByRole('button', { name: 'Sort by %CPU', exact: true });
+            await pct.click();
+            await pct.click();
+            await page.getByText('Sorted by %CPU (desc)').waitFor();
+            // The rows re-sort a moment after the title changes: wait for the window to be in descending order.
+            await page.waitForFunction(() => {
+                const v = [...document.querySelectorAll('.scroller .row:not(.sk) .ub')]
+                    .map(e => e.children[1]?.textContent?.trim() ?? '')
+                    .filter(c => /^[\d.]+$/.test(c))
+                    .map(Number);
+                return v.length > 5 && v.every((x, i) => i === 0 || v[i - 1] >= x);
+            });
+            const col = (i: number) =>
+                page.evaluate(n => [...document.querySelectorAll('.scroller .row:not(.sk) .ub')].map(e => e.children[n].textContent!.trim()), i);
+            const pcts = (await col(1)).filter(c => /^[\d.]+$/.test(c)).map(Number);
+            assert.ok(pcts.length >= 5, `numeric %CPU cells: ${pcts.join(' ')}`);
+            for (let i = 1; i < pcts.length; i++) assert.ok(pcts[i - 1] >= pcts[i], `%CPU not in descending order: ${pcts.join(' ')}`);
+            assert.match(
+                (await rows.first().locator('.ub').getAttribute('title')) ?? '',
+                /allocatable/,
+                'the tooltip compares usage to the allocatable'
+            );
+
+            // CPU alloc is numeric now (it was a string): ascending puts the smallest first.
+            const alloc = page.getByRole('button', { name: 'Sort by CPU alloc', exact: true });
+            await alloc.click();
+            await page.getByText('Sorted by CPU alloc').waitFor();
+            await page.waitForFunction(() => {
+                const v = [...document.querySelectorAll('.scroller .row:not(.sk) .ub')]
+                    .map(e => e.children[2]?.textContent?.trim() ?? '')
+                    .filter(c => /^\d+$/.test(c))
+                    .map(Number);
+                return v.length > 5 && v.every((x, i) => i === 0 || v[i - 1] <= x);
+            });
+            const cores = (await col(2)).filter(c => /^\d+$/.test(c)).map(Number);
+            assert.ok(cores.length >= 5, `numeric CPU alloc cells: ${cores.join(' ')}`);
+            for (let i = 1; i < cores.length; i++) assert.ok(cores[i - 1] <= cores[i], `CPU alloc not ascending: ${cores.join(' ')}`);
+            await page.screenshot({ path: shot('nodes-usage') });
+            await alloc.click(); // desc
+            await alloc.click(); // cleared
+        });
+
+        await step('overview: the capacity card shows CPU and Memory % with requests and limits', async () => {
+            await page
+                .getByRole('link', { name: /^Overview/ })
+                .first()
+                .click();
+            await page.waitForURL(/\/overview/);
+            const card = page.getByTestId('overview-prod-us');
+            await card.waitFor({ timeout: 20000 });
+            const cpu = card.getByTestId('cap-cpu');
+            const mem = card.getByTestId('cap-mem');
+            await cpu.getByText(/requests \d+(\.\d)?% · limits \d+(\.\d)?%/).waitFor({ timeout: 30000 });
+            await mem.getByText(/requests \d+(\.\d)?% · limits \d+(\.\d)?%/).waitFor();
+            // Usage arrives with the first node poll (the fake has a metrics API): "N of M cores" / "N of M GiB".
+            await cpu.getByText(/^[\d.]+ of [\d.]+ cores$/).waitFor({ timeout: 30000 });
+            await mem.getByText(/^[\d.]+ of [\d.]+ GiB$/).waitFor();
+            assert.match(await cpu.locator('.big').innerText(), /^\d+(\.\d)?%/);
+            assert.match(await mem.locator('.big').innerText(), /^\d+(\.\d)?%/);
+            await page.screenshot({ path: shot('overview-capacity') });
         });
 
         // ---- IP search ----

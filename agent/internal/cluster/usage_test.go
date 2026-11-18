@@ -26,6 +26,7 @@ type meter struct {
 	times []time.Time
 	nodes atomic.Int64
 	err   error
+	nerr  error // node list failure
 	stale atomic.Bool
 	down  atomic.Bool // metrics.k8s.io is listed by discovery but lists no resources (its server is down)
 }
@@ -57,6 +58,12 @@ func (b meterBackend) PodMetrics(ctx context.Context, ns string) ([]usage.PodSam
 
 func (b meterBackend) NodeMetrics(ctx context.Context) ([]usage.NodeSample, error) {
 	b.m.nodes.Add(1)
+	b.m.mu.Lock()
+	err := b.m.nerr
+	b.m.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return b.Backend.(kube.MetricsReader).NodeMetrics(ctx)
 }
 

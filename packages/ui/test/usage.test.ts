@@ -20,12 +20,37 @@ const IDX: UsageIdx = {
     memPctReq: 11,
     memPctLim: 12,
     memPctNode: 13,
-    node: 14
+    node: 14,
+    cpuPctAlloc: -1,
+    cpuAlloc: -1,
+    memPctAlloc: -1,
+    memAlloc: -1
 };
-const row = (v: Partial<Record<keyof UsageIdx, unknown>>): Row => {
+const row = (v: Partial<Record<keyof UsageIdx, unknown>>, idx: UsageIdx = IDX): Row => {
     const r: unknown[] = Array.from({ length: 15 }, () => null);
-    for (const [k, x] of Object.entries(v)) r[IDX[k as keyof UsageIdx]] = x;
+    for (const [k, x] of Object.entries(v)) r[idx[k as keyof UsageIdx]] = x;
     return r as unknown as Row;
+};
+// The nodes schema: usage, % of allocatable, allocatable (`cpu`, `memory`) per resource.
+const NIDX: UsageIdx = {
+    ...IDX,
+    cpuUse: 2,
+    cpuPctAlloc: 3,
+    cpuAlloc: 4,
+    memUse: 5,
+    memPctAlloc: 6,
+    memAlloc: 7,
+    cpuReq: -1,
+    cpuLim: -1,
+    cpuPctReq: -1,
+    cpuPctLim: -1,
+    cpuPctNode: -1,
+    memReq: -1,
+    memLim: -1,
+    memPctReq: -1,
+    memPctLim: -1,
+    memPctNode: -1,
+    node: -1
 };
 
 describe('formatUsage', () => {
@@ -116,5 +141,26 @@ describe('usageCardLine', () => {
         expect(usageCardLine(IDX, row({ cpuUse: 16, memUse: 163 }))).toEqual({ text: 'cpu 16m · mem 163Mi', tone: '' });
         expect(usageCardLine(IDX, row({ cpuUse: 16, memUse: 163, cpuPctLim: 920 }))!.tone).toBe('warning');
         expect(usageCardLine(IDX, row({ cpuUse: 16, memUse: 163, cpuPctLim: 920, memPctLim: 1010 }))!.tone).toBe('danger');
+    });
+});
+
+describe('nodes: usage against allocatable', () => {
+    it('the tooltip says used and the share of allocatable, with cores and GiB from 1000m / 1024Mi', () => {
+        const t = usageTitle(NIDX, row({ cpuUse: 3920, cpuPctAlloc: 247, cpuAlloc: 15890, memUse: 20480, memPctAlloc: 317, memAlloc: 64512 }, NIDX));
+        expect(t.split('\n')).toEqual([
+            'CPU 3920m (3.92 cores) used · 25% of 15890m (15.89 cores) allocatable',
+            'MEM 20480Mi (20Gi) used · 32% of 64512Mi (63Gi) allocatable'
+        ]);
+    });
+    it('says no data / no allocatable', () => {
+        const t = usageTitle(NIDX, row({ cpuPctAlloc: -1 }, NIDX));
+        expect(t.split('\n')).toEqual(['CPU no data · no allocatable', 'MEM no data · no allocatable']);
+    });
+    it('the phone line is coloured by the node rule (warning from 90 %, never danger)', () => {
+        expect(usageCardLine(NIDX, row({ cpuUse: 3920, memUse: 20480, cpuPctAlloc: 247, memPctAlloc: 317 }, NIDX))).toEqual({
+            text: 'cpu 3920m · mem 20480Mi',
+            tone: ''
+        });
+        expect(usageCardLine(NIDX, row({ cpuUse: 1, memUse: 1, cpuPctAlloc: 1200, memPctAlloc: 10 }, NIDX))!.tone).toBe('warning');
     });
 });

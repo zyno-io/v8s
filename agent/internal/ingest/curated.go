@@ -418,12 +418,21 @@ func nodeRoles(l map[string]string) string {
 
 func registerClusterKinds() {
 	typed(&Module{GVR: "v1/nodes", Kind: "Node", Short: []string{"no"}, Tier0: true, IPs: true, IPOrder: 30,
-		Cols: []Col{cCluster(), cName(), cDict("status", "Status", 130), cDict("roles", "Roles", 120), cDict("version", "Version", 110),
-			cStr("internalIP", "Internal IP", 120), cDict("os", "OS image", 180), cDict("kernel", "Kernel", 130), cDict("runtime", "Runtime", 140),
-			cDict("cpu", "CPU", 60), cDict("memory", "Memory", 80), cInt("pods", "Pods", 60), cInt("taints", "Taints", 64), cTone(), cAge()}},
+		Cols: []Col{cCluster(), cName(), cDict("status", "Status", 132), cDict("roles", "Roles", 110), cDict("version", "Version", 84),
+			cStr("internalIP", "Internal IP", 116), hide(cDict("os", "OS image", 180)), hide(cDict("kernel", "Kernel", 130)), hide(cDict("runtime", "Runtime", 140)),
+			// Usage block (docs/design-system.md): usage, % of the node's allocatable, allocatable. The keys cpu and memory are
+			// kept from the string columns they replace so saved layouts still apply.
+			cUse("cpuUse", "CPU", "", UseCPU, "millicores", 44, false),
+			cUse("cpuPctAlloc", "%CPU", "%", UseCPUPctNode, "permille", 36, false),
+			cRes("cpu", "CPU alloc", "alloc", ResCPUReq, "millicores", 52, false),
+			cUse("memUse", "MEM", "", UseMem, "MiB", 48, false),
+			cUse("memPctAlloc", "%MEM", "%", UseMemPctNode, "permille", 36, false),
+			cRes("memory", "MEM alloc", "alloc", ResMemReq, "MiB", 56, false),
+			cInt("pods", "Pods", 52), hide(cInt("taints", "Taints", 64)), cTone(), narrow(cAge(), 56)},
+		Usage: "nodes"},
 		func(l *corev1.NodeList) []corev1.Node { return l.Items },
 		func(n *corev1.Node) *Row {
-			r := newRow(&n.ObjectMeta, 11)
+			r := newRow(&n.ObjectMeta, 9)
 			status, tone := "Unknown", ToneWarning
 			for i := range n.Status.Conditions {
 				if c := &n.Status.Conditions[i]; c.Type == corev1.NodeReady {
@@ -456,8 +465,6 @@ func registerClusterKinds() {
 			r.putS(n.Status.NodeInfo.KernelVersion)
 			r.putS(n.Status.NodeInfo.ContainerRuntimeVersion)
 			cpu, mem, pods := n.Status.Allocatable[corev1.ResourceCPU], n.Status.Allocatable[corev1.ResourceMemory], n.Status.Allocatable[corev1.ResourcePods]
-			r.putS(cpu.String())
-			r.putS(mem.String())
 			r.putN(pods.Value())
 			r.putN(int64(len(n.Spec.Taints)))
 			r.tone = tone

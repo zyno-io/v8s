@@ -2,7 +2,7 @@ import type { Column } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import { gridTemplate, guessPodsUsage, planColumns } from '../src/lib/columns.ts';
+import { gridTemplate, guessPodsUsage, guessUsage, planColumns } from '../src/lib/columns.ts';
 
 const cols: Column[] = [
     { key: 'cluster', type: 'dict' },
@@ -217,6 +217,83 @@ describe('planColumns: the usage block', () => {
     });
 });
 
+// The nodes schema of agent/internal/ingest registerClusterKinds.
+const NODES: Column[] = [
+    { key: 'cluster', type: 'dict', label: 'Cluster', width: 110 },
+    { key: 'name', type: 'str', label: 'Name', width: 320 },
+    { key: 'status', type: 'dict', label: 'Status', width: 132 },
+    { key: 'roles', type: 'dict', label: 'Roles', width: 110 },
+    { key: 'version', type: 'dict', label: 'Version', width: 84 },
+    { key: 'internalIP', type: 'str', label: 'Internal IP', width: 116 },
+    { key: 'os', type: 'dict', label: 'OS image', width: 180, hidden: true },
+    { key: 'kernel', type: 'dict', label: 'Kernel', width: 130, hidden: true },
+    { key: 'runtime', type: 'dict', label: 'Runtime', width: 140, hidden: true },
+    u('cpuUse', 'CPU', 'millicores', { metrics: true }),
+    u('cpuPctAlloc', '%CPU', 'permille', { short: '%', metrics: true }),
+    u('cpu', 'CPU alloc', 'millicores', { short: 'alloc' }),
+    u('memUse', 'MEM', 'MiB', { metrics: true }),
+    u('memPctAlloc', '%MEM', 'permille', { short: '%', metrics: true }),
+    u('memory', 'MEM alloc', 'MiB', { short: 'alloc' }),
+    { key: 'pods', type: 'int', label: 'Pods', width: 52, align: 'right' },
+    { key: 'taints', type: 'int', label: 'Taints', width: 64, hidden: true },
+    { key: 'statusTone', type: 'tone', label: 'Tone', width: 40 },
+    { key: 'createdAt', type: 'time', label: 'Age', width: 56, align: 'right' }
+];
+
+describe('planColumns: the nodes usage block', () => {
+    const plan = (o: Partial<Parameters<typeof planColumns>[1]> = {}) => planColumns(NODES, { gvr: 'v1/nodes', showCluster: false, ...o });
+
+    it('hides os, kernel, runtime and taints by default and draws usage, % and allocatable as one block', () => {
+        const p = plan();
+        expect(p.cols.map(c => c.key)).toEqual(['name', 'status', 'roles', 'version', 'internalIP', 'usage', 'pods', 'createdAt']);
+        const b = p.cols.find(c => c.kind === 'usage')!;
+        expect(b.subs!.map(x => x.key)).toEqual(['cpuUse', 'cpuPctAlloc', 'cpu', 'memUse', 'memPctAlloc', 'memory']);
+        // the raw usage columns are shown, so the short labels apply: CPU, %, alloc | MEM, %, alloc
+        expect(b.subs!.map(x => x.text)).toEqual(['CPU', '%', 'alloc', 'MEM', '%', 'alloc']);
+        expect(b.subs!.map(x => x.suffix)).toEqual(['m', '', '', 'Mi', '', '']);
+        expect(b.width).toBe(310);
+        expect(b.subGrid).toBe('44px 36px 52px 56px 36px 56px');
+    });
+
+    it('colours % of allocatable by the node rule and prints node fractions with a decimal', () => {
+        const subs = plan().cols.find(c => c.kind === 'usage')!.subs!;
+        expect(subs.map(x => [x.key, x.tone, x.pctNode])).toEqual([
+            ['cpuUse', null, false],
+            ['cpuPctAlloc', 'node', true],
+            ['cpu', null, false],
+            ['memUse', null, false],
+            ['memPctAlloc', 'node', true],
+            ['memory', null, false]
+        ]);
+        expect(subs.find(x => x.key === 'cpuUse')!.res).toBe('cpu');
+        expect(subs.find(x => x.key === 'memory')!.res).toBe('mem');
+    });
+
+    it('allocatable stays when metrics-server is missing; usage and its percentages drop', () => {
+        const p = plan({ metricsOff: true });
+        expect(p.cols.find(c => c.kind === 'usage')!.subs!.map(x => x.key)).toEqual(['cpu', 'memory']);
+        expect(p.hasMetrics).toBe(false);
+    });
+
+    it('the Columns menu offers the hidden ones and a saved resize does not reveal them', () => {
+        expect(plan().all.map(c => c.key)).toContain('taints');
+        expect(plan({ layout: { widths: { name: 260 }, hidden: [] } }).cols.map(c => c.key)).not.toContain('taints');
+        expect(plan({ layout: { shown: ['kernel'] } }).cols.map(c => c.key)).toContain('kernel');
+    });
+
+    it('gives the name column 171 px at 1440 px with the sidebar pinned (content 1166), one cluster', () => {
+        const p = plan();
+        const fixed = 15 + 24 + p.cols.filter(c => !c.grow).reduce((a, c) => a + c.width, 0);
+        expect(1166 - fixed - 12 * p.cols.length).toBe(171);
+    });
+
+    it('exposes the allocatable indexes for the tooltip', () => {
+        const u = plan().usage!;
+        expect([u.cpuUse, u.cpuPctAlloc, u.cpuAlloc, u.memUse, u.memPctAlloc, u.memAlloc]).toEqual([11, 12, 13, 14, 15, 16]);
+        expect(u.cpuPctNode).toBe(-1);
+    });
+});
+
 describe('guessPodsUsage', () => {
     it('is on by default, off when every metrics column is hidden, on again by a sort or a shown %N column', () => {
         expect(guessPodsUsage(undefined, [])).toBe(true);
@@ -225,6 +302,16 @@ describe('guessPodsUsage', () => {
         expect(guessPodsUsage({ hidden: all }, [{ col: 'cpuPctLim' }])).toBe(true);
         expect(guessPodsUsage({ hidden: all }, [{ col: 'name' }])).toBe(false);
         expect(guessPodsUsage({ hidden: all, shown: ['cpuPctNode'] }, [])).toBe(true);
+    });
+});
+
+describe('guessNodesUsage', () => {
+    it('is on by default, off when all four metrics columns are hidden, on again by a sort; other kinds never guess', () => {
+        expect(guessUsage('v1/nodes', undefined, [])).toBe(true);
+        const all = ['cpuUse', 'cpuPctAlloc', 'memUse', 'memPctAlloc'];
+        expect(guessUsage('v1/nodes', { hidden: all }, [])).toBe(false);
+        expect(guessUsage('v1/nodes', { hidden: all }, [{ col: 'memPctAlloc' }])).toBe(true);
+        expect(guessUsage('apps/v1/deployments', undefined, [])).toBe(false);
     });
 });
 

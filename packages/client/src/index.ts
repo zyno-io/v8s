@@ -109,6 +109,7 @@ export type {
     Window
 } from './protocol.gen.ts';
 export {
+    CapacityGVR,
     HelmGVR,
     MaxObjectEvents,
     ProblemsGVR,
