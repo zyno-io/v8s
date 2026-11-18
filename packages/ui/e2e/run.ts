@@ -153,6 +153,18 @@ async function main() {
             await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('replicas: 8'), null, { timeout: 10000 });
         });
 
+        await step('a click near the edge of another row switches the drawer to it', async () => {
+            const second = page.locator('.scroller .row:not(.sk)').nth(1);
+            const other = (await second.locator('.name').innerText()).trim();
+            const box = await second.boundingBox();
+            const nameBox = await second.locator('.name').boundingBox();
+            assert.ok(box && nameBox, 'second row and its name have boxes');
+            // 2 px below the row's top edge, just right of the name cell's text (left of the drawer): the row
+            // itself, not a cell's text.
+            await second.click({ position: { x: Math.round(nameBox.x - box.x + nameBox.width + 24), y: 2 } });
+            await page.getByTestId('drawer').getByRole('heading', { name: other }).waitFor({ timeout: 5000 });
+        });
+
         await step('close the drawer', async () => {
             await page.getByTestId('drawer-close').click();
             await page.getByTestId('drawer').waitFor({ state: 'detached' });

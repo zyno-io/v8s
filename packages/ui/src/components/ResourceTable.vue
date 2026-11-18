@@ -341,7 +341,10 @@ function onBodyClick(e: MouseEvent) {
         return;
     }
     ui.value.focusId = id;
-    if (isPhone.value || t.closest('[data-open]')) openRow(id);
+    // A click anywhere on the row opens it (docs/guide/resources.md), not just on the name: rows are taller
+    // than their text, so a click near a row's edge lands on the row itself. Controls inside a row keep theirs.
+    if (t.closest('a, button, select, textarea, [data-noopen]')) return;
+    openRow(id);
 }
 
 function onDblClick(e: MouseEvent) {
@@ -597,7 +600,6 @@ function metricText(c: ColPlan, row: Row): string {
                             class="c"
                             :class="cellClass(c, it.row, it.dc?.[ci])"
                             role="cell"
-                            :data-open="c.kind === 'name' ? '' : undefined"
                         >
                             <template v-if="it.dc?.[ci]"
                                 ><span v-if="it.dc[ci]!.tag" class="tag" :class="it.dc[ci]!.tag!.tone" :title="it.dc[ci]!.title">{{
