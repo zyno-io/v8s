@@ -34,7 +34,7 @@ The release drawer has six tabs:
 | Action    | What it does                                                                                                                                               |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Roll back | Roll back to a revision you choose. Options: wait, timeout, clean up on failure, and force (behind a confirm)                                              |
-| Uninstall | Remove the release. Options: keep history, wait, timeout, cascade policy. Type to confirm in production groups                                             |
+| Uninstall | Remove the release. Options: keep history, wait, timeout, cascade policy. Type to confirm on protected clusters                                            |
 | Retry     | For a `failed` or stuck `pending-*` release, re-run the last upgrade with the chart and values stored in the release. No chart repository access is needed |
 
 For a stuck `pending-*` release, **Retry** offers **Mark failed** (on by default), which is what people do by hand today so the release can be retried.

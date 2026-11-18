@@ -4,7 +4,6 @@ import { defineStore } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 
 import { getAgent, refreshKinds } from '@/lib/agent.ts';
-import { isProductionCluster } from '@/lib/settings.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 
 export const useClustersStore = defineStore('clusters', () => {
@@ -34,7 +33,15 @@ export const useClustersStore = defineStore('clusters', () => {
 
     const groupsOf = (id: string): readonly string[] => byId.value.get(id)?.groups ?? [];
     const writeContextOf = (id: string): string => byId.value.get(id)?.writeContext ?? '';
-    const isProduction = (id: string): boolean => isProductionCluster(groupsOf(id), useSettingsStore().productionGroups);
+    /**
+     * Protected clusters ask for a typed confirmation. The flag is keyed by the listed (read) cluster id; the write context linked to it
+     * is protected too, so selecting that context directly cannot sidestep the flag.
+     */
+    const isProtected = (id: string): boolean => {
+        const s = useSettingsStore();
+        const set = s.protectedClusters;
+        return set.includes(id) || set.some(p => s.links[p] === id);
+    };
 
     /** Re-reads the list (groups and linked write contexts come from settings, so call this after changing them). */
     async function refreshList() {
@@ -105,7 +112,7 @@ export const useClustersStore = defineStore('clusters', () => {
         byId,
         groupsOf,
         writeContextOf,
-        isProduction,
+        isProtected,
         refreshList,
         takeFocusTarget,
         load,

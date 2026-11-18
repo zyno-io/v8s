@@ -78,17 +78,16 @@ describe('needsTypeToConfirm', () => {
     const base = {
         count: 1,
         clusters: ['a'],
-        groupsOf: (id: string) => (id === 'prod' ? ['production'] : ['staging']),
-        productionGroups: ['production']
+        protectedClusters: ['prod']
     };
     it('single object on a normal cluster: plain confirm', () => {
         expect(needsTypeToConfirm(base)).toBe(false);
     });
-    it('bulk, cross-cluster, or production: type to confirm', () => {
+    it('bulk, cross-cluster, or protected: type to confirm', () => {
         expect(needsTypeToConfirm({ ...base, count: 3 })).toBe(true);
         expect(needsTypeToConfirm({ ...base, clusters: ['a', 'b'] })).toBe(true);
         expect(needsTypeToConfirm({ ...base, clusters: ['prod'] })).toBe(true);
-        expect(needsTypeToConfirm({ ...base, clusters: ['prod'], productionGroups: [] })).toBe(false);
+        expect(needsTypeToConfirm({ ...base, clusters: ['prod'], protectedClusters: [] })).toBe(false);
     });
     it('phrase is the name for one object, the count for several', () => {
         expect(confirmPhrase(1, 'api')).toBe('api');
@@ -105,7 +104,7 @@ describe('newRequestId', () => {
 });
 
 describe('confirm helpers', () => {
-    const base = { count: 1, clusters: ['a'], groupsOf: () => [], productionGroups: ['prod'] };
+    const base = { count: 1, clusters: ['a'], protectedClusters: [] as string[] };
 
     it('a destructive action on a phone is always type-to-confirm', () => {
         expect(needsTypeToConfirm({ ...base, destructive: true })).toBe(false);

@@ -85,7 +85,7 @@ describe('mode tags', () => {
 });
 
 describe('mode confirmation', () => {
-    const base = { policy: 'require-team-label', cluster: 'prod-1', current: 'Audit', fails: 12, production: false } as const;
+    const base = { policy: 'require-team-label', cluster: 'prod-1', current: 'Audit', fails: 12, protected: false } as const;
     it('warns that Enforce blocks and shows the fail count', () => {
         const t = setModeConfirm({ ...base, mode: 'Enforce' });
         expect(t.danger).toBe(true);
@@ -94,8 +94,8 @@ describe('mode confirmation', () => {
         expect(t.body).toContain('12 failing results');
         expect(t.phrase).toBeUndefined();
     });
-    it('asks for the policy name in production and says when the count is unknown or partial', () => {
-        const t = setModeConfirm({ ...base, mode: 'Enforce', production: true, fails: null });
+    it('asks for the policy name on a protected cluster and says when the count is unknown or partial', () => {
+        const t = setModeConfirm({ ...base, mode: 'Enforce', protected: true, fails: null });
         expect(t.phrase).toBe('require-team-label');
         expect(t.body).toContain('not known');
         expect(setModeConfirm({ ...base, mode: 'Audit', fails: 3, partial: true }).body).toContain('3+ failing results');

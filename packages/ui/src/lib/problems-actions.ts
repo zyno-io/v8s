@@ -116,7 +116,7 @@ export async function runProblemAction(action: ProblemAction, ctx: ActionCtx): P
         }
         case 'reconcile': {
             if (!subject) return;
-            // like the ActionBar: a production group (note) or a typed phrase needs a confirmation, otherwise it runs at once
+            // like the ActionBar: a protected cluster (note) or a typed phrase needs a confirmation, otherwise it runs at once
             const guard = confirmGuard([subject]);
             if (guard.note || guard.phrase) {
                 const ok = await ask({

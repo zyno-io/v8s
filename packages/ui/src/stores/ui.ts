@@ -30,7 +30,7 @@ export interface ConfirmDialog {
     onCancel?: () => void;
 }
 
-/** Extras every dialog kind can carry (production / bulk confirmation). */
+/** Extras every dialog kind can carry (protected-cluster / bulk confirmation). */
 interface DialogExtras {
     phrase?: string;
     note?: string;

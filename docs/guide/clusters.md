@@ -48,9 +48,14 @@ A group is a named set of clusters, such as `production`, `staging`, or `eu`.
 - Create one from the selector: tick clusters, choose **+ New group**, and name it.
 - Click a group chip to select exactly that group. Shift-click to add it.
 - **Manage** lets you rename a group, change its members to the current ticks, or delete it.
-- Mark a group as **production**. Destructive actions on clusters in a production group always require typing the object name (or the count) to confirm.
 
 On a phone, group chips are the fast way to pick clusters. See [On a phone](/guide/mobile).
+
+## Protected clusters
+
+Click the lock at the end of a cluster's row in the selector to **protect** it. A protected cluster shows a small lock beside its name wherever the name appears. Destructive actions on a protected cluster always require typing the object name (or the count) to confirm, even for a single object, and the confirm dialog says so.
+
+Click the lock again to unprotect the cluster. The flag belongs to the cluster, not to a group, and is saved with your settings. For a [linked read/write pair](#linked-read-and-write-contexts), protect the read cluster (the one the selector lists); actions that run through its write context are protected too.
 
 ## Connection states
 

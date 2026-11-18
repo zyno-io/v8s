@@ -173,6 +173,60 @@ async function main() {
             await page.getByRole('toolbar', { name: 'Bulk actions' }).getByRole('button', { name: 'Clear' }).click();
         });
 
+        await step('protected clusters: the lock toggle keeps rows stable; typed confirmation only while protected', async () => {
+            const toggleAll = async (pressed: boolean) => {
+                await page.locator('.cluster-btn').click();
+                const sel = page.getByRole('dialog', { name: 'Choose clusters' });
+                await sel.waitFor();
+                const row = sel.locator('.lrow').first();
+                const before = await row.boundingBox();
+                const checkedBefore = await sel.locator('.crow input[type=checkbox]:checked').count();
+                const locks = sel.getByTestId('protect-toggle');
+                const n = await locks.count();
+                assert.ok(n > 0, 'every context row has a lock toggle');
+                for (let i = 0; i < n; i++) {
+                    assert.equal(await locks.nth(i).getAttribute('aria-pressed'), String(!pressed));
+                    await locks.nth(i).click();
+                    assert.equal(await locks.nth(i).getAttribute('aria-pressed'), String(pressed));
+                }
+                assert.deepEqual(await row.boundingBox(), before, 'the row does not resize when protection toggles');
+                assert.equal(
+                    await sel.locator('.crow input[type=checkbox]:checked').count(),
+                    checkedBefore,
+                    'the lock does not toggle the row checkbox'
+                );
+                await sel.getByRole('button', { name: 'Cancel' }).click();
+                await sel.waitFor({ state: 'hidden' });
+            };
+            const openDelete = async () => {
+                await page.locator('.scroller .row:not(.sk)').first().locator('.name').click();
+                await page.getByTestId('drawer').waitFor();
+                await page.getByTestId('actions-menu').click();
+                await page.locator('[data-action="delete"]').click();
+                const dlg = page.getByRole('dialog', { name: /^Delete / });
+                await dlg.waitFor();
+                return dlg;
+            };
+            const closeDrawer = async () => {
+                await page.getByTestId('drawer-close').click();
+                await page.getByTestId('drawer').waitFor({ state: 'detached' });
+            };
+
+            await toggleAll(true);
+            let dlg = await openDelete();
+            assert.ok(await dlg.getByLabel('Confirmation text').isVisible(), 'protected: the object name is typed');
+            await dlg.getByText(/Protected cluster/).waitFor();
+            await dlg.getByRole('button', { name: 'Cancel' }).click();
+            await page.getByTestId('drawer').getByRole('img', { name: 'Protected' }).waitFor();
+            await closeDrawer();
+
+            await toggleAll(false);
+            dlg = await openDelete();
+            assert.equal(await dlg.getByLabel('Confirmation text').count(), 0, 'unprotected: plain confirmation');
+            await dlg.getByRole('button', { name: 'Cancel' }).click();
+            await closeDrawer();
+        });
+
         await step('create a ConfigMap', async () => {
             await page.getByTestId('create').click();
             const dlg = page.getByRole('dialog', { name: 'Create' });
@@ -521,7 +575,7 @@ async function main() {
                 await p.mouse.up();
                 assert.ok(await hold.isVisible(), 'a short press does not confirm');
             } else {
-                assert.ok(await phrase.isVisible(), 'production deletes keep the typed phrase');
+                assert.ok(await phrase.isVisible(), 'destructive deletes keep the typed phrase');
             }
             await p.keyboard.press('Escape');
             await ctx.close();

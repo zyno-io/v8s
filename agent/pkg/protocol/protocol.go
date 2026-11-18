@@ -503,6 +503,8 @@ type Settings struct {
 	NodeShell map[string]NodeShellSettings `msgpack:"nodeShell" json:"nodeShell"`
 	// PortForwards are the saved forwards (restorable with one click: stream.open type "portforward").
 	PortForwards []SavedForward `msgpack:"portForwards" json:"portForwards"`
+	// ProtectedClusters are cluster ids whose destructive actions ask for a typed confirmation in the UI.
+	ProtectedClusters []string `msgpack:"protectedClusters" json:"protectedClusters"`
 }
 
 // NodeShellSettings: Image must be pinned (a digest); empty fields use the defaults.

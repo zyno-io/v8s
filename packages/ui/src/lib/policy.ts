@@ -51,7 +51,7 @@ export interface ModeConfirmInput {
     fails: number | null;
     /** True when the scan of failing reports was bounded and may have missed some. */
     partial?: boolean;
-    production: boolean;
+    protected: boolean;
 }
 
 export interface ConfirmText {
@@ -69,7 +69,7 @@ export function failText(fails: number | null, partial = false): string {
     return `${fails}${partial ? '+' : ''} failing result${fails === 1 ? '' : 's'} found in the reports checked.`;
 }
 
-/** Confirmation of `kyverno.setMode`: shows the current fail count; Enforce warns that it blocks admissions and, in production, needs the policy name typed. */
+/** Confirmation of `kyverno.setMode`: shows the current fail count; Enforce warns that it blocks admissions and, on a protected cluster, needs the policy name typed. */
 export function setModeConfirm(i: ModeConfirmInput): ConfirmText {
     const where = `${i.policy} on ${i.cluster}`;
     if (i.mode === 'Enforce') {
@@ -78,8 +78,8 @@ export function setModeConfirm(i: ModeConfirmInput): ConfirmText {
             body: `${where} switches from ${i.current || 'its current mode'} to Enforce: Kubernetes will reject new and updated resources that violate it. ${failText(i.fails, i.partial)} Those resources are blocked on their next change.`,
             confirmLabel: 'Enforce',
             danger: true,
-            phrase: i.production ? i.policy : undefined,
-            note: i.production ? 'Production cluster: type the policy name to confirm.' : undefined
+            phrase: i.protected ? i.policy : undefined,
+            note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined
         };
     }
     return {
@@ -87,8 +87,8 @@ export function setModeConfirm(i: ModeConfirmInput): ConfirmText {
         body: `${where} switches from ${i.current || 'its current mode'} to Audit: violations are reported but no longer block admissions. ${failText(i.fails, i.partial)}`,
         confirmLabel: 'Switch to Audit',
         danger: false,
-        phrase: i.production ? i.policy : undefined,
-        note: i.production ? 'Production cluster: type the policy name to confirm.' : undefined
+        phrase: i.protected ? i.policy : undefined,
+        note: i.protected ? 'Protected cluster: type the policy name to confirm.' : undefined
     };
 }
 

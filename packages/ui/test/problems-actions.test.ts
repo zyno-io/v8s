@@ -30,23 +30,23 @@ describe('problems reconcile quick action', () => {
         runFluxAction.mockReset();
     });
 
-    it('asks in a production group and does not run when declined', async () => {
-        guard.mockReturnValue({ note: 'Production group: prod.' });
+    it('asks on a protected cluster and does not run when declined', async () => {
+        guard.mockReturnValue({ note: 'Protected cluster: prod.' });
         ask.mockResolvedValue(false);
         await runProblemAction('reconcile', ctx);
         expect(ask).toHaveBeenCalledOnce();
-        expect(ask.mock.calls[0]![0]).toMatchObject({ note: 'Production group: prod.' });
+        expect(ask.mock.calls[0]![0]).toMatchObject({ note: 'Protected cluster: prod.' });
         expect(runFluxAction).not.toHaveBeenCalled();
     });
 
-    it('runs after the production confirmation', async () => {
-        guard.mockReturnValue({ note: 'Production group: prod.' });
+    it('runs after the protected-cluster confirmation', async () => {
+        guard.mockReturnValue({ note: 'Protected cluster: prod.' });
         ask.mockResolvedValue(true);
         await runProblemAction('reconcile', ctx);
         expect(runFluxAction).toHaveBeenCalledWith([expect.objectContaining({ cluster: 'c1', name: 'apps' })], 'flux.reconcile');
     });
 
-    it('runs at once outside production', async () => {
+    it('runs at once on an unprotected cluster', async () => {
         guard.mockReturnValue({});
         await runProblemAction('reconcile', ctx);
         expect(ask).not.toHaveBeenCalled();

@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+- Replaced the Production flag on cluster groups with a per-cluster Protected flag. Groups are now purely for organizing clusters. Click the lock at the end of a cluster's row in the selector to protect it: destructive actions on a protected cluster still ask you to type the name (or the count) to confirm, and a small lock marks the cluster wherever its name appears. A group's old Production setting is ignored, so mark the clusters you want protected again.
+
 - IP search also reads IP-only CRDs when you search for a full address, CIDR or range: Service CIDRs, MetalLB pools and BGP peers, Multus NetworkAttachmentDefinitions, Cilium pools and nodes, and Calico IP pools. They are watched only while a search needs them and then stop after a few minutes; a short prefix such as `10.` never starts them.
 
 - The Events tab of a resource now shows all of its events, Normal and Warning, newest first, with the component that reported each one (the new Source column also appears in the global Events list). The events load when you open the tab and stay live while it is open; the always-on watch still keeps Warning events only. Events of cluster-scoped objects come from the `default` namespace, and Event objects themselves no longer offer an Events tab.

@@ -10,6 +10,7 @@ import type { ColPlan, TablePlan } from '@/lib/columns.ts';
 import type { DrawerTab } from '@/lib/route.ts';
 import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
@@ -608,9 +609,9 @@ function metricText(c: ColPlan, row: Row): string {
                             >
                             <template v-else-if="c.kind === 'cluster'"
                                 ><span class="tag"
-                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx] }}</span
-                                ></template
-                            >
+                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span>{{ it.row[c.idx]
+                                    }}<ProtectedMark :cluster="s(it.row[c.idx])" /></span
+                            ></template>
                             <template v-else-if="c.kind === 'status' || c.kind === 'tone'"
                                 ><span
                                     v-if="it.row[c.idx] !== '' && !(c.kind === 'tone' && n(it.row[c.idx]) === 0)"

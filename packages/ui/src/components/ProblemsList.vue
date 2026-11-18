@@ -12,6 +12,7 @@ import type { EvState, ProblemRow, SnoozePreset } from '@/lib/problems.ts';
 
 import ProblemsDetailSheet from '@/components/ProblemsDetailSheet.vue';
 import ProblemsEvidence from '@/components/ProblemsEvidence.vue';
+import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
@@ -877,8 +878,9 @@ defineExpose({ scroller });
                         </div>
                         <div class="c ptitle">{{ it.r.title }}</div>
                         <div class="sub">
-                            <span class="dot" :style="{ background: clusterColor(it.r.cluster) }"></span>{{ nameOf(it.r.cluster) }}<span>·</span
-                            >{{ it.age }}<span>·</span><span class="mono cls">{{ it.r.class }}</span>
+                            <span class="dot" :style="{ background: clusterColor(it.r.cluster) }"></span>{{ nameOf(it.r.cluster)
+                            }}<ProtectedMark :cluster="it.r.cluster" /><span>·</span>{{ it.age }}<span>·</span
+                            ><span class="mono cls">{{ it.r.class }}</span>
                         </div>
                     </div>
                     <div v-else class="pc-main"><i style="width: 70%"></i><i style="width: 45%"></i><i style="width: 55%"></i></div>

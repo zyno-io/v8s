@@ -87,7 +87,7 @@ export function overriddenIn(info: ProblemClassInfo, clusters: readonly string[]
 }
 
 /**
- * Settings patch toggling classes globally. `problemPrefs` also carries unrelated keys (`productionGroups`, `presets`): the patch
+ * Settings patch toggling classes globally. `problemPrefs` also carries unrelated keys (`presets`): the patch
  * only names `classes`, and the agent and the store merge it (RFC 7386), so nothing else is overwritten.
  */
 export function classPatch(changes: Record<string, boolean>): Record<string, unknown> {

@@ -28,7 +28,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatal("autoSwitchWrite should default true")
 	}
 	if g.Groups == nil || g.Links == nil || g.Stars == nil || g.Bookmarks == nil || g.Selection == nil ||
-		g.ColumnLayouts == nil || g.ProblemPrefs == nil || g.Acks == nil {
+		g.ColumnLayouts == nil || g.ProblemPrefs == nil || g.Acks == nil || g.ProtectedClusters == nil {
 		t.Fatalf("nil field: %+v", g)
 	}
 }

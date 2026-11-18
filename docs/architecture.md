@@ -166,7 +166,7 @@ A cluster's read-only and write contexts (for example two Warpgate targets) can 
 
 ### Cluster groups
 
-- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional colour dot and an optional "production" flag that turns on stricter confirms (type-to-confirm, optional step-up auth in hosted).
+- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional colour dot. Groups are purely organizational; the stricter confirms (type-to-confirm) come from a per-cluster **Protected** flag (`settings.protectedClusters`, a list of cluster ids).
 - Desktop: user-defined; v8s **suggests** groups from context-name patterns (`*-prod*`, `*-stg*`) on first run without applying them. Hosted: admin-defined groups plus personal groups.
 - Group chips in the cluster selector: click selects exactly that group, shift-click adds it.
 - Problem-class presets and default namespaces can be set per group.
