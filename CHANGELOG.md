@@ -7,7 +7,7 @@ release notes when the tag has no annotation.
 
 ### Changed
 
-- Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 % for limit and node percentages, neutral grey for request percentages. The number on it is a shade softer and no longer coloured.
+- Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 %. A request percentage gets a bar only when the pod has no limit for that resource. The number on it is a shade softer and no longer coloured.
 
 ## 0.3.2 — 2026-11-18
 

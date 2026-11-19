@@ -480,9 +480,10 @@ h1 {
     // A percentage's bar: one flat background layer sized to `--p` of the row and anchored at the bottom. Pure paint: no
     // pseudo-element, no layout, no transition. The number sits on it a shade softer (no top edge: it would strike the digits).
     .b {
-        --bar: var(--bar-n);
+        --bar: transparent;
         color: var(--text2);
-        background: linear-gradient(var(--bar), var(--bar)) no-repeat left bottom / 100% var(--p, 0%);
+        // Inset 1px each side (sized, not padded, so the digits keep their alignment with the header).
+        background: linear-gradient(var(--bar), var(--bar)) no-repeat center bottom / calc(100% - 2px) var(--p, 0%);
     }
     .ok {
         --bar: var(--bar-ok);

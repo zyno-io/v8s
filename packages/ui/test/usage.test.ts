@@ -178,8 +178,14 @@ describe('usageBar', () => {
         expect(usageBar('node', 899)?.tier).toBe('warn');
         expect(usageBar('node', 900)?.tier).toBe('hot');
     });
-    it('keeps requests neutral and caps the fill at a full row', () => {
-        expect(usageBar(null, 2500)).toEqual({ tier: 'n', fill: 100 });
+    it('caps the fill at a full row', () => {
         expect(usageBar('lim', 1300)).toEqual({ tier: 'hot', fill: 100 });
+    });
+    it('bars a request only when the row has no limit', () => {
+        expect(usageBar(null, 400, 800)).toBeNull();
+        expect(usageBar(null, 400, 0)).toBeNull();
+        expect(usageBar(null, 400, -1)).toEqual({ tier: 'ok', fill: 40 });
+        expect(usageBar(null, 2500, null)).toEqual({ tier: 'hot', fill: 100 });
+        expect(usageBar(null, 750)).toEqual({ tier: 'warn', fill: 75 });
     });
 });

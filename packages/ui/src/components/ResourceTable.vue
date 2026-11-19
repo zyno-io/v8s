@@ -537,15 +537,24 @@ function onResizeKey(e: KeyboardEvent, c: ColPlan) {
 
 /**
  * One cell of the usage block: muted for no data and n/a. A percentage gets a background bar instead of coloured text: its tier
- * as a class and its fill as `--p` (pure CSS, set only when the row re-renders under its v-memo).
+ * as a class and its fill as `--p` (pure CSS, set only when the row re-renders under its v-memo). A request percentage is barred
+ * only when the row has no limit for that resource, so `usageBar` gets the row's matching %L.
  */
-function usageClass(u: UsageSub, v: unknown) {
-    if (u.unit !== 'permille') return v == null || (v as number) < 0 ? 'm' : '';
-    const b = usageBar(u.tone, v);
-    return b ? 'b ' + b.tier : 'm';
+function cellBar(u: UsageSub, row: Row) {
+    if (u.unit !== 'permille') return null;
+    const x = props.plan.usage;
+    const li = u.tone == null && x ? (u.res === 'cpu' ? x.cpuPctLim : x.memPctLim) : -1;
+    return usageBar(u.tone, row[u.idx], li >= 0 ? row[li] : undefined);
 }
-const usageFill = (u: UsageSub, v: unknown) => {
-    const b = u.unit === 'permille' ? usageBar(u.tone, v) : null;
+function usageClass(u: UsageSub, row: Row) {
+    const v = row[u.idx];
+    if (v == null || (v as number) < 0) return 'm';
+    if (u.unit !== 'permille') return '';
+    const b = cellBar(u, row);
+    return b ? 'b ' + b.tier : 'b';
+}
+const usageFill = (u: UsageSub, row: Row) => {
+    const b = cellBar(u, row);
     return b ? '--p:' + b.fill + '%' : undefined;
 };
 /** The phone card's usage line as a zero-or-one item list, so the template can bind it once. */
@@ -707,8 +716,8 @@ function metricText(c: ColPlan, row: Row): string {
                                     ><span
                                         v-for="u in c.subs"
                                         :key="u.key"
-                                        :class="usageClass(u, it.row[u.idx])"
-                                        :style="usageFill(u, it.row[u.idx])"
+                                        :class="usageClass(u, it.row)"
+                                        :style="usageFill(u, it.row)"
                                         >{{ formatUsage(u.unit, u.pctNode, it.row[u.idx]) }}</span
                                     ></span
                                 ></template

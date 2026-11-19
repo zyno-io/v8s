@@ -39,12 +39,13 @@ export function usageTone(rule: 'lim' | 'node' | null, v: unknown): 'warning' | 
 }
 
 /**
- * The background bar of a percentage cell in the usage block: its tier (colour) and its fill height in % of the row. Limit and
- * node percentages go `ok` below 70 %, `warn` from 70 % and `hot` from 90 %; requests stay neutral (`n`), since running over a
- * request is normal. The fill is capped at a full row. Null (no bar) for no data and n/a.
+ * The background bar of a percentage cell in the usage block: its tier (colour) and its fill height in % of the row, capped at a
+ * full row. `ok` below 70 %, `warn` from 70 %, `hot` from 90 %. A request percentage (`rule` null) gets a bar only when the row
+ * has no limit for that resource (`lim`, the matching %L value, is n/a or absent): then the request is the only bound. Null (no
+ * bar) for no data, n/a, and a request next to a limit.
  */
-export function usageBar(rule: 'lim' | 'node' | null, v: unknown): { tier: 'ok' | 'warn' | 'hot' | 'n'; fill: number } | null {
+export function usageBar(rule: 'lim' | 'node' | null, v: unknown, lim?: unknown): { tier: 'ok' | 'warn' | 'hot'; fill: number } | null {
     if (typeof v !== 'number' || v < 0) return null;
-    const tier = rule == null ? 'n' : v >= 900 ? 'hot' : v >= 700 ? 'warn' : 'ok';
-    return { tier, fill: Math.min(v, 1000) / 10 };
+    if (rule == null && typeof lim === 'number' && lim >= 0) return null;
+    return { tier: v >= 900 ? 'hot' : v >= 700 ? 'warn' : 'ok', fill: Math.min(v, 1000) / 10 };
 }
