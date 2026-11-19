@@ -43,7 +43,7 @@ export interface Completion {
 const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: string }[] = [
     { name: 'ctx', aliases: ['context'], takesArgs: true, detail: 'choose clusters' },
     { name: 'ip', aliases: [], takesArgs: true, detail: 'find objects by IP' },
-    { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'set namespace filter' },
+    { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'namespaces, or set the filter: ns <name> | all' },
     { name: 'pb', aliases: ['problems'], takesArgs: false, detail: 'open problems' },
     { name: 'star', aliases: [], takesArgs: false, detail: 'star the current type' },
     { name: 'unstar', aliases: [], takesArgs: false, detail: 'unstar the current type' },
@@ -127,6 +127,12 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
         return text ? { type: 'ip', text } : { type: 'error', message: 'usage: :ip <address|cidr|range>' };
     }
     if (cmd?.name === 'ns') {
+        if (!args.length) {
+            // Bare `:ns` opens the Namespaces list, like `:namespaces`.
+            const k = findKind('namespaces', ctx.kinds);
+            if (k && 'kind' in k && k.kind.available) return { type: 'open-kind', gvr: k.kind.gvr, plural: k.kind.plural };
+            return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
+        }
         if (args.length !== 1) return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
         return { type: 'ns', namespace: args[0].toLowerCase() === 'all' ? null : args[0] };
     }

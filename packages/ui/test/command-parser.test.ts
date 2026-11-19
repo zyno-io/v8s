@@ -140,7 +140,32 @@ describe('parseCommand', () => {
     it(':ns and problems', () => {
         expect(parseCommand('ns payments', ctx)).toEqual({ type: 'ns', namespace: 'payments' });
         expect(parseCommand('ns all', ctx)).toEqual({ type: 'ns', namespace: null });
-        expect(parseCommand('ns', ctx).type).toBe('error');
+        expect(parseCommand('ns a b', ctx).type).toBe('error');
+    });
+    it('bare :ns and :namespace open the Namespaces list', () => {
+        const withNs: CommandContext = {
+            ...ctx,
+            kinds: [
+                ...ctx.kinds,
+                {
+                    gvr: 'v1/namespaces',
+                    kind: 'Namespace',
+                    plural: 'namespaces',
+                    shortNames: ['ns'],
+                    namespaced: false,
+                    available: true,
+                    group: '',
+                    version: 'v1',
+                    curated: true,
+                    clusters: []
+                }
+            ]
+        };
+        const open = { type: 'open-kind', gvr: 'v1/namespaces', plural: 'namespaces' };
+        expect(parseCommand('ns', withNs)).toEqual(open);
+        expect(parseCommand('namespace', withNs)).toEqual(open);
+        expect(parseCommand('ns payments', withNs)).toEqual({ type: 'ns', namespace: 'payments' });
+        expect(parseCommand('ns', ctx).type).toBe('error'); // no Namespaces kind served
         expect(parseCommand('pb', ctx)).toEqual({ type: 'problems' });
         expect(parseCommand('problems', ctx)).toEqual({ type: 'problems' });
     });
