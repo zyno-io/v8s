@@ -31,7 +31,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
         title: 'Row actions (k9s style)',
         rows: [
             ['Ctrl D', 'delete the focused row, or the selection (asks first)'],
-            ['r', 'restart the focused or selected workload (deployments, statefulsets, daemonsets)'],
+            ['r', 'restart the focused or selected workload, after a confirm (deployments, statefulsets, daemonsets)'],
             ['Shift F', 'port-forward the focused pod or service'],
             ['Shift J', 'jump to the owner (pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob)'],
             ['o', 'pods: open the node'],

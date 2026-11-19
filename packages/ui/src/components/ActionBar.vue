@@ -197,7 +197,9 @@ function go(a: ActionDef) {
     const typed = isBulkOrCross(targets.length, clusterIds.length);
     // On a phone restart and trigger are never a single tap: hold to confirm.
     const hold = isPhone.value && (a.id === 'restart' || a.id === 'trigger');
-    if (typed || note || hold) {
+    // A keyboard shortcut is easy to press by accident (k9s confirms its keys too), so a key-triggered action always asks.
+    const viaKey = props.variant === 'key';
+    if (typed || note || hold || viaKey) {
         ui.dialog = {
             type: 'confirm',
             title: `${a.label.replace('…', '')} ${targets.length === 1 ? first.name : names(targets.length)}?`,

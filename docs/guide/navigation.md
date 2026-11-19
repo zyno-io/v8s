@@ -48,7 +48,7 @@ Press `?` for the same list in the app.
 | `Shift+J`             | Jump to the owner: Pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob |
 | `o`                   | On pods, open the node the pod runs on                                         |
 | `Shift+F`             | Port-forward the focused pod or service                                        |
-| `r`                   | Restart the focused workload, or the selected workloads                        |
+| `r`                   | Restart the focused workload, or the selected workloads (asks first)           |
 | `Ctrl+D`              | Delete the focused row, or the selected rows                                   |
 | `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys        |
 | `Esc`                 | Clear the filter, then the selection, then close the drawer                    |
