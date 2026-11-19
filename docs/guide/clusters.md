@@ -28,7 +28,7 @@ Open the cluster selector in the top bar (or type `:ctx`).
 1. Tick the clusters you want, or click a group chip to select that group. Shift-click a chip to add it to the current ticks.
 2. Press **Connect**.
 
-Ticking boxes connects nothing until you press Connect. A mistaken "select all" on 40 clusters costs nothing. On launch, v8s shows your last selection pre-ticked with a **Connect** button; it does not reconnect until you press it. Large selections connect in batches, so a stampede of exec plugins and API requests does not happen.
+Ticking boxes connects nothing until you press Connect. A mistaken "select all" on 40 clusters costs nothing. On launch, v8s shows the selection you last connected to pre-ticked with a **Connect** button; it does not reconnect until you press it. Large selections connect in batches, so a stampede of exec plugins and API requests does not happen.
 
 Deselecting a cluster stops its watches after a short grace period (ten seconds, so an accidental click is free) and frees the memory the agent held for it. Selecting it again is a cold start, which is cheap.
 
@@ -40,6 +40,12 @@ You can also change the selection from the keyboard. See [the command bar](/guid
 :ctx -staging            remove one
 :ctx production          a group name selects all its clusters
 ```
+
+### What the browser remembers
+
+The last selection is remembered per browser (in its local storage), so it is pre-ticked even after the agent restarts. When the selection is exactly one group, v8s remembers the group rather than its clusters: if that group gains or loses members later, the new membership is pre-ticked. Clusters that no longer exist are dropped. If the browser has nothing saved, v8s falls back to the selection the agent reports.
+
+**One cluster configured?** If only one cluster is listed (contexts hidden as the write side of a [linked pair](#linked-read-and-write-contexts) don't count), v8s connects to it at startup and does not show the selector. With any other number of clusters, nothing connects until you press Connect.
 
 ## Groups
 

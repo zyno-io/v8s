@@ -132,6 +132,16 @@ The same text works in list filters. On the Pods, Services, EndpointSlices, Node
 
 Stars, bookmarks, groups, and column layouts are saved in your settings, so they survive restarts. In hosted mode they are saved per user on the server, so they follow you between devices.
 
+## What the browser remembers
+
+Three things are remembered per browser, in its local storage, with nothing to set up:
+
+- **The cluster selection.** See [Choose clusters](/guide/clusters#choose-clusters). It is pre-ticked on the next launch, not connected.
+- **The last page.** Opening the app at its root address (`/`) takes you to the page you were last on, including its query (a filter in the URL, for instance). The open object in the drawer is not restored. Only the first load does this: going to `/` from inside the app still lands on the default page (Pods, or Problems on a phone), and Overview is always one click away in the sidebar.
+- **Namespace filters.** Each set of connected clusters has its own namespace filters, for every resource type. Switch to another set and its filters load (none if you haven't used it); switch back and yours return. A set that is exactly a group is remembered as that group, so it keeps its filters when the group's membership changes. The 50 most recently used sets are kept.
+
+If the browser blocks local storage, none of this is saved and v8s works as it did before.
+
 ## Deep links
 
 The address always reflects what you are looking at. An open object adds the cluster, namespace, name, and tab to the URL, so a drawer is linkable:

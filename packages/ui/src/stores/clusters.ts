@@ -4,6 +4,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 
 import { getAgent, refreshKinds } from '@/lib/agent.ts';
+import { KEY_SELECTION, parseSelection, readJson, resolveChecked, storeSelection, writeJson } from '@/lib/remember.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 
 export const useClustersStore = defineStore('clusters', () => {
@@ -50,13 +51,25 @@ export const useClustersStore = defineStore('clusters', () => {
         return res;
     }
 
+    /** Group name to its listed members: the groups in settings plus the server-set ones (hosted mode). Used to recognise an exact group match. */
+    const groupMap = computed<Record<string, string[]>>(() => {
+        const out: Record<string, string[]> = {};
+        for (const c of list.value) for (const g of c.fixedGroups ?? []) (out[g] ??= []).push(c.id);
+        for (const [g, ids] of Object.entries(useSettingsStore().groups)) out[g] = ids.filter(id => byId.value.has(id));
+        return out;
+    });
+
     async function load() {
         const res = await refreshList();
-        remembered.value = res.selected ?? [];
+        // The latest selection this browser connected to (a group by name, so a changed membership is picked up); else the agent's.
+        remembered.value = resolveChecked(parseSelection(readJson(KEY_SELECTION)), groupMap.value, new Set(byId.value.keys()), res.selected ?? []);
         checked.value = new Set(remembered.value);
         loaded.value = true;
-        // Nothing connects until the user presses Connect: show the selector with the remembered selection pre-checked.
-        if (!states.value.length) popoverOpen.value = true;
+        if (states.value.length) return;
+        // A single cluster has nothing to choose: connect to it. Otherwise nothing connects until the user presses Connect.
+        if (list.value.length === 1) await connect([list.value[0].id]);
+        else popoverOpen.value = true;
+        if (!states.value.length && error.value) popoverOpen.value = true;
     }
 
     function open() {
@@ -86,6 +99,7 @@ export const useClustersStore = defineStore('clusters', () => {
         try {
             await getAgent().selectClusters(ids);
             remembered.value = ids;
+            writeJson(KEY_SELECTION, storeSelection(ids, groupMap.value));
             refreshKinds(0);
             focusAfterClose = 'table';
             popoverOpen.value = false;
@@ -110,6 +124,7 @@ export const useClustersStore = defineStore('clusters', () => {
         anyConnected,
         nameById,
         byId,
+        groupMap,
         groupsOf,
         writeContextOf,
         isProtected,

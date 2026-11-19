@@ -1125,6 +1125,7 @@ async function main() {
 
             // Unpinned survives a reload, even without the browser-side first-paint cache (settings are the source of truth).
             await page.evaluate(() => localStorage.removeItem('v8s:sidebar'));
+            await page.evaluate(() => localStorage.removeItem('v8s:namespaces')); // the restored namespace filter would empty the deployments list
             await page.mouse.move(900, 400); // a pointer resting on the left edge would open the overlay
             await reload();
             await page.getByTestId('sidebar-toggle').waitFor();
@@ -1166,6 +1167,7 @@ async function main() {
 
             // The width persists across a reload (settings, not the cache).
             await page.evaluate(() => localStorage.removeItem('v8s:sidebar'));
+            await page.evaluate(() => localStorage.removeItem('v8s:namespaces')); // the restored namespace filter would empty the deployments list
             await reload();
             await page.waitForFunction(() => document.querySelector('[data-testid=sidebar-resizer]')?.getAttribute('aria-valuenow') === '212');
 
