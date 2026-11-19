@@ -1443,7 +1443,29 @@ export interface ImageVulnSummary {
   workloads: number /* int */;
   reports: number /* int */;
   clusters: string[];
+  /**
+   * Exposure is the union over the image's workloads of how their pods are reachable (Exposure* bits). A pod is
+   * behind a Service when one of its EndpointSlices targets it; the other bits follow from that Service (its type,
+   * or an Ingress / Gateway API route that sends traffic to it). ExposureService is set for any Service type.
+   */
+  exposure?: number /* int */;
 }
+/**
+ * Exposure bits (ImageVulnSummary.Exposure).
+ */
+export const ExposureService = 1 << 0;
+/**
+ * Exposure bits (ImageVulnSummary.Exposure).
+ */
+export const ExposureNodePort = 1 << 1;
+/**
+ * Exposure bits (ImageVulnSummary.Exposure).
+ */
+export const ExposureLoadBalancer = 1 << 2;
+/**
+ * Exposure bits (ImageVulnSummary.Exposure).
+ */
+export const ExposureIngress = 1 << 3; // an Ingress, HTTPRoute or GRPCRoute backend
 export interface SecurityImagesResult {
   /**
    * Images are ranked by critical then high counts.

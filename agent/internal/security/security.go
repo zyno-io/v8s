@@ -55,6 +55,7 @@ type ImageVuln struct {
 	Source, Cluster, Repository, Tag     string
 	Critical, High, Medium, Low, Unknown int
 	Workload                             WorkloadRef
+	Exposure                             int // protocol.Exposure* bits of the workload (set by Images)
 }
 
 // Image is "repository:tag".
@@ -96,6 +97,7 @@ func AggregateImages(in []ImageVuln) []protocol.ImageVulnSummary {
 		a.s.Critical, a.s.High, a.s.Medium = max(a.s.Critical, v.Critical), max(a.s.High, v.High), max(a.s.Medium, v.Medium)
 		a.s.Low, a.s.Unknown = max(a.s.Low, v.Low), max(a.s.Unknown, v.Unknown)
 		a.s.Reports++
+		a.s.Exposure |= v.Exposure
 		a.wl[v.Cluster+"/"+v.Workload.Kind+"/"+v.Workload.NS+"/"+v.Workload.Name] = struct{}{}
 		a.clus[v.Cluster] = struct{}{}
 	}
@@ -234,8 +236,17 @@ func (s *Service) Images(ctx context.Context, p protocol.SecurityImagesParams) (
 	reg.Unlock()
 	var all []ImageVuln
 	for _, c := range clusters {
+		from := len(all)
 		for _, src := range srcs {
 			src(&s.cfg, c, func(v ImageVuln) { all = append(all, v) })
+		}
+		if len(all) == from {
+			continue
+		}
+		if ex := ExposureOf(s.cfg.Scan, c); ex != nil {
+			for i := from; i < len(all); i++ {
+				all[i].Exposure = ex[all[i].Workload]
+			}
 		}
 	}
 	res := protocol.SecurityImagesResult{Images: AggregateImages(all)}

@@ -13,6 +13,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -334,6 +335,25 @@ func hpaFacts(h *autoscalingv2.HorizontalPodAutoscaler) *HPAFacts {
 		return nil
 	}
 	return f
+}
+
+// EndpointSliceFacts lists the pods an EndpointSlice targets (endpoints whose targetRef is a Pod), so a
+// Service can be joined to the workloads behind it (security exposure). Nil when no endpoint targets a pod.
+type EndpointSliceFacts struct {
+	Pods []string // pod names, in the slice's namespace
+}
+
+func endpointSliceFacts(e *discoveryv1.EndpointSlice) *EndpointSliceFacts {
+	var pods []string
+	for i := range e.Endpoints {
+		if t := e.Endpoints[i].TargetRef; t != nil && t.Kind == "Pod" && t.Name != "" && (t.Namespace == "" || t.Namespace == e.Namespace) {
+			pods = append(pods, t.Name)
+		}
+	}
+	if len(pods) == 0 {
+		return nil
+	}
+	return &EndpointSliceFacts{Pods: pods}
 }
 
 // IngressFacts lists the Services an Ingress routes to.

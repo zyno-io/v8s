@@ -388,9 +388,13 @@ func (w *World) generate(c *Cluster) {
 				"spec":   map[string]any{"replicas": want, "selector": map[string]any{"matchLabels": map[string]any{"app": name}}, "template": podTemplate(name, tmplImage)},
 				"status": map[string]any{"replicas": want, "readyReplicas": got}})
 		}
+		svcType, port := "ClusterIP", map[string]any{"port": int64(80), "protocol": "TCP", "targetPort": int64(8080)}
+		if a%11 == 3 { // a few NodePort Services (the Vulnerabilities "Exposed via" column)
+			svcType, port["nodePort"] = "NodePort", int64(30000+a%2700)
+		}
 		w.putLocked("v1/services", map[string]any{"metadata": objMeta(ns, name, labels),
-			"spec": map[string]any{"type": "ClusterIP", "clusterIP": fmt.Sprintf("10.96.%d.%d", a/250, 1+a%250), "selector": map[string]any{"app": name},
-				"ports": []any{map[string]any{"port": int64(80), "protocol": "TCP", "targetPort": int64(8080)}}}})
+			"spec": map[string]any{"type": svcType, "clusterIP": fmt.Sprintf("10.96.%d.%d", a/250, 1+a%250), "selector": map[string]any{"app": name},
+				"ports": []any{port}}})
 		eps := []any{}
 		for e, lp := range appPods[a] {
 			eps = append(eps, map[string]any{"addresses": []any{lp.ip}, "conditions": map[string]any{"ready": int64(e) < avail},
@@ -400,7 +404,7 @@ func (w *World) generate(c *Cluster) {
 		w.putLocked("discovery.k8s.io/v1/endpointslices", map[string]any{"metadata": esm, "addressType": "IPv4", "endpoints": eps})
 		if a%7 == 0 {
 			w.putLocked("networking.k8s.io/v1/ingresses", map[string]any{"metadata": objMeta(ns, name, labels),
-				"spec":   map[string]any{"ingressClassName": "nginx", "rules": []any{map[string]any{"host": name + "." + ns + ".example.com"}}, "tls": []any{map[string]any{}}},
+				"spec":   map[string]any{"ingressClassName": "nginx", "rules": []any{ingressRule(name, ns, avail > 0)}, "tls": []any{map[string]any{}}},
 				"status": map[string]any{"loadBalancer": map[string]any{"ingress": []any{map[string]any{"ip": "192.168.100.10"}}}}})
 		}
 		if a%40 == 0 {
@@ -520,4 +524,15 @@ func Discovery() []disco.Resource {
 		disco.Resource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "nodes", Kind: "NodeMetrics", Verbs: []string{"get", "list"}})
 	sort.Slice(out, func(i, j int) bool { return out[i].GVR() < out[j].GVR() })
 	return out
+}
+
+// ingressRule is a host rule routing to the app's Service, or host-only when the app has no ready pods (the
+// ingress.no-backend fixtures are separate, named *-public).
+func ingressRule(name, ns string, backend bool) map[string]any {
+	r := map[string]any{"host": name + "." + ns + ".example.com"}
+	if backend {
+		r["http"] = map[string]any{"paths": []any{map[string]any{"path": "/", "pathType": "Prefix",
+			"backend": map[string]any{"service": map[string]any{"name": name, "port": map[string]any{"number": int64(80)}}}}}}
+	}
+	return r
 }

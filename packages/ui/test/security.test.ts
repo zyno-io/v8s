@@ -1,19 +1,26 @@
 import type { ImageVulnSummary, ReportDetail } from '@v8s/client';
 
+import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService } from '@v8s/client';
 import { describe, expect, it } from 'vitest';
 
 import {
     ChunkAccumulator,
     columnsFor,
     containerImages,
+    DEFAULT_EXPOSURE_DEF,
+    exposureList,
     filterImages,
     imageKey,
     matchesWorkload,
     matchImages,
+    normExposureDef,
+    normExposureFilter,
+    NOT_EXPOSED,
     rowsOf,
     safeHttpUrl,
     sevRank,
     sevTone,
+    shownExposure,
     sortImages,
     splitImage,
     viewRows,
@@ -68,6 +75,50 @@ describe('images', () => {
         expect(filterImages(list, { text: '', source: 'kubescape', onlyCritical: false }).map(i => i.image)).toEqual(['c/crit:2']);
         expect(filterImages(list, { text: '', source: '', onlyCritical: true })).toHaveLength(2);
         expect(filterImages(list, { text: 'high', source: 'trivy', onlyCritical: true })).toHaveLength(0);
+    });
+});
+
+describe('exposure', () => {
+    const SVC = ExposureService;
+    const LB = ExposureLoadBalancer | SVC;
+    const ING = ExposureIngress | SVC;
+    const NP = ExposureNodePort | SVC;
+    const WITH_SVC = DEFAULT_EXPOSURE_DEF | SVC;
+    const list = [
+        img('lb:1', { exposure: LB }),
+        img('ing:1', { exposure: ING | LB }),
+        img('svc:1', { exposure: SVC }),
+        img('none:1'),
+        img('np:1', { exposure: NP })
+    ];
+    const names = (l: ImageVulnSummary[]) => l.map(i => i.image);
+
+    it('shows only the kinds of the definition, and Service only when nothing wider applies', () => {
+        expect(shownExposure(SVC, DEFAULT_EXPOSURE_DEF)).toBe(0);
+        expect(shownExposure(SVC, WITH_SVC)).toBe(SVC);
+        expect(shownExposure(LB, WITH_SVC)).toBe(ExposureLoadBalancer);
+        expect(shownExposure(ING | LB, ExposureLoadBalancer)).toBe(ExposureLoadBalancer);
+        expect(shownExposure(undefined, WITH_SVC)).toBe(0);
+        expect(exposureList(ExposureIngress | ExposureNodePort).map(e => e.label)).toEqual(['Ingress', 'NodePort']);
+    });
+    it('filters by any checked kind, or not exposed, under the definition', () => {
+        const f = (exposedVia: number, exposureDef = DEFAULT_EXPOSURE_DEF) =>
+            names(filterImages(list, { text: '', source: '', onlyCritical: false, exposedVia, exposureDef }));
+        expect(f(0)).toHaveLength(5);
+        expect(f(ExposureLoadBalancer)).toEqual(['lb:1', 'ing:1']);
+        expect(f(ExposureIngress | ExposureNodePort)).toEqual(['ing:1', 'np:1']);
+        expect(f(NOT_EXPOSED)).toEqual(['svc:1', 'none:1']);
+        expect(f(NOT_EXPOSED, WITH_SVC)).toEqual(['none:1']);
+        expect(f(SVC, WITH_SVC)).toEqual(['svc:1']);
+    });
+    it('sorts by the widest shown kind', () => {
+        expect(names(sortImages(list, 'exposure', true)).slice(0, 3)).toEqual(['ing:1', 'lb:1', 'np:1']);
+        expect(names(sortImages(list, 'exposure', true, WITH_SVC)).slice(3)).toEqual(['svc:1', 'none:1']);
+    });
+    it('normalizes the definition and drops filter kinds it no longer includes', () => {
+        expect(normExposureDef(0)).toBe(DEFAULT_EXPOSURE_DEF);
+        expect(normExposureDef(SVC | (1 << 12))).toBe(SVC);
+        expect(normExposureFilter(SVC | ExposureIngress | NOT_EXPOSED, DEFAULT_EXPOSURE_DEF)).toBe(ExposureIngress | NOT_EXPOSED);
     });
 });
 
