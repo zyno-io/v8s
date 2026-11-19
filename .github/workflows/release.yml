@@ -1,8 +1,8 @@
 name: Release
 
 # Tags (vX.Y.Z[-pre]) build, sign and publish a release. Pushes to main build everything unsigned: the artifacts (kept 7 days)
-# and the container image as ghcr.io/zyno-io/v8s:main and :main-g<sha>, which is what gets live-tested before tagging. A manual
-# run builds any branch the same unsigned way (image :<branch> and :<branch>-g<sha>). Signing, notarization, attestations,
+# and the container image as ghcr.io/zyno-io/v8s:main and :<short sha>, which is what gets live-tested before tagging. A manual
+# run builds any branch the same unsigned way (image :<branch> and :<short sha>). Signing, notarization, attestations,
 # the Helm chart and the GitHub release happen on tags only.
 on:
   push:
@@ -56,7 +56,7 @@ jobs:
             sha="g${GITHUB_SHA::7}"
             version="0.0.0-${ref}.${sha}"
             prerelease=true
-            images="$img:$ref"$'\n'"$img:$ref-$sha"
+            images="$img:$ref"$'\n'"$img:${GITHUB_SHA::7}"
             tagged=false
             environment=''
           fi
