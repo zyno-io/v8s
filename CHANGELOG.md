@@ -5,11 +5,21 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-19
+
+### Added
+
+- Vulnerabilities: an **Exposed via** column shows how each image's workloads can be reached: Ingress (including Gateway API HTTPRoute and GRPCRoute), LoadBalancer, NodePort or Service. It is worked out from the Services, endpoints, Ingresses and routes v8s already watches, with no extra API reads. The column header chooses what counts as exposed (Ingress, LoadBalancer and NodePort by default; a plain Service is cluster-internal, so it is off and those images show `-`). The filter bar's **Exposed via** checkboxes filter by kind, **Not exposed**, or **Unknown** (`?`, while a cluster's Services, endpoints or pods are still loading or cannot be read). Sortable; on a phone the card lists the kinds.
+
 ### Changed
 
 - Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 %. A request percentage gets a bar only when the pod has no limit for that resource. The number on it is a shade softer and no longer coloured.
 - Pods: next to a limit, the **memory request percentage turns amber above 100 % and red above 200 %**, since pods over their memory request are evicted first when a node runs short of memory. CPU request percentages stay plain.
 - Pods and Nodes: **hover a percentage header** for what its colours mean.
+
+### Fixed
+
+- Vulnerabilities and the CVE table: rows no longer overlap after the window is resized between phone and desktop widths.
 
 ## 0.3.2 — 2026-11-18
 
