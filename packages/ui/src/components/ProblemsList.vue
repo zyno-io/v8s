@@ -578,9 +578,12 @@ function onClick(e: MouseEvent) {
             return;
         case 'snooze': {
             const b = (t.closest('[data-act]') as HTMLElement).getBoundingClientRect();
-            ackMenu.value = { id: it.id, x: Math.min(b.right, window.innerWidth - 8), y: b.bottom + 4 };
+            // Opens below the button, or above it when the menu (about 140 px) would leave the window.
+            const h = 140;
+            const y = b.bottom + 4 + h > window.innerHeight ? Math.max(8, b.top - 4 - h) : b.bottom + 4;
+            ackMenu.value = { id: it.id, x: Math.min(b.right, window.innerWidth - 8), y };
             // Focus moves into the menu so Esc is handled there (its @keydown.esc.stop) and never reaches the page chain.
-            void nextTick(() => document.querySelector<HTMLElement>('.amenu button')?.focus());
+            void nextTick(() => document.querySelector<HTMLElement>('.amenu button')?.focus({ preventScroll: true }));
             return;
         }
         case 'restore':
@@ -999,18 +1002,23 @@ defineExpose({ scroller });
                 <p class="muted">No problems in the selected clusters.</p>
             </template>
         </div>
-        <div v-if="ackMenu" class="back" @mousedown="ackMenu = null"></div>
-        <div
-            v-if="ackMenu"
-            class="floating amenu"
-            role="menu"
-            aria-label="Acknowledge"
-            :style="{ left: Math.max(8, ackMenu.x - 168) + 'px', top: ackMenu.y + 'px' }"
-            @keydown.esc.stop="ackMenu = null"
-        >
-            <button class="mi" type="button" role="menuitem" @click="pickSnooze(null)">Acknowledge</button>
-            <button v-for="p in SNOOZE_PRESETS" :key="p.id" class="mi" type="button" role="menuitem" @click="pickSnooze(p.id)">{{ p.label }}</button>
-        </div>
+        <!-- Teleported: the list's `contain: layout paint` makes it the containing block of fixed descendants, so viewport
+             coordinates would land relative to the list (and focusing the menu would scroll it into view). -->
+        <Teleport v-if="ackMenu" to="body">
+            <div class="back" @mousedown="ackMenu = null"></div>
+            <div
+                class="floating amenu"
+                role="menu"
+                aria-label="Acknowledge"
+                :style="{ left: Math.max(8, ackMenu.x - 168) + 'px', top: ackMenu.y + 'px' }"
+                @keydown.esc.stop="ackMenu = null"
+            >
+                <button class="mi" type="button" role="menuitem" @click="pickSnooze(null)">Acknowledge</button>
+                <button v-for="p in SNOOZE_PRESETS" :key="p.id" class="mi" type="button" role="menuitem" @click="pickSnooze(p.id)">
+                    {{ p.label }}
+                </button>
+            </div>
+        </Teleport>
     </div>
     <ProblemsDetailSheet
         v-if="isPhone && sheetId && activeRow"
