@@ -79,7 +79,7 @@ function dismiss() {
     z-index: 31;
     right: 0;
     top: 36px;
-    width: 280px;
+    width: 310px;
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -95,6 +95,9 @@ function dismiss() {
     justify-content: space-between;
     gap: 12px;
     font-size: 12px;
+}
+.row a {
+    white-space: nowrap;
 }
 @media (max-width: 899.98px) {
     .plabel {
