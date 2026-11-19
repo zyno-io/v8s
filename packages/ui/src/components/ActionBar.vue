@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccessResult, ObjectRef } from '@v8s/client';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import type { ActionDef } from '@/lib/actions.ts';
 
@@ -21,8 +21,10 @@ const props = defineProps<{
     gvr: string;
     targets: ObjectRef[];
     kindLabel: string;
-    /** `bar` renders buttons; `menu` renders one button that opens a list. */
-    variant: 'bar' | 'menu';
+    /** `bar` renders buttons; `menu` renders one button that opens a list; `key` renders nothing and runs `run`. */
+    variant: 'bar' | 'menu' | 'key';
+    /** variant `key`: the action id to run on mount (after its access check), through the same confirmations as a click. */
+    run?: string;
     currentReplicas?: number;
     currentRevision?: number;
 }>();
@@ -72,7 +74,7 @@ watch(
     () => {
         clearTimeout(t);
         results.value = new Map();
-        if (props.targets.length) t = setTimeout(refreshAccess, 120);
+        if (props.targets.length && !props.run) t = setTimeout(refreshAccess, 120);
     },
     { immediate: true }
 );
@@ -93,6 +95,16 @@ function tip(a: ActionDef): string {
     return '';
 }
 const viaWrite = (a: ActionDef) => stateOf(a).viaWrite;
+
+onMounted(async () => {
+    if (props.variant !== 'key' || !props.run) return;
+    await refreshAccess();
+    const a = actions.value.find(x => x.id === props.run);
+    if (!a) return;
+    const st = stateOf(a);
+    if (st.disabled) ui.toast('warning', st.reason);
+    else go(a);
+});
 
 const open = ref(false);
 /** In flight: a direct action (no dialog) must not fire twice from a double click. */
@@ -236,7 +248,7 @@ function pastTense(a: ActionDef): string {
             {{ a.label }}<span v-if="viaWrite(a)" class="tag warning wtag">write</span>
         </button>
     </div>
-    <div v-else class="amenu" @keydown.esc.stop="open && (open = false)">
+    <div v-else-if="variant === 'menu'" class="amenu" @keydown.esc.stop="open && (open = false)">
         <button class="btn sm" type="button" aria-haspopup="menu" :aria-expanded="open" data-testid="actions-menu" @click="open = !open">
             Actions
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">

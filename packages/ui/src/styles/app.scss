@@ -362,6 +362,11 @@ h1 {
     contain: strict;
     position: relative;
     outline-offset: -2px;
+    // A focused row draws its own ring: the whole-table ring on top of it would be a double outline.
+    &:has(.row.focus, .pcard.focus):focus,
+    &:has(.row.focus, .pcard.focus):focus-visible {
+        outline: none;
+    }
 }
 
 .sizer {

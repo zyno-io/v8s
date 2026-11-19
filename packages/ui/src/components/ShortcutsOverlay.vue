@@ -19,11 +19,24 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['s', 'open a shell in the focused pod'],
             ['e', 'edit the YAML of the focused or open object'],
             ['d', 'describe: open the focused object, Overview tab'],
+            ['y', 'open the focused object on its YAML tab'],
             ['Enter', 'in the filter: move focus to the results'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['[', 'pin or unpin the sidebar'],
             ['?', 'show this list']
+        ]
+    },
+    {
+        title: 'Row actions (k9s style)',
+        rows: [
+            ['Ctrl D', 'delete the focused row, or the selection (asks first)'],
+            ['r', 'restart the focused or selected workload (deployments, statefulsets, daemonsets)'],
+            ['Shift F', 'port-forward the focused pod or service'],
+            ['Shift J', 'jump to the owner (pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob)'],
+            ['o', 'pods: open the node'],
+            ['c', "copy the focused row's name"],
+            ['n', 'copy its namespace (namespaced types)']
         ]
     },
     {
@@ -35,6 +48,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
             [':po [ns]', 'pods, optionally in a namespace'],
             [':<type> ns/name', 'open one object in the drawer'],
             [':star / :unstar', 'star or unstar the current type'],
+            [':ns', 'open the namespaces list'],
             [':ns <ns> / all', 'set or clear the namespace filter'],
             [':pb', 'problems'],
             [':q', 'close the bar']

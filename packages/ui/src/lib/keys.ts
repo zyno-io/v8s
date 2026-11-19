@@ -116,6 +116,25 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             }
             return;
         }
+        if (
+            e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey &&
+            !e.shiftKey &&
+            !e.defaultPrevented &&
+            e.key === 'd' &&
+            !isEditable(e.target) &&
+            !ui.commandBarOpen &&
+            !ui.shortcutsOpen &&
+            !ui.paletteOpen &&
+            !ui.createOpen &&
+            !ui.dialog &&
+            !clusters.popoverOpen
+        ) {
+            // Ctrl+D is k9s' Delete; the page decides (and the browser must not bookmark either way while a list is on screen).
+            if (pageHandler?.(e)) e.preventDefault();
+            return;
+        }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
         if (
             e.key === 'Enter' &&

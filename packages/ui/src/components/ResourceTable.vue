@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ObjectRef, Row, ViewHandle } from '@v8s/client';
+import type { ObjectPayload, ObjectRef, Row, ViewHandle } from '@v8s/client';
 
 import { useVirtualizer } from '@tanstack/vue-virtual';
 import { TONE_NAMES } from '@v8s/client';
@@ -11,22 +11,29 @@ import type { DrawerTab } from '@/lib/route.ts';
 import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
 
 import ProtectedMark from '@/components/ProtectedMark.vue';
+import { actionById } from '@/lib/actions.ts';
+import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
 import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
+import { errorText } from '@/lib/mutations.ts';
+import { portForwardAvailable } from '@/lib/portforward.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
+import { ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
 import { usageCardLine, usageHint, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
+import { useUiStore } from '@/stores/ui.ts';
 
 const props = defineProps<{ handle: ViewHandle; gvr: string; plan: TablePlan; title: string; namespaced: boolean; decor?: TableDecor | null }>();
 const emit = defineEmits<{ resize: [key: string, width: number] }>();
 
 const table = useTableStore();
 const clusters = useClustersStore();
+const appUi = useUiStore();
 const router = useRouter();
 const ui = computed(() => table.of(props.gvr));
 
@@ -429,7 +436,94 @@ function focusList(first: boolean): boolean {
 
 setListNav({ focusList, owns: el => el instanceof Node && !!scroller.value?.contains(el) });
 
+/** The focused row (a loaded one), with its object ref. */
+function focusedRow(): { row: Row; ref: ObjectRef } | null {
+    const id = ui.value.focusId;
+    const row = id ? props.handle.rows.get(id) : undefined;
+    return row ? { row, ref: refOf(row) } : null;
+}
+
+async function copyText(text: string, what: string) {
+    try {
+        await navigator.clipboard.writeText(text);
+        appUi.toast('success', `Copied ${what}`);
+    } catch {
+        appUi.toast('danger', 'Could not copy: the clipboard is unavailable');
+    }
+}
+
+async function jumpToOwner(ref: ObjectRef) {
+    try {
+        const p = await getAgent().call<ObjectPayload>('object.get', {
+            cluster: ref.cluster,
+            gvr: ref.gvr,
+            namespace: ref.namespace,
+            name: ref.name
+        });
+        const o = ownerRef(ref, p.owners, kinds.value);
+        if (o) void openObject(router, o);
+        else appUi.toast('info', 'No owner');
+    } catch (e) {
+        appUi.toast('danger', `Could not read the owner: ${errorText(e)}`);
+    }
+}
+
+/** k9s-style row keys (`rowIntent` maps them). Each uses the existing action or drawer path; true when the key was taken. */
+function rowKey(e: KeyboardEvent): boolean {
+    const intent = rowIntent(e);
+    if (!intent) return false;
+    const f = focusedRow();
+    const sel = ui.value.selected;
+    switch (intent) {
+        case 'delete':
+        case 'restart': {
+            if (!actionById(props.gvr, intent)) return false;
+            // The selection when there is one (the bulk bar's path), else the focused row.
+            const targets = sel.size ? [...sel.values()] : f ? [f.ref] : [];
+            if (!targets.length) return intent === 'delete';
+            requestKeyAction(props.gvr, intent, targets);
+            return true;
+        }
+        case 'portforward':
+            if (!f || !actionById(props.gvr, 'portforward') || !portForwardAvailable()) return false;
+            requestKeyAction(props.gvr, 'portforward', [f.ref]);
+            return true;
+        case 'yaml': {
+            if (!tabsFor(props.gvr).includes('yaml')) return false;
+            if (f) {
+                openRow(ui.value.focusId, 'yaml');
+                return true;
+            }
+            const open = parseDrawer(props.gvr, router.currentRoute.value.query);
+            if (!open) return false;
+            void openObject(router, open.ref, 'yaml', true);
+            return true;
+        }
+        case 'copy-name':
+            if (!f?.ref.name) return false;
+            void copyText(f.ref.name, f.ref.name);
+            return true;
+        case 'copy-namespace':
+            if (!f?.ref.namespace) return false;
+            void copyText(f.ref.namespace, f.ref.namespace);
+            return true;
+        case 'owner':
+            if (!f) return false;
+            void jumpToOwner(f.ref);
+            return true;
+        case 'node': {
+            if (!f || props.gvr !== 'v1/pods') return false;
+            const ni = (props.handle.columns.value ?? []).findIndex(c => c.key === 'node');
+            const node = ni >= 0 ? (f.row[ni + 2] as string) : '';
+            if (node) void openObject(router, { cluster: f.ref.cluster, gvr: 'v1/nodes', name: node });
+            else appUi.toast('info', 'Not scheduled on a node');
+            return true;
+        }
+    }
+}
+
 setPageKeyHandler(e => {
+    if (e.ctrlKey || e.key === 'J' || e.key === 'F') return rowKey(e);
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
@@ -468,6 +562,12 @@ setPageKeyHandler(e => {
             editRequest.value = false;
             return false;
         }
+        case 'y':
+        case 'c':
+        case 'n':
+        case 'o':
+        case 'r':
+            return rowKey(e);
         case 'Enter':
             if (ui.value.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {
                 openRow(ui.value.focusId);

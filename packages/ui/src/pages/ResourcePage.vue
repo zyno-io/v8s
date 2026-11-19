@@ -13,6 +13,7 @@ import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
+import { keyAction } from '@/lib/row-keys.ts';
 import { decorFor } from '@/lib/table-decor.ts';
 import { isPhone, usePageVisible } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -118,6 +119,16 @@ watch(
     () => [state.text, state.namespaces, state.tones, state.sort],
     () => table.resetInteraction(props.gvr)
 );
+// A row key's action (Ctrl+D, r, Shift+F) is a one-shot request: never replay it after leaving this type.
+watch(
+    () => props.gvr,
+    () => (keyAction.value = null)
+);
+onBeforeUnmount(() => (keyAction.value = null));
+function onKeyActionDone() {
+    keyAction.value = null;
+    table.clearSelection(props.gvr);
+}
 
 // ---- column layout: widths saved once per resize, visibility from the Columns menu ----
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -242,6 +253,16 @@ function star() {
                 :namespaced="namespaced"
                 :decor="decor"
                 @resize="saveWidth"
+            />
+            <ActionBar
+                v-if="keyAction && keyAction.gvr === gvr"
+                :key="keyAction.seq"
+                :gvr="gvr"
+                :targets="keyAction.targets"
+                :kind-label="title"
+                variant="key"
+                :run="keyAction.action"
+                @done="onKeyActionDone"
             />
             <div v-if="selected.length" class="bulk" role="toolbar" aria-label="Bulk actions">
                 <span class="selcount">{{ selected.length }} selected</span>
