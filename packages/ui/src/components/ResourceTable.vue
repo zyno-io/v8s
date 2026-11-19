@@ -713,13 +713,9 @@ function metricText(c: ColPlan, row: Row): string {
                                     class="ub"
                                     :style="{ gridTemplateColumns: c.subGrid }"
                                     :title="plan.usage ? usageTitle(plan.usage, it.row) : undefined"
-                                    ><span
-                                        v-for="u in c.subs"
-                                        :key="u.key"
-                                        :class="usageClass(u, it.row)"
-                                        :style="usageFill(u, it.row)"
-                                        >{{ formatUsage(u.unit, u.pctNode, it.row[u.idx]) }}</span
-                                    ></span
+                                    ><span v-for="u in c.subs" :key="u.key" :class="usageClass(u, it.row)" :style="usageFill(u, it.row)">{{
+                                        formatUsage(u.unit, u.pctNode, it.row[u.idx])
+                                    }}</span></span
                                 ></template
                             >
                             <template v-else-if="c.kind === 'cluster'"
