@@ -14,10 +14,10 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
-import { formatAge, formatUsage, OLD_AGE_MS, usageBar } from '@/lib/format.ts';
+import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
 import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
-import { usageCardLine, usageTitle } from '@/lib/usage.ts';
+import { usageCardLine, usageHint, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
@@ -540,22 +540,33 @@ function onResizeKey(e: KeyboardEvent, c: ColPlan) {
  * as a class and its fill as `--p` (pure CSS, set only when the row re-renders under its v-memo). A request percentage is barred
  * only when the row has no limit for that resource, so `usageBar` gets the row's matching %L.
  */
-function cellBar(u: UsageSub, row: Row) {
-    if (u.unit !== 'permille') return null;
+/** The row's %L for a request percentage's resource (undefined for other cells or without the column). */
+function limOf(u: UsageSub, row: Row) {
     const x = props.plan.usage;
     const li = u.tone == null && x ? (u.res === 'cpu' ? x.cpuPctLim : x.memPctLim) : -1;
-    return usageBar(u.tone, row[u.idx], li >= 0 ? row[li] : undefined);
+    return li >= 0 ? row[li] : undefined;
 }
+function cellBar(u: UsageSub, row: Row) {
+    return u.unit === 'permille' ? usageBar(u.tone, row[u.idx], limOf(u, row)) : null;
+}
+/** A request percentage next to a limit has no bar; a memory one is tinted instead (`usageReqTone`). */
 function usageClass(u: UsageSub, row: Row) {
     const v = row[u.idx];
     if (v == null || (v as number) < 0) return 'm';
     if (u.unit !== 'permille') return '';
     const b = cellBar(u, row);
-    return b ? 'b ' + b.tier : 'b';
+    if (b) return 'b ' + b.tier;
+    const t = u.tone == null ? usageReqTone(u.res, v, limOf(u, row)) : '';
+    return t === 'danger' ? 'b d' : t === 'warning' ? 'b w' : 'b';
 }
 const usageFill = (u: UsageSub, row: Row) => {
     const b = cellBar(u, row);
     return b ? '--p:' + b.fill + '%' : undefined;
+};
+/** A usage header's tooltip: the sort hint, then what its colours mean. */
+const usageHeadTitle = (u: UsageSub) => {
+    const h = usageHint(u);
+    return `Sort by ${u.label.toLowerCase()} (shift-click adds a secondary key)` + (h ? '\n' + h : '');
 };
 /** The phone card's usage line as a zero-or-one item list, so the template can bind it once. */
 const cardUse = (row: Row) => {
@@ -638,7 +649,7 @@ function metricText(c: ColPlan, row: Row): string {
                                 class="th-btn"
                                 type="button"
                                 :aria-label="`Sort by ${u.label}`"
-                                :title="`Sort by ${u.label.toLowerCase()} (shift-click adds a secondary key)`"
+                                :title="usageHeadTitle(u)"
                                 @click="table.sortBy(gvr, u.key, $event.shiftKey)"
                             >
                                 {{ u.text }}<span class="u" aria-hidden="true">{{ sortInfo(u.key).arrow || u.suffix }}</span>

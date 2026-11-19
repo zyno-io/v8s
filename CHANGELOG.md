@@ -8,6 +8,8 @@ release notes when the tag has no annotation.
 ### Changed
 
 - Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 %. A request percentage gets a bar only when the pod has no limit for that resource. The number on it is a shade softer and no longer coloured.
+- Pods: next to a limit, the **memory request percentage turns amber above 100 % and red above 200 %**, since pods over their memory request are evicted first when a node runs short of memory. CPU request percentages stay plain.
+- Pods and Nodes: **hover a percentage header** for what its colours mean.
 
 ## 0.3.2 — 2026-11-18
 

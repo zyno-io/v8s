@@ -1,6 +1,6 @@
 import type { Row } from '@v8s/client';
 
-import type { UsageIdx } from './columns.ts';
+import type { UsageIdx, UsageSub } from './columns.ts';
 
 import { usageTone } from './format.ts';
 
@@ -32,6 +32,8 @@ function line(
     parts.push(req == null ? 'no request' : `${fmt(req)} requested${pctText(pReq)}`);
     parts.push(lim == null ? 'no limit' : `${fmt(lim)} limit${pctText(pLim)}`);
     if (pNode != null && pNode >= 0 && node) parts.push(`${pct(pNode)}% of ${node} allocatable`);
+    if (name === 'MEM' && lim != null && pReq != null && Math.round(pReq / 10) > 100)
+        parts.push('over request: evicted first if the node runs short of memory');
     return parts.join(' · ');
 }
 
@@ -70,4 +72,17 @@ export function usageCardLine(u: UsageIdx, row: Row): { text: string; tone: 'war
             ? [usageTone('node', num(row, u.cpuPctAlloc)), usageTone('node', num(row, u.memPctAlloc))]
             : [usageTone('lim', num(row, u.cpuPctLim)), usageTone('lim', num(row, u.memPctLim))];
     return { text: `cpu ${cpu}m · mem ${mem}Mi`, tone: tones.includes('danger') ? 'danger' : tones.includes('warning') ? 'warning' : '' };
+}
+
+const BARS = 'green below 70 %, amber from 70 %, red from 90 %';
+
+/** What a usage header's colours mean, for its tooltip under the sort hint ('' for raw columns). */
+export function usageHint(u: UsageSub): string {
+    if (u.unit !== 'permille') return '';
+    if (u.tone === 'lim') return `Bar: share of the limit, ${BARS}.`;
+    if (u.tone === 'node') return `Bar: share of the node's allocatable, ${BARS}.`;
+    const without = `Without a limit: a bar, ${BARS}.`;
+    return u.res === 'mem'
+        ? `With a limit: no bar; amber above 100 % of the request, red above 200 % (pods over their memory request are evicted first when the node runs short). ${without}`
+        : `With a limit: no bar (running over a CPU request is normal). ${without}`;
 }
