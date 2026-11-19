@@ -17,7 +17,7 @@ import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
-import { setPageKeyHandler } from '@/lib/keys.ts';
+import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { setAcked, subjectRef } from '@/lib/problems-actions.ts';
 import { aggFlatIndexOfView, aggregateRows, buildAggFlat, groupClusters } from '@/lib/problems-aggregate.ts';
 import { buildLayout, flatIndexOfView, itemAt, pixelOffset, viewRangeOfFlat } from '@/lib/problems-groups.ts';
@@ -132,7 +132,9 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
             getScrollElement: () => scroller.value,
             estimateSize: (i: number) => sizeOf(describe(m, i).kind),
             overscan: isPhone.value ? 6 : 10,
-            scrollMargin: headH.value
+            scrollMargin: headH.value,
+            // a row scrolled to the start stays below the sticky header
+            scrollPaddingStart: headH.value
         };
     })
 );
@@ -375,6 +377,7 @@ watch(
         collapseAll();
         focusId.value = 0;
         anchor.id = 0;
+        queryPending = true;
         if (scroller.value) scroller.value.scrollTop = 0;
     },
     { flush: 'post' }
@@ -402,6 +405,8 @@ function collapseAll() {
 watch(
     () => h.version.value,
     () => {
+        queryPending = false;
+        if (focusFirstNext && focusFirstRow() !== 'unloaded') focusFirstNext = false;
         if (expandedId.value && viewIndexOfId(expandedId.value) < 0 && h.ids.length) expandedId.value = 0;
         if (sheetId.value && !h.rows.has(sheetId.value) && h.ids.length) sheetId.value = 0;
         if (pending.value.size) {
@@ -574,6 +579,8 @@ function onClick(e: MouseEvent) {
         case 'snooze': {
             const b = (t.closest('[data-act]') as HTMLElement).getBoundingClientRect();
             ackMenu.value = { id: it.id, x: Math.min(b.right, window.innerWidth - 8), y: b.bottom + 4 };
+            // Focus moves into the menu so Esc is handled there (its @keydown.esc.stop) and never reaches the page chain.
+            void nextTick(() => document.querySelector<HTMLElement>('.amenu button')?.focus());
             return;
         }
         case 'restore':
@@ -615,6 +622,60 @@ function moveFocus(delta: number) {
     }
 }
 
+// Enter in the search box (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+// While a search/sort change waits for its reply, the loaded window still holds the previous query's rows: focus the list now and
+// the first row when the reply lands.
+let queryPending = false;
+let focusFirstNext = false;
+
+/** Row focus to the first row of the results. 'unloaded': the window is not at the top yet (scrolled to the top; retried on the next reply). */
+function focusFirstRow(): 'ok' | 'none' | 'unloaded' {
+    const m = model.value;
+    for (let j = 0; j < m.count; j++) {
+        const meta = describe(m, j);
+        if (meta.kind !== 'row' && meta.kind !== 'child') continue;
+        const id = idAtView(meta.vi);
+        if (!id) {
+            if (scroller.value) scroller.value.scrollTop = 0;
+            return 'unloaded';
+        }
+        focusId.value = id;
+        // the first row: show the top of the list, its group header included
+        if (scroller.value) scroller.value.scrollTop = 0;
+        return 'ok';
+    }
+    return 'none';
+}
+
+function focusList(first: boolean): boolean {
+    const el = scroller.value;
+    if (!el) return false;
+    if (queryPending) {
+        focusFirstNext = true;
+        el.focus({ preventScroll: true });
+        return true;
+    }
+    if (!first && flatOfId(focusId.value) >= 0) {
+        el.focus({ preventScroll: true });
+        virtualizer.value.scrollToIndex(flatOfId(focusId.value), { align: 'auto' });
+        return true;
+    }
+    const r = focusFirstRow();
+    if (r === 'none') return false;
+    if (r === 'unloaded') focusFirstNext = true;
+    el.focus({ preventScroll: true });
+    return true;
+}
+
+setListNav({
+    focusList,
+    owns: el => el instanceof Node && !!scroller.value?.contains(el),
+    filterText: () => store.text,
+    clearFilter: () => {
+        store.text = '';
+    }
+});
+
 function focusedItem(): Item | undefined {
     return slice.value.find(x => x.id === focusId.value && (x.kind === 'row' || x.kind === 'child'));
 }
@@ -623,12 +684,10 @@ setPageKeyHandler(e => {
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
-            if (e.key === 'ArrowDown' && document.activeElement === scroller.value) return false;
             moveFocus(1);
             return true;
         case 'k':
         case 'ArrowUp':
-            if (e.key === 'ArrowUp' && document.activeElement === scroller.value) return false;
             moveFocus(-1);
             return true;
         case 'Enter': {
@@ -664,6 +723,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
     clearInterval(timer);
     setPageKeyHandler(null);
+    setListNav(null);
 });
 
 // ---- empty states ----

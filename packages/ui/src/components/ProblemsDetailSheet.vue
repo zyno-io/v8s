@@ -4,26 +4,31 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { EvState, ProblemRow, SnoozePreset } from '@/lib/problems.ts';
 
 import ProblemsEvidence from '@/components/ProblemsEvidence.vue';
+import { useUiStore } from '@/stores/ui.ts';
 
 defineProps<{ row: ProblemRow; state: EvState | null }>();
 const emit = defineEmits<{ close: []; ack: [preset: SnoozePreset | null]; unack: []; open: [] }>();
 
+const ui = useUiStore();
 const back = ref<HTMLButtonElement | null>(null);
 let returnTo: HTMLElement | null = null;
 
 function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+        // a layer opened over the sheet (palette, command bar, shortcuts, a dialog) closes first
+        if (ui.dialog || ui.paletteOpen || ui.createOpen || ui.commandBarOpen || ui.shortcutsOpen) return;
         e.preventDefault();
+        e.stopPropagation(); // before the global Esc chain, which would also clear the search
         emit('close');
     }
 }
 onMounted(() => {
     returnTo = document.activeElement as HTMLElement | null;
     back.value?.focus();
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
 });
 onBeforeUnmount(() => {
-    window.removeEventListener('keydown', onKey);
+    window.removeEventListener('keydown', onKey, true);
     returnTo?.focus?.();
 });
 </script>

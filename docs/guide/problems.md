@@ -130,6 +130,8 @@ These need Hubble. `hubble.relay-down` is on by default but only raises where a 
 | `a`       | Acknowledge, or restore if acknowledged     |
 | `o`       | Open the problem's object in the drawer     |
 
+In the search box, `Enter` moves focus to the list (first row focused). `Esc` from the list clears the search and keeps focus on the list.
+
 ## Look into one
 
 Expand a row to see the evidence inline: the condition or state that triggered it, container states, the Warning events related to it, related objects, and quick actions that fit the problem. The actions v8s can offer are **Logs**, **Previous logs**, **Describe**, **Restart**, **Roll back**, **Reconcile**, **Suspend**, **Open release**, **Open policy**, and **Open image vulns**. Only those that apply to the problem and that you are allowed to run are shown. Open the object itself in the drawer with the row's open button or `o`.

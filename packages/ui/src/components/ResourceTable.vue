@@ -15,7 +15,7 @@ import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageTone } from '@/lib/format.ts';
-import { setPageKeyHandler } from '@/lib/keys.ts';
+import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { usageCardLine, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
@@ -44,7 +44,9 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
         getScrollElement: () => scroller.value,
         estimateSize: () => rowH.value,
         overscan: isPhone.value ? 6 : 10,
-        scrollMargin: headerH.value
+        scrollMargin: headerH.value,
+        // a row scrolled to the start stays below the sticky header
+        scrollPaddingStart: headerH.value
     }))
 );
 
@@ -164,6 +166,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
     clearInterval(timer);
     setPageKeyHandler(null);
+    setListNav(null);
 });
 
 // ---- windowing: hold ±pad rows around the viewport, re-request near an edge, anchor on the first visible row ----
@@ -257,6 +260,12 @@ watch(
 watch(
     () => props.handle.version.value,
     () => {
+        // The first reply after a filter/sort change: focus the first row of the NEW results (ids were of the old query before).
+        queryPending = false;
+        if (focusFirstNext) {
+            focusFirstNext = false;
+            focusFirstRow();
+        }
         holdAnchor();
         requestWindow();
         openPending();
@@ -288,6 +297,7 @@ watch(
     () => [ui.value.text, ui.value.namespaces, ui.value.tones, ui.value.sort],
     () => {
         anchor.id = 0;
+        queryPending = true;
         if (scroller.value) scroller.value.scrollTop = 0;
     },
     { flush: 'post' }
@@ -380,16 +390,53 @@ function moveFocus(delta: number) {
     virtualizer.value.scrollToIndex(h.offset.value + cur, { align: 'auto' });
 }
 
+// Enter in the filter (and Esc from the list that clears it) puts focus on the list and its row focus on the first result.
+// While a filter/sort change waits for its reply, ids/offset still describe the previous query: focus the list now and the
+// first row when the reply lands.
+let queryPending = false;
+let focusFirstNext = false;
+
+function focusFirstRow() {
+    const h = props.handle;
+    if (!h.ids.length) return;
+    if (h.offset.value > 0) {
+        // The window is not at the top yet: scroll there; the next reply brings row 0.
+        focusFirstNext = true;
+        if (scroller.value) scroller.value.scrollTop = 0;
+        return;
+    }
+    ui.value.focusId = h.ids[0];
+    virtualizer.value.scrollToIndex(0, { align: 'start' });
+}
+
+function focusList(first: boolean): boolean {
+    const h = props.handle;
+    const ids = h.ids;
+    const el = scroller.value;
+    if (!el) return false;
+    if (queryPending) {
+        focusFirstNext = true;
+        el.focus({ preventScroll: true });
+        return true;
+    }
+    if (!ids.length) return false;
+    const keep = !first && ui.value.focusId && ids.includes(ui.value.focusId);
+    if (!keep) ui.value.focusId = ids[0];
+    el.focus({ preventScroll: true });
+    virtualizer.value.scrollToIndex(h.offset.value + ids.indexOf(ui.value.focusId), { align: 'auto' });
+    return true;
+}
+
+setListNav({ focusList, owns: el => el instanceof Node && !!scroller.value?.contains(el) });
+
 setPageKeyHandler(e => {
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
-            if (e.key === 'ArrowDown' && document.activeElement === scroller.value) return false;
             moveFocus(1);
             return true;
         case 'k':
         case 'ArrowUp':
-            if (e.key === 'ArrowUp' && document.activeElement === scroller.value) return false;
             moveFocus(-1);
             return true;
         case 'x':
