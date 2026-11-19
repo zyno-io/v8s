@@ -362,7 +362,7 @@ async function main() {
                     `a number after n/a or a dash: ${cells.join(' ')}`
                 );
             assert.ok(nums[0] >= 90, 'the busiest pod is at least 90 % of its limit in the fake');
-            assert.ok((await page.locator('.scroller .row:not(.sk) .ub .w, .scroller .row:not(.sk) .ub .d').count()) > 0, 'hot pods are coloured');
+            assert.ok((await page.locator('.scroller .row:not(.sk) .ub .b.hot').count()) > 0, 'hot pods get a red bar');
             const title = await rows.first().locator('.ub').getAttribute('title');
             assert.match(title ?? '', /requested/);
             assert.match(title ?? '', /limit/);

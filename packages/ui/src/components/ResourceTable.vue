@@ -14,7 +14,7 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
-import { formatAge, formatUsage, OLD_AGE_MS, usageTone } from '@/lib/format.ts';
+import { formatAge, formatUsage, OLD_AGE_MS, usageBar } from '@/lib/format.ts';
 import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { usageCardLine, usageTitle } from '@/lib/usage.ts';
@@ -535,11 +535,19 @@ function onResizeKey(e: KeyboardEvent, c: ColPlan) {
     emit('resize', c.key, Math.max(48, w + (e.key === 'ArrowRight' ? 16 : -16)));
 }
 
-/** One cell of the usage block: muted for no data and n/a, warning and danger by the limit and node rules. */
+/**
+ * One cell of the usage block: muted for no data and n/a. A percentage gets a background bar instead of coloured text: its tier
+ * as a class and its fill as `--p` (pure CSS, set only when the row re-renders under its v-memo).
+ */
 function usageClass(u: UsageSub, v: unknown) {
-    const t = usageTone(u.tone, v);
-    return { m: v == null || (v as number) < 0, w: t === 'warning', d: t === 'danger' };
+    if (u.unit !== 'permille') return v == null || (v as number) < 0 ? 'm' : '';
+    const b = usageBar(u.tone, v);
+    return b ? 'b ' + b.tier : 'm';
 }
+const usageFill = (u: UsageSub, v: unknown) => {
+    const b = u.unit === 'permille' ? usageBar(u.tone, v) : null;
+    return b ? '--p:' + b.fill + '%' : undefined;
+};
 /** The phone card's usage line as a zero-or-one item list, so the template can bind it once. */
 const cardUse = (row: Row) => {
     const u = props.plan.usage;
@@ -696,9 +704,13 @@ function metricText(c: ColPlan, row: Row): string {
                                     class="ub"
                                     :style="{ gridTemplateColumns: c.subGrid }"
                                     :title="plan.usage ? usageTitle(plan.usage, it.row) : undefined"
-                                    ><span v-for="u in c.subs" :key="u.key" :class="usageClass(u, it.row[u.idx])">{{
-                                        formatUsage(u.unit, u.pctNode, it.row[u.idx])
-                                    }}</span></span
+                                    ><span
+                                        v-for="u in c.subs"
+                                        :key="u.key"
+                                        :class="usageClass(u, it.row[u.idx])"
+                                        :style="usageFill(u, it.row[u.idx])"
+                                        >{{ formatUsage(u.unit, u.pctNode, it.row[u.idx]) }}</span
+                                    ></span
                                 ></template
                             >
                             <template v-else-if="c.kind === 'cluster'"

@@ -37,3 +37,14 @@ export function usageTone(rule: 'lim' | 'node' | null, v: unknown): 'warning' | 
     if (rule === 'lim' && v >= 1000) return 'danger';
     return v >= 900 ? 'warning' : '';
 }
+
+/**
+ * The background bar of a percentage cell in the usage block: its tier (colour) and its fill height in % of the row. Limit and
+ * node percentages go `ok` below 70 %, `warn` from 70 % and `hot` from 90 %; requests stay neutral (`n`), since running over a
+ * request is normal. The fill is capped at a full row. Null (no bar) for no data and n/a.
+ */
+export function usageBar(rule: 'lim' | 'node' | null, v: unknown): { tier: 'ok' | 'warn' | 'hot' | 'n'; fill: number } | null {
+    if (typeof v !== 'number' || v < 0) return null;
+    const tier = rule == null ? 'n' : v >= 900 ? 'hot' : v >= 700 ? 'warn' : 'ok';
+    return { tier, fill: Math.min(v, 1000) / 10 };
+}

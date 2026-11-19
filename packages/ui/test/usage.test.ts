@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { UsageIdx } from '../src/lib/columns.ts';
 
-import { formatUsage, usageTone } from '../src/lib/format.ts';
+import { formatUsage, usageBar, usageTone } from '../src/lib/format.ts';
 import { cpuText, memText, usageCardLine, usageTitle } from '../src/lib/usage.ts';
 
 const IDX: UsageIdx = {
@@ -162,5 +162,24 @@ describe('nodes: usage against allocatable', () => {
             tone: ''
         });
         expect(usageCardLine(NIDX, row({ cpuUse: 1, memUse: 1, cpuPctAlloc: 1200, memPctAlloc: 10 }, NIDX))!.tone).toBe('warning');
+    });
+});
+
+describe('usageBar', () => {
+    it('draws no bar without a value', () => {
+        expect(usageBar('lim', null)).toBeNull();
+        expect(usageBar('lim', undefined)).toBeNull();
+        expect(usageBar('node', -1)).toBeNull();
+    });
+    it('tiers limit and node percentages at 70 and 90 %', () => {
+        expect(usageBar('lim', 0)).toEqual({ tier: 'ok', fill: 0 });
+        expect(usageBar('lim', 699)).toEqual({ tier: 'ok', fill: 69.9 });
+        expect(usageBar('lim', 700)).toEqual({ tier: 'warn', fill: 70 });
+        expect(usageBar('node', 899)?.tier).toBe('warn');
+        expect(usageBar('node', 900)?.tier).toBe('hot');
+    });
+    it('keeps requests neutral and caps the fill at a full row', () => {
+        expect(usageBar(null, 2500)).toEqual({ tier: 'n', fill: 100 });
+        expect(usageBar('lim', 1300)).toEqual({ tier: 'hot', fill: 100 });
     });
 });

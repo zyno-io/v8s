@@ -477,12 +477,27 @@ h1 {
     .m {
         color: var(--text3);
     }
-    .w {
-        color: var(--warning);
+    // A percentage's bar: one flat background layer sized to `--p` of the row and anchored at the bottom. Pure paint: no
+    // pseudo-element, no layout, no transition. The number sits on it a shade softer (no top edge: it would strike the digits).
+    .b {
+        --bar: var(--bar-n);
+        color: var(--text2);
+        background: linear-gradient(var(--bar), var(--bar)) no-repeat left bottom / 100% var(--p, 0%);
     }
-    .d {
-        color: var(--danger);
+    .ok {
+        --bar: var(--bar-ok);
     }
+    .warn {
+        --bar: var(--bar-warn);
+    }
+    .hot {
+        --bar: var(--bar-hot);
+        color: var(--text);
+    }
+}
+// Body rows: the block's line box is the row, so a percentage's bar can fill the row's height (less its 1px border).
+.tr.row .ub {
+    line-height: calc(var(--row-h) - 1px);
 }
 .hd .ub {
     letter-spacing: 0.02em;
