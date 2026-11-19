@@ -5,6 +5,7 @@ import { useVirtualizer } from '@tanstack/vue-virtual';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatAge, formatCount } from '@/lib/format.ts';
@@ -121,6 +122,11 @@ function openFlows() {
     const r = srcRef.value;
     if (r) void router.push({ path: gvrPath(r.gvr), query: { ...drawerQuery(r, 'flows'), fv: 'DROPPED' } });
 }
+const windowOptions = DROP_WINDOWS.map(w => ({ value: w.sec, label: `Last ${w.label}` }));
+const SORT_OPTIONS = [
+    { value: 'count', label: 'Most drops' },
+    { value: 'lastSeen', label: 'Most recent' }
+] as const;
 const windowLabel = computed(() => DROP_WINDOWS.find(w => w.sec === windowSec.value)?.label ?? `${windowSec.value} s`);
 const ago = (ms: number) => formatAge(ms, now.value);
 </script>
@@ -138,16 +144,11 @@ const ago = (ms: number) => formatAge(ms, now.value);
             <span class="grow"></span>
             <label class="sel">
                 <span class="sr-only">Window</span>
-                <select v-model.number="windowSec" class="field" aria-label="Window" data-testid="drops-window">
-                    <option v-for="w in DROP_WINDOWS" :key="w.sec" :value="w.sec">Last {{ w.label }}</option>
-                </select>
+                <SmartSelect v-model="windowSec" :options="windowOptions" aria-label="Window" data-testid="drops-window" />
             </label>
             <label class="sel">
                 <span class="sr-only">Sort</span>
-                <select v-model="sort" class="field" aria-label="Sort" data-testid="drops-sort">
-                    <option value="count">Most drops</option>
-                    <option value="lastSeen">Most recent</option>
-                </select>
+                <SmartSelect v-model="sort" :options="SORT_OPTIONS" aria-label="Sort" data-testid="drops-sort" />
             </label>
             <div class="field find">
                 <input v-model="text" type="search" placeholder="Filter" aria-label="Filter drops" data-testid="drops-filter" />

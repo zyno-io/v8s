@@ -3,11 +3,13 @@ import { ProblemsGVR } from '@v8s/client';
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 
 import type { GroupBy } from '@/lib/problems.ts';
+import type { SelectOption } from '@/lib/smart-select.ts';
 
 import NamespaceMenu from '@/components/NamespaceMenu.vue';
 import ProblemsChips from '@/components/ProblemsChips.vue';
 import ProblemsList from '@/components/ProblemsList.vue';
 import ProblemsPresets from '@/components/ProblemsPresets.vue';
+import SmartSelect from '@/components/SmartSelect.vue';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { useProblemsView } from '@/lib/problems-view.ts';
@@ -59,6 +61,26 @@ const groupOptions: { id: GroupBy; label: string }[] = [
 // the others, so it lives in the same menu.
 const MERGE = 'merge';
 const mergeUnavailable = computed(() => clusters.activeIds.length < 2 || view.aggregateBlocked.value);
+const groupChoices = computed<SelectOption<string>[]>(() => [
+    ...groupOptions.map(g => ({
+        value: g.id as string,
+        label: g.id === 'none' ? g.label : 'Group: ' + g.label.toLowerCase(),
+        disabled: g.id === 'namespace' && view.namespaceTooMany.value
+    })),
+    {
+        value: MERGE,
+        label: 'Merge across clusters',
+        disabled: mergeUnavailable.value,
+        title: view.aggregateBlocked.value
+            ? `Needs ${formatCount(AGGREGATE_CAP)} problems or fewer`
+            : 'One row for the same problem on several clusters',
+        testid: 'aggregate'
+    }
+]);
+const ORDER_OPTIONS = [
+    { value: false, label: 'Newest change first' },
+    { value: true, label: 'Oldest first' }
+];
 const grouping = computed<string>({
     get: () => (store.aggregate ? MERGE : store.groupBy),
     set: v => {
@@ -95,30 +117,11 @@ const grouping = computed<string>({
             <ProblemsPresets :classes="view.classes.value?.classes ?? []" @changed="view.reloadClasses()" />
             <label class="sel opt">
                 <span class="sr-only">Group by</span>
-                <select v-model="grouping" class="btn" aria-label="Group by" data-testid="group-by">
-                    <option v-for="g in groupOptions" :key="g.id" :value="g.id" :disabled="g.id === 'namespace' && view.namespaceTooMany.value">
-                        {{ g.id === 'none' ? g.label : 'Group: ' + g.label.toLowerCase() }}
-                    </option>
-                    <option
-                        :value="MERGE"
-                        :disabled="mergeUnavailable"
-                        :title="
-                            view.aggregateBlocked.value
-                                ? `Needs ${formatCount(AGGREGATE_CAP)} problems or fewer`
-                                : 'One row for the same problem on several clusters'
-                        "
-                        data-testid="aggregate"
-                    >
-                        Merge across clusters
-                    </option>
-                </select>
+                <SmartSelect v-model="grouping" :options="groupChoices" aria-label="Group by" data-testid="group-by" />
             </label>
             <label class="sel opt">
                 <span class="sr-only">Order</span>
-                <select v-model="store.oldest" class="btn" aria-label="Order" :disabled="view.aggregateActive.value">
-                    <option :value="false">Newest change first</option>
-                    <option :value="true">Oldest first</option>
-                </select>
+                <SmartSelect v-model="store.oldest" :options="ORDER_OPTIONS" aria-label="Order" :disabled="view.aggregateActive.value" />
             </label>
         </div>
         <div class="filters">
@@ -247,9 +250,6 @@ h1 {
 .seg button.on {
     background: var(--s3);
     color: var(--text);
-}
-.sel select {
-    padding-right: 8px;
 }
 @media (max-width: 899.98px) {
     .opt {

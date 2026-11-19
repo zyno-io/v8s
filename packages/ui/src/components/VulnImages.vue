@@ -5,8 +5,10 @@ import { useVirtualizer } from '@tanstack/vue-virtual';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
 import type { ImageSortKey, SourceFilter } from '@/lib/security.ts';
+import type { SelectOption } from '@/lib/smart-select.ts';
 
 import CheckMenu from '@/components/CheckMenu.vue';
+import SmartSelect from '@/components/SmartSelect.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
@@ -135,6 +137,10 @@ const view = computed(() =>
 );
 const totals = computed(() => totalsOf(view.value));
 const sources = computed(() => [...new Set(images.value.map(i => i.source))].sort());
+const sourceOptions = computed<SelectOption<SourceFilter>[]>(() => [
+    { value: '', label: 'All sources' },
+    ...sources.value.map(s => ({ value: s as SourceFilter, label: sourceLabel(s) }))
+]);
 
 function sortBy(key: ImageSortKey) {
     const cur = sort.value;
@@ -237,12 +243,7 @@ function onScan() {
                 </svg>
                 <input v-model="text" type="search" placeholder="Filter images" aria-label="Filter images" autocomplete="off" spellcheck="false" />
             </label>
-            <label v-if="sources.length > 1" class="field sel">
-                <select v-model="source" aria-label="Scanner source">
-                    <option value="">All sources</option>
-                    <option v-for="s in sources" :key="s" :value="s">{{ sourceLabel(s) }}</option>
-                </select>
-            </label>
+            <SmartSelect v-if="sources.length > 1" v-model="source" :options="sourceOptions" aria-label="Scanner source" />
             <CheckMenu
                 v-model="exposedVia"
                 :options="filterOptions"
@@ -431,12 +432,6 @@ h1 {
     flex: 1;
     min-width: 0;
     color: var(--text);
-}
-.sel select {
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    outline: 0;
 }
 .chip-wrap {
     display: inline-flex;

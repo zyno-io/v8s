@@ -5,6 +5,7 @@ import { RpcError } from '@v8s/client';
 import { computed, defineAsyncComponent, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { newRequestId } from '@/lib/actions.ts';
 import { getNamespacesView, kinds } from '@/lib/agent.ts';
 import { takePrefill } from '@/lib/create-prefill.ts';
@@ -30,6 +31,8 @@ const prefill = takePrefill();
 const BLANK = '';
 const initialType = templateFor(table.currentGvr) ? table.currentGvr : BLANK;
 const type = ref<string>(prefill ? BLANK : initialType);
+const typeOptions = [{ value: BLANK, label: 'Blank (paste YAML)' }, ...TEMPLATES.map(t => ({ value: t.gvr, label: t.label }))];
+const clusterOptions = computed(() => clusters.activeIds.map(id => ({ value: id, label: clusters.nameById.get(id) ?? id })));
 const cluster = ref(prefill?.cluster && clusters.activeIds.includes(prefill.cluster) ? prefill.cluster : (clusters.activeIds[0] ?? ''));
 const namespace = ref(table.currentGvr ? (table.of(table.currentGvr).namespaces[0] ?? 'default') : 'default');
 const nsOptions = computed(() => namespaceNames(getNamespacesView()));
@@ -170,16 +173,11 @@ async function create() {
             <div class="controls">
                 <label class="lab"
                     >Type
-                    <select v-model="type" class="sel" data-testid="create-type" @change="applyTemplate">
-                        <option :value="BLANK">Blank (paste YAML)</option>
-                        <option v-for="t in TEMPLATES" :key="t.gvr" :value="t.gvr">{{ t.label }}</option>
-                    </select>
+                    <SmartSelect v-model="type" :options="typeOptions" block aria-label="Type" data-testid="create-type" @change="applyTemplate" />
                 </label>
                 <label class="lab"
                     >Cluster
-                    <select v-model="cluster" class="sel" data-testid="create-cluster">
-                        <option v-for="id in clusters.activeIds" :key="id" :value="id">{{ clusters.nameById.get(id) ?? id }}</option>
-                    </select>
+                    <SmartSelect v-model="cluster" :options="clusterOptions" block aria-label="Cluster" data-testid="create-cluster" />
                 </label>
                 <label v-if="tpl?.namespaced" class="lab"
                     >Namespace
@@ -251,20 +249,6 @@ h2 {
     letter-spacing: 0.045em;
     text-transform: uppercase;
     color: var(--text3);
-}
-.sel {
-    height: 32px;
-    min-width: 160px;
-    border: 1px solid var(--bstrong);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13px;
-    padding: 0 8px;
-    text-transform: none;
-    letter-spacing: 0;
-    font-weight: 400;
 }
 .editor {
     flex: 1 1 0;

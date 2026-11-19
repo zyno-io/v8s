@@ -22,6 +22,10 @@ class FakeEl {
         public id = '',
         public type = 'text'
     ) {}
+    attrs = new Set<string>();
+    hasAttribute(name: string) {
+        return this.attrs.has(name);
+    }
     blur = vi.fn();
     closest() {
         return null;
@@ -136,6 +140,20 @@ describe('Enter in the filter', () => {
         key('Enter', filter, { isComposing: true });
         key('Enter', new FakeInput('other'));
         expect(n.focusList).not.toHaveBeenCalled();
+    });
+});
+
+describe('select triggers', () => {
+    it('keep page shortcuts away like a native select did', () => {
+        const handler = vi.fn(() => true);
+        setPageKeyHandler(handler);
+        const trigger = new FakeEl('BUTTON');
+        trigger.attrs.add('data-select');
+        key('j', trigger);
+        expect(handler).not.toHaveBeenCalled();
+        key('j', new FakeEl('BUTTON'));
+        expect(handler).toHaveBeenCalledTimes(1);
+        setPageKeyHandler(null);
     });
 });
 

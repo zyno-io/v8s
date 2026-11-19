@@ -16,6 +16,7 @@ This chapter says what v8s takes from PixelCI, what it adds, and which rules it 
 - **The Machine Text Rule.** Machine-produced text a person may copy is monospace: UIDs, image refs and digests, IPs, resource versions, revisions, commit SHAs, YAML.
 - **The Shadow Means Detached Rule** and **The Nested Radius Rule** (12 › 8 › 5).
 - **Controls** share one 32px height so a filter row of search, selects, segmented controls, and buttons aligns.
+- **Selects** are `SmartSelect`, never a native `<select>`: a 32px trigger (26px `sm`) that opens a floating list in the top layer (above dialogs, immune to `contain:`/`container-type:` ancestors), flipping above the trigger near the viewport bottom and becoming a bottom sheet under 640px. From 8 options it has a search field; keys are arrows, Home/End, PageUp/PageDown, type-ahead, Enter, Esc (focus returns to the trigger). Only the visible rows are in the DOM, rows are 44px on coarse pointers, and nothing is computed while closed. Option text is always rendered as text. Vendored from `@signal24/vue-foundation` (MIT) because the package bundles lodash, mark.js and a global stylesheet.
 - **Danger buttons** are outlined with Destructive Red text and always lead to a confirm dialog.
 - **Icons**: Font Awesome Free.
 

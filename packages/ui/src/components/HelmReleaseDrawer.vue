@@ -7,6 +7,7 @@ import { useRouter } from 'vue-router';
 
 import DiffView from '@/components/DiffView.vue';
 import HelmActionDialog from '@/components/HelmActionDialog.vue';
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { canRetry, canRollbackTo, helmStatusTone, latestRevisionOptions } from '@/lib/helm.ts';
@@ -53,6 +54,8 @@ let seq = 0;
 const rel = computed(() => latest.value);
 const cur = computed(() => shown.value ?? latest.value);
 const revOptions = computed(() => latestRevisionOptions(latest.value?.history));
+const revChoices = computed(() => revOptions.value.map(o => ({ value: o.revision, label: o.label })));
+const diffChoices = computed(() => revOptions.value.map(o => ({ value: o.revision, label: `${o.revision} · ${o.label.split(' · ')[1]}` })));
 const rollbackTargets = computed(() => revOptions.value.filter(o => canRollbackTo(latest.value?.history, latest.value?.revision ?? 0, o.revision)));
 const sortedHistory = computed(() => [...(latest.value?.history ?? [])].sort((a, b) => b.revision - a.revision));
 const sides = (d: string) => unifiedToSides(d);
@@ -235,16 +238,13 @@ onBeforeUnmount(() => {
             </div>
             <label v-if="rel && revOptions.length > 1" class="revsel small"
                 >Revision
-                <span class="field"
-                    ><select
-                        :value="selected || rel.revision"
-                        aria-label="Revision to show"
-                        data-testid="helm-revision-select"
-                        @change="selectRevision(Number(($event.target as HTMLSelectElement).value))"
-                    >
-                        <option v-for="o in revOptions" :key="o.revision" :value="o.revision">{{ o.label }}</option>
-                    </select></span
-                >
+                <SmartSelect
+                    :model-value="selected || rel.revision"
+                    :options="revChoices"
+                    aria-label="Revision to show"
+                    data-testid="helm-revision-select"
+                    @update:model-value="selectRevision"
+                />
             </label>
         </header>
 
@@ -411,25 +411,11 @@ onBeforeUnmount(() => {
                 <template v-else>
                     <div class="bar">
                         <label class="small"
-                            >From
-                            <span class="field"
-                                ><select v-model.number="diffFrom" aria-label="From revision" @change="diff = null">
-                                    <option v-for="o in revOptions" :key="o.revision" :value="o.revision">
-                                        {{ o.revision }} · {{ o.label.split(' · ')[1] }}
-                                    </option>
-                                </select></span
-                            ></label
-                        >
+                            >From <SmartSelect v-model="diffFrom" :options="diffChoices" aria-label="From revision" @change="diff = null"
+                        /></label>
                         <label class="small"
-                            >To
-                            <span class="field"
-                                ><select v-model.number="diffTo" aria-label="To revision" @change="diff = null">
-                                    <option v-for="o in revOptions" :key="o.revision" :value="o.revision">
-                                        {{ o.revision }} · {{ o.label.split(' · ')[1] }}
-                                    </option>
-                                </select></span
-                            ></label
-                        >
+                            >To <SmartSelect v-model="diffTo" :options="diffChoices" aria-label="To revision" @change="diff = null"
+                        /></label>
                         <button class="btn sm primary" type="button" :disabled="diffBusy || diffFrom === diffTo" @click="runDiff">
                             {{ diffBusy ? 'Comparing…' : 'Compare' }}
                         </button>

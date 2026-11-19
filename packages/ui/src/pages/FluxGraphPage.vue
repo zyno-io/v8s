@@ -5,6 +5,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import FluxGraph from '@/components/FluxGraph.vue';
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { isPhone } from '@/lib/viewport.ts';
@@ -22,6 +23,7 @@ const KIND_GROUPS = [
 
 const cluster = ref(String(route.query.c ?? ''));
 const picks = computed(() => clusters.activeIds.map(id => ({ id, name: clusters.nameById.get(id) ?? id })));
+const clusterOptions = computed(() => picks.value.map(p => ({ value: p.id, label: p.name })));
 watch(
     picks,
     p => {
@@ -112,9 +114,7 @@ function open(n: FluxGraphNode) {
             <span class="grow"></span>
             <label class="sel">
                 <span class="sr-only">Cluster</span>
-                <select v-model="cluster" class="field" aria-label="Cluster">
-                    <option v-for="p in picks" :key="p.id" :value="p.id">{{ p.name }}</option>
-                </select>
+                <SmartSelect v-model="cluster" :options="clusterOptions" aria-label="Cluster" />
             </label>
             <button class="btn sm" type="button" :disabled="loading || !cluster" @click="load">{{ loading ? 'Refreshing…' : 'Refresh' }}</button>
         </header>
