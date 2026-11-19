@@ -1,6 +1,6 @@
 import type { ImageVulnSummary, ReportDetail } from '@v8s/client';
 
-import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService } from '@v8s/client';
+import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService, ExposureUnknown } from '@v8s/client';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -114,6 +114,15 @@ describe('exposure', () => {
     it('sorts by the widest shown kind', () => {
         expect(names(sortImages(list, 'exposure', true)).slice(0, 3)).toEqual(['ing:1', 'lb:1', 'np:1']);
         expect(names(sortImages(list, 'exposure', true, WITH_SVC)).slice(3)).toEqual(['svc:1', 'none:1']);
+    });
+    it('keeps unknown rows out of "not exposed" and finds them with Unknown', () => {
+        const withUnknown = [...list, img('unk:1', { exposure: ExposureUnknown }), img('part:1', { exposure: ExposureUnknown | NP })];
+        const f = (exposedVia: number) => names(filterImages(withUnknown, { text: '', source: '', onlyCritical: false, exposedVia }));
+        expect(f(NOT_EXPOSED)).toEqual(['svc:1', 'none:1']);
+        expect(f(ExposureUnknown)).toEqual(['unk:1', 'part:1']);
+        expect(f(ExposureNodePort)).toEqual(['np:1', 'part:1']);
+        expect(names(sortImages(withUnknown, 'exposure', true)).slice(-3)).toEqual(['unk:1', 'none:1', 'svc:1']);
+        expect(normExposureFilter(ExposureUnknown | SVC, DEFAULT_EXPOSURE_DEF)).toBe(ExposureUnknown);
     });
     it('normalizes the definition and drops filter kinds it no longer includes', () => {
         expect(normExposureDef(0)).toBe(DEFAULT_EXPOSURE_DEF);

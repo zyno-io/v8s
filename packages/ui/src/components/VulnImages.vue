@@ -16,9 +16,11 @@ import { fetchImages, kubescapeScanNow } from '@/lib/security-api.ts';
 import {
     DEFAULT_EXPOSURE_DEF,
     DEFAULT_SORT,
+    EXPOSURE_UNKNOWN,
     EXPOSURES,
     exposureList,
     filterImages,
+    isExposureUnknown,
     normExposureDef,
     normExposureFilter,
     NOT_EXPOSED,
@@ -71,18 +73,31 @@ watch(exposureDef, def => {
     }
 });
 const defOptions = EXPOSURES.map(e => ({ bit: e.bit, label: e.label, hint: e.hint }));
+const anyUnknown = computed(() => images.value.some(i => isExposureUnknown(i.exposure)));
+const UNKNOWN_HINT = "A cluster's Services, EndpointSlices or Pods are still loading, or are not readable";
 const filterOptions = computed(() => [
     ...EXPOSURES.filter(e => exposureDef.value & e.bit).map(e => ({ bit: e.bit, label: e.label })),
-    { bit: NOT_EXPOSED, label: 'Not exposed' }
+    { bit: NOT_EXPOSED, label: 'Not exposed' },
+    ...(anyUnknown.value || exposedVia.value & EXPOSURE_UNKNOWN ? [{ bit: EXPOSURE_UNKNOWN, label: 'Unknown', hint: UNKNOWN_HINT }] : [])
 ]);
 const filterLabel = computed(() => {
     const on = filterOptions.value.filter(o => exposedVia.value & o.bit);
     return !on.length ? 'any' : on.length === 1 ? on[0].label : `${on.length} selected`;
 });
 const shownOf = (i: ImageVulnSummary) => exposureList(shownExposure(i.exposure, exposureDef.value));
+const exposureText = (i: ImageVulnSummary, long = false) => {
+    const parts: string[] = shownOf(i).map(e => (long ? e.label : e.short));
+    if (isExposureUnknown(i.exposure)) parts.push(parts.length ? 'unknown in some clusters' : 'unknown');
+    return parts.join(', ') || 'not exposed';
+};
 const scanning = ref('');
 
 let seq = 0;
+// While a cluster's exposure is unknown (its stores are still loading) the list is re-read sooner than the 60 s refresh, a few times.
+const UNKNOWN_RETRY_MS = 10_000;
+const UNKNOWN_RETRIES = 6;
+let unknownRetries = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 async function load(force = true) {
     const mine = ++seq;
     loading.value = true;
@@ -92,6 +107,11 @@ async function load(force = true) {
         images.value = list;
         emit('images', list);
         error.value = '';
+        clearTimeout(retryTimer);
+        if (unknownRetries < UNKNOWN_RETRIES && list.some(i => isExposureUnknown(i.exposure))) {
+            unknownRetries++;
+            retryTimer = setTimeout(() => void load(), UNKNOWN_RETRY_MS);
+        }
     } catch (e) {
         if (mine === seq) error.value = errorText(e);
     } finally {
@@ -112,12 +132,16 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
     clearInterval(timer);
+    clearTimeout(retryTimer);
     document.removeEventListener('visibilitychange', onVisible);
     seq++;
 });
 watch(
     () => clusters.activeIds.join('\n'),
-    () => void load(),
+    () => {
+        unknownRetries = 0;
+        void load();
+    },
     { immediate: true }
 );
 
@@ -160,6 +184,8 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
     }))
 );
 const items = computed(() => virtualizer.value.getVirtualItems());
+// Rows are placed from cached sizes: re-measure when the layout switches between phone and desktop row heights.
+watch(rowH, () => virtualizer.value.measure());
 watch(
     () => [text.value, source.value, onlyCritical.value, exposedVia.value],
     () => scroller.value?.scrollTo({ top: 0 })
@@ -353,11 +379,7 @@ function onScan() {
                                 </div>
                                 <div class="l3 muted">
                                     {{ view[vi.index].workloads }} workloads ·
-                                    {{
-                                        shownOf(view[vi.index])
-                                            .map(e => e.short)
-                                            .join(', ') || 'not exposed'
-                                    }}
+                                    {{ exposureText(view[vi.index]) }}
                                     · {{ view[vi.index].reports }} reports · {{ view[vi.index].clusters.map(nameOf).join(', ') }}
                                 </div>
                             </template>
@@ -368,18 +390,10 @@ function onScan() {
                                     ><span v-else class="muted">0</span></span
                                 >
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].workloads) }}</span>
-                                <span
-                                    class="c ctags"
-                                    role="cell"
-                                    data-testid="exposure-cell"
-                                    :title="
-                                        shownOf(view[vi.index])
-                                            .map(e => e.label)
-                                            .join(', ') || 'Not exposed'
-                                    "
-                                >
+                                <span class="c ctags" role="cell" data-testid="exposure-cell" :title="exposureText(view[vi.index], true)">
                                     <span v-for="e in shownOf(view[vi.index])" :key="e.bit" class="tag" :title="e.hint">{{ e.short }}</span>
-                                    <span v-if="!shownOf(view[vi.index]).length" class="muted" title="Not exposed">-</span>
+                                    <span v-if="isExposureUnknown(view[vi.index].exposure)" class="tag" :title="UNKNOWN_HINT">?</span>
+                                    <span v-else-if="!shownOf(view[vi.index]).length" class="muted">-</span>
                                 </span>
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].reports) }}</span>
                                 <span class="c ctags" role="cell">

@@ -32,6 +32,8 @@ type Config struct {
 	Conn func(cluster string) (kube.Conn, error)
 	// Scan reads a cluster's watched rows (mgr.ScanKind).
 	Scan ScanFn
+	// Synced reports whether a kind is watched and its first list completed (mgr.KindSynced); nil: always.
+	Synced func(cluster, gvr string) bool
 	// Clusters lists the selected clusters.
 	Clusters func() []string
 	// Now defaults to time.Now.
@@ -243,9 +245,12 @@ func (s *Service) Images(ctx context.Context, p protocol.SecurityImagesParams) (
 		if len(all) == from {
 			continue
 		}
-		if ex := ExposureOf(s.cfg.Scan, c); ex != nil {
-			for i := from; i < len(all); i++ {
+		ex, known := ExposureOf(s.cfg.Scan, s.cfg.Synced, c)
+		for i := from; i < len(all); i++ {
+			if known {
 				all[i].Exposure = ex[all[i].Workload]
+			} else {
+				all[i].Exposure = protocol.ExposureUnknown
 			}
 		}
 	}

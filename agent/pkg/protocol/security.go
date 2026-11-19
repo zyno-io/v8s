@@ -41,6 +41,7 @@ type ImageVulnSummary struct {
 	// Exposure is the union over the image's workloads of how their pods are reachable (Exposure* bits). A pod is
 	// behind a Service when one of its EndpointSlices targets it; the other bits follow from that Service (its type,
 	// or an Ingress / Gateway API route that sends traffic to it). ExposureService is set for any Service type.
+	// ExposureUnknown: at least one of the image's clusters could not be resolved.
 	Exposure int `msgpack:"exposure,omitempty" json:"exposure,omitempty"`
 }
 
@@ -50,6 +51,7 @@ const (
 	ExposureNodePort     = 1 << 1
 	ExposureLoadBalancer = 1 << 2
 	ExposureIngress      = 1 << 3 // an Ingress, HTTPRoute or GRPCRoute backend
+	ExposureUnknown      = 1 << 4 // a cluster's Services, EndpointSlices, Pods, Ingresses or routes are not loaded (syncing, or not readable)
 )
 
 type SecurityImagesResult struct {

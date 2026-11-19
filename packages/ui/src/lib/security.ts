@@ -1,6 +1,6 @@
 import type { ImageVulnSummary, ReportDetail } from '@v8s/client';
 
-import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService } from '@v8s/client';
+import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService, ExposureUnknown } from '@v8s/client';
 
 import type { Tone } from './table-decor.ts';
 
@@ -70,6 +70,9 @@ export const DEFAULT_EXPOSURE_DEF = ExposureIngress | ExposureLoadBalancer | Exp
 const ALL_EXPOSURE = DEFAULT_EXPOSURE_DEF | ExposureService;
 /** Filter bit for rows with no exposure under the definition (outside the protocol bits). */
 export const NOT_EXPOSED = 1 << 8;
+/** Protocol bit (also a filter bit): a cluster of the row could not be resolved (its Services, EndpointSlices or Pods are still loading, or not readable). */
+export const EXPOSURE_UNKNOWN = ExposureUnknown;
+export const isExposureUnknown = (bits: number | undefined): boolean => ((bits ?? 0) & ExposureUnknown) !== 0;
 
 /** Keeps only known definition bits; an empty definition falls back to the default. */
 export const normExposureDef = (def: number): number => def & ALL_EXPOSURE || DEFAULT_EXPOSURE_DEF;
@@ -87,14 +90,19 @@ export function shownExposure(bits: number | undefined, def: number): number {
 /** Display entries of shown bits, widest first. */
 export const exposureList = (shown: number) => EXPOSURES.filter(e => shown & e.bit);
 
-/** Drops filter bits for kinds the definition no longer includes (NOT_EXPOSED stays). */
-export const normExposureFilter = (filter: number, def: number): number => filter & (def | NOT_EXPOSED);
+/** Drops filter bits for kinds the definition no longer includes (NOT_EXPOSED and EXPOSURE_UNKNOWN stay). */
+export const normExposureFilter = (filter: number, def: number): number => filter & (def | NOT_EXPOSED | ExposureUnknown);
 
-/** True when a row passes the "Exposed via" filter: no bits = no filtering; otherwise any shown kind (or none, with NOT_EXPOSED) is checked. */
+/**
+ * True when a row passes the "Exposed via" filter: no bits = no filtering; otherwise a shown kind is checked, or the row is
+ * unknown and Unknown is checked, or it is known to be unexposed and Not exposed is checked (an unknown row is never "not exposed").
+ */
 export function matchesExposure(bits: number | undefined, def: number, filter: number): boolean {
     if (!filter) return true;
     const shown = shownExposure(bits, def);
-    return shown ? (shown & filter) !== 0 : (filter & NOT_EXPOSED) !== 0;
+    if (shown & filter) return true;
+    if (isExposureUnknown(bits)) return (filter & ExposureUnknown) !== 0;
+    return !shown && (filter & NOT_EXPOSED) !== 0;
 }
 
 // ---- images overview ----
@@ -141,7 +149,10 @@ const sevCmp = (a: ImageVulnSummary, b: ImageVulnSummary) =>
     b.critical - a.critical || b.high - a.high || b.medium - a.medium || b.low - a.low || b.unknown - a.unknown;
 
 function valueOf(i: ImageVulnSummary, key: ImageSortKey, def: number): number | string {
-    return key === 'clusters' ? i.clusters.length : key === 'exposure' ? shownExposure(i.exposure, def) : i[key];
+    if (key === 'clusters') return i.clusters.length;
+    // Unknown ranks between Service (1) and not exposed (0).
+    if (key === 'exposure') return shownExposure(i.exposure, def) || (isExposureUnknown(i.exposure) ? 0.5 : 0);
+    return i[key];
 }
 
 /**

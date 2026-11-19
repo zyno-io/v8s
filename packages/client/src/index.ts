@@ -115,6 +115,7 @@ export {
     ExposureLoadBalancer,
     ExposureNodePort,
     ExposureService,
+    ExposureUnknown,
     HelmGVR,
     MaxObjectEvents,
     ProblemsGVR,
