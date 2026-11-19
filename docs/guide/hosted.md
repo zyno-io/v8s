@@ -74,7 +74,7 @@ Surrounding whitespace is trimmed, and an empty value is an error. OIDC client s
 | `clusters`       | The cluster records, below                                                                                                                                                                            |                |
 | `adminGroups`    | IdP groups that can see every cluster                                                                                                                                                                 | none           |
 | `limits`         | Request limits, below                                                                                                                                                                                 | as listed      |
-| `updateCheck`    | `false` turns off the daily check of GitHub for a newer v8s release (see [Security model](#security-model)). `V8S_UPDATE_CHECK=off` in the environment does the same | `true`         |
+| `updateCheck`    | `false` turns off the daily check of GitHub for a newer v8s release (see [Security model](#security-model)). `V8S_UPDATE_CHECK=off` in the environment does the same                                  | `true`         |
 | `correlationKey` | Secret reference that keys the correlation id sent to clusters. Random per start if unset, so ids do not match across restarts                                                                        | random         |
 
 ### `session`

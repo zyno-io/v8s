@@ -16,7 +16,7 @@ import (
 func TestCheckable(t *testing.T) {
 	for v, want := range map[string]bool{
 		"0.4.0": true, "v0.4.0": true, "0.5.0-rc1": true,
-		"0.0.0-dev": false, "0.0.0-main.gabc1234": false, "0.4.0-3-gabc1234": false, "0.4.0-3-gabc1234-dirty": false,
+		"0.0.0-dev": false, "0.0.0-main.gabc1234": false, "0.4.0-3-gabc1234": false, "0.5.0-rc.1-3-gabc1234": false, "0.5.0-rc1-3-gabc1234": false, "0.5.0-rc.1-3-gabc1234-dirty": false, "0.4.0-3-gabc1234-dirty": false,
 		"0.4.0-dirty": false, "abc1234": false, "": false,
 	} {
 		if got := Checkable(v); got != want {

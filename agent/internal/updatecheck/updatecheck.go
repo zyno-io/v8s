@@ -39,7 +39,7 @@ type Options struct {
 const statusWait = 10 * time.Second
 
 // describeSuffix matches the prerelease git describe leaves on a build made after a tag ("3-gabc1234").
-var describeSuffix = regexp.MustCompile(`^\d+-g[0-9a-f]+(-dirty)?$`)
+var describeSuffix = regexp.MustCompile(`(^|[.-])\d+-g[0-9a-f]+(-dirty)?$`) // also after an rc: 0.5.0-rc.1-3-gabc1234
 
 func parse(v string) (*semver.Version, error) {
 	return semver.StrictNewVersion(strings.TrimPrefix(v, "v"))
