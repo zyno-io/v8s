@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.3.2 — 2026-11-18
+
 ### Changed
 
 - Keyboard: **Enter in the filter moves focus to the results** (Resources and Problems), so `j`/`k` and the arrow keys move the row focus straight away, and **Esc from the list clears the filter** and keeps focus on the list; a second Esc continues with the selection, then the drawer. The arrow keys now move the row focus whenever the list has focus.
