@@ -5,8 +5,10 @@ import AccountMenu from '@/components/AccountMenu.vue';
 import JobsTray from '@/components/JobsTray.vue';
 import PortForwardsButton from '@/components/PortForwardsButton.vue';
 import ProtectedMark from '@/components/ProtectedMark.vue';
-import { getProblemsAll } from '@/lib/agent.ts';
+import UpdateIndicator from '@/components/UpdateIndicator.vue';
+import { getAgent, getProblemsAll } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
+import { versionTitle } from '@/lib/update.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSidebarStore } from '@/stores/sidebar.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -14,6 +16,7 @@ import { useUiStore } from '@/stores/ui.ts';
 const clusters = useClustersStore();
 const problemsAll = getProblemsAll();
 const problemCount = computed(() => problemsAll.total.value);
+const agentInfo = getAgent().agentInfo;
 const ui = useUiStore();
 const sidebar = useSidebarStore();
 
@@ -54,7 +57,7 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
                 <path d="M6 3v10" />
             </svg>
         </button>
-        <router-link class="brand" to="/pods">
+        <router-link class="brand" to="/pods" :title="versionTitle(agentInfo?.version)">
             <span class="mark">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                     <path d="M3 3l5 10 5-10" />
@@ -94,6 +97,7 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
         <div class="grow"></div>
         <PortForwardsButton />
         <JobsTray />
+        <UpdateIndicator />
         <button class="btn ghost theme-btn" type="button" :aria-label="themeLabel" :title="themeLabel" @click="ui.cycleTheme()">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <circle cx="8" cy="8" r="3" />

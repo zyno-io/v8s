@@ -22,6 +22,7 @@ function toLogin(path: string): boolean {
     return true;
 }
 import { visibleKinds } from './kinds.ts';
+import { watchUpdates } from './update.ts';
 
 export type BootState = 'booting' | 'no-endpoint' | 'error' | 'ready' | 'signed-out' | 'login-loop';
 
@@ -120,6 +121,7 @@ export async function startAgent(): Promise<void> {
             { offset: 0, limit: 1 }
         );
         bootState.value = 'ready';
+        watchUpdates(agent);
         refreshKinds(0);
     } catch (err) {
         // A hosted socket that fails to open usually means the session ended (the upgrade answers 401, which the browser hides).

@@ -65,6 +65,12 @@ async function main() {
     try {
         await step('connect clusters', () => connect(page, stack.url));
 
+        await step('version tooltip on the logo; no update indicator in fake mode', async () => {
+            assert.match((await page.locator('a.brand').getAttribute('title')) ?? '', /^v8s\b/);
+            await page.waitForTimeout(500); // update.status has answered by now
+            assert.equal(await page.getByTestId('update-indicator').count(), 0);
+        });
+
         await step('open deployments from the sidebar', async () => {
             await page.getByRole('link', { name: /^Deployments/ }).click();
             await page.waitForURL(/\/r\/apps\/v1\/deployments/);

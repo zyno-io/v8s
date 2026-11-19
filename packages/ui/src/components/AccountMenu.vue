@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 
+import { getAgent } from '@/lib/agent.ts';
 import { expiryMs, hostedMe, logout, sessionLeft } from '@/lib/hosted.ts';
+import { versionTitle } from '@/lib/update.ts';
+
+const agentInfo = getAgent().agentInfo;
 
 const open = ref(false);
 const now = ref(Date.now());
@@ -53,6 +57,7 @@ async function signOut() {
                 <p v-if="me.groups?.length" class="muted small groups">{{ me.groups.join(', ') }}</p>
                 <p v-if="expires" class="muted small" data-testid="account-expiry">Session ends {{ left }} ({{ expires }})</p>
                 <p v-if="me.clusterAuth === 'required'" class="small warn">Cluster sign-in required.</p>
+                <p class="muted small" data-testid="account-version">{{ versionTitle(agentInfo?.version) }}</p>
                 <button class="btn sm" type="button" :disabled="busy" data-testid="logout" @click="signOut">Log out</button>
             </div>
         </template>
