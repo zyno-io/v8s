@@ -481,9 +481,9 @@ h1 {
     // pseudo-element, no layout, no transition. The number sits on it a shade softer (no top edge: it would strike the digits).
     .b {
         --bar: transparent;
+        padding: 0 1px; // the digits keep off the bar's edge
         color: var(--text2);
-        // Inset 1px each side (sized, not padded, so the digits keep their alignment with the header).
-        background: linear-gradient(var(--bar), var(--bar)) no-repeat center bottom / calc(100% - 2px) var(--p, 0%);
+        background: linear-gradient(var(--bar), var(--bar)) no-repeat left bottom / 100% var(--p, 0%);
     }
     .ok {
         --bar: var(--bar-ok);
