@@ -14,8 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  # One run per ref; a newer branch push supersedes an unfinished one, a tag run is never cancelled.
-  group: v8s-release-${{ github.ref }}
+  # Tag runs queue in one group (two release tags never race for :latest or "Latest"); branch runs are per ref, and a newer
+  # push supersedes an unfinished one. A tag run is never cancelled.
+  group: ${{ github.ref_type == 'tag' && 'v8s-release' || format('v8s-release-{0}', github.ref) }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
@@ -38,6 +39,10 @@ jobs:
         run: |
           set -euo pipefail
           img=ghcr.io/zyno-io/v8s
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_EVENT_NAME" != push ]]; then
+            echo "::error::Manual runs build branches only; to redo a release, re-run the tag's own run"
+            exit 1
+          fi
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             version="${GITHUB_REF_NAME#v}"
             if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -52,7 +57,12 @@ jobs:
             environment=release
           else
             # Branch build: 0.0.0-<branch>.g<sha> (the g keeps an all-digit sha a valid semver identifier).
-            ref="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9-' '-')"
+            ref="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9-' '-' | cut -c1-100)"
+            # The ref becomes an image tag and a semver identifier: it must start with a letter, and never shadow :latest.
+            if ! [[ "$ref" =~ ^[A-Za-z][A-Za-z0-9-]*$ ]] || [[ "$ref" == latest ]]; then
+              echo "::error::Branch '$GITHUB_REF_NAME' cannot be used as an image tag (start it with a letter; 'latest' is reserved)"
+              exit 1
+            fi
             sha="g${GITHUB_SHA::7}"
             version="0.0.0-${ref}.${sha}"
             prerelease=true
