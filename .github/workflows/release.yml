@@ -1,15 +1,22 @@
 name: Release
 
+# Tags (vX.Y.Z[-pre]) build, sign and publish a release. Pushes to main build everything unsigned: the artifacts (kept 7 days)
+# and the container image as ghcr.io/zyno-io/v8s:main and :main-g<sha>, which is what gets live-tested before tagging. A manual
+# run builds any branch the same unsigned way (image :<branch> and :<branch>-g<sha>). Signing, notarization, attestations,
+# the Helm chart and the GitHub release happen on tags only.
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: v8s-release
-  cancel-in-progress: false
+  # One run per ref; a newer branch push supersedes an unfinished one, a tag run is never cancelled.
+  group: v8s-release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   YARN_ENABLE_SCRIPTS: 'false'
@@ -21,18 +28,48 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       prerelease: ${{ steps.parse.outputs.prerelease }}
+      # 'true' on a tag: sign, notarize, attest, push the chart and publish. Anything else builds unsigned.
+      tagged: ${{ steps.parse.outputs.tagged }}
+      environment: ${{ steps.parse.outputs.environment }}
+      images: ${{ steps.parse.outputs.images }}
     steps:
-      - name: Parse tag
+      - name: Parse ref
         id: parse
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag '$GITHUB_REF_NAME' is not vMAJOR.MINOR.PATCH[-prerelease]"
-            exit 1
+          img=ghcr.io/zyno-io/v8s
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Tag '$GITHUB_REF_NAME' is not vMAJOR.MINOR.PATCH[-prerelease]"
+              exit 1
+            fi
+            prerelease=false
+            if [[ "$version" == *-* ]]; then prerelease=true; fi
+            images="$img:$version"
+            if [[ "$prerelease" != true ]]; then images+=$'\n'"$img:latest"; fi
+            tagged=true
+            environment=release
+          else
+            # Branch build: 0.0.0-<branch>.g<sha> (the g keeps an all-digit sha a valid semver identifier).
+            ref="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9-' '-')"
+            sha="g${GITHUB_SHA::7}"
+            version="0.0.0-${ref}.${sha}"
+            prerelease=true
+            images="$img:$ref"$'\n'"$img:$ref-$sha"
+            tagged=false
+            environment=''
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+          {
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+            echo "tagged=$tagged"
+            echo "environment=$environment"
+            echo 'images<<EOF'
+            echo "$images"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+          echo "version $version, tagged $tagged"; echo "$images"
 
   ui:
     needs: meta
@@ -53,7 +90,8 @@ jobs:
   cli:
     needs: [meta, ui]
     runs-on: ${{ matrix.runner }}
-    environment: release
+    # The release environment (signing secrets) only on tags.
+    environment: ${{ needs.meta.outputs.environment }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,7 +124,7 @@ jobs:
 
       # --- macOS: sign (hardened runtime) and notarize with rcodesign, as sp2p does ---
       - name: Install rcodesign
-        if: matrix.goos == 'darwin'
+        if: matrix.goos == 'darwin' && needs.meta.outputs.tagged == 'true'
         run: |
           RCODESIGN_VERSION="0.27.0"
           curl -fsSL "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
@@ -96,7 +134,7 @@ jobs:
           sudo mv "$RUNNER_TEMP"/apple-codesign-*/rcodesign /usr/local/bin/
 
       - name: Sign and notarize (macOS)
-        if: matrix.goos == 'darwin'
+        if: matrix.goos == 'darwin' && needs.meta.outputs.tagged == 'true'
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -124,7 +162,7 @@ jobs:
 
       # --- Windows: Azure Artifact Signing (same account and service principal as sp2p) ---
       - name: Sign (Windows)
-        if: matrix.goos == 'windows'
+        if: matrix.goos == 'windows' && needs.meta.outputs.tagged == 'true'
         uses: Azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -140,7 +178,7 @@ jobs:
           timestamp-digest: SHA256
 
       - name: Verify signature (Windows)
-        if: matrix.goos == 'windows'
+        if: matrix.goos == 'windows' && needs.meta.outputs.tagged == 'true'
         shell: pwsh
         run: |
           $sig = Get-AuthenticodeSignature -FilePath dist\windows_amd64\v8s.exe
@@ -166,13 +204,14 @@ jobs:
           name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: release/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ needs.meta.outputs.tagged == 'true' && 1 || 7 }}
 
   # Electron installers. Each runner first builds the matching agent into agent/bin/<os>-<arch>/.
   desktop:
     needs: [meta, ui]
     runs-on: ${{ matrix.runner }}
-    environment: release
+    # The release environment (signing secrets) only on tags.
+    environment: ${{ needs.meta.outputs.environment }}
     strategy:
       fail-fast: false
       matrix:
@@ -214,17 +253,24 @@ jobs:
           CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          TAGGED: ${{ needs.meta.outputs.tagged }}
         run: |
           set -euo pipefail
-          # Notarization wants the API key as a .p8 file plus key id and issuer.
-          raw="$RUNNER_TEMP/api-key-raw.json"
-          echo "$APP_STORE_CONNECT_API_KEY" | base64 -d > "$raw"
-          jq -r '.private_key' "$raw" > "$RUNNER_TEMP/AuthKey.p8"
-          export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
-          APPLE_API_KEY_ID="$(jq -r '.key_id' "$raw")"
-          APPLE_API_ISSUER="$(jq -r '.issuer_id' "$raw")"
-          export APPLE_API_KEY_ID APPLE_API_ISSUER
-          rm -f "$raw"
+          if [[ "$TAGGED" == true ]]; then
+            # Notarization wants the API key as a .p8 file plus key id and issuer.
+            raw="$RUNNER_TEMP/api-key-raw.json"
+            echo "$APP_STORE_CONNECT_API_KEY" | base64 -d > "$raw"
+            jq -r '.private_key' "$raw" > "$RUNNER_TEMP/AuthKey.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/AuthKey.p8"
+            APPLE_API_KEY_ID="$(jq -r '.key_id' "$raw")"
+            APPLE_API_ISSUER="$(jq -r '.issuer_id' "$raw")"
+            export APPLE_API_KEY_ID APPLE_API_ISSUER
+            rm -f "$raw"
+          else
+            # Unsigned: no identity lookup, and notarization is skipped (electron-builder.yml).
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
           yarn workspace @v8s/desktop exec electron-builder --mac --arm64 --x64 --publish never "-c.extraMetadata.version=$VERSION"
           rm -f "$RUNNER_TEMP/AuthKey.p8"
 
@@ -234,7 +280,12 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-        run: yarn workspace @v8s/desktop exec electron-builder --win --x64 --publish never "-c.extraMetadata.version=$VERSION"
+          TAGGED: ${{ needs.meta.outputs.tagged }}
+        run: |
+          set -euo pipefail
+          unsigned=()
+          if [[ "$TAGGED" != true ]]; then unsigned=(-c.win.azureSignOptions=null); fi
+          yarn workspace @v8s/desktop exec electron-builder --win --x64 --publish never "-c.extraMetadata.version=$VERSION" ${unsigned[@]+"${unsigned[@]}"}
 
       - name: Package (Linux)
         if: matrix.name == 'linux'
@@ -269,12 +320,12 @@ jobs:
             packages/desktop/release/*.deb
             packages/desktop/release/*.rpm
           if-no-files-found: error
-          retention-days: 1
+          retention-days: ${{ needs.meta.outputs.tagged == 'true' && 1 || 7 }}
 
   container:
     needs: meta
     runs-on: ubuntu-latest
-    environment: release
+    environment: ${{ needs.meta.outputs.environment }}
     permissions:
       contents: read
       packages: write
@@ -290,14 +341,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Image tags
-        id: tags
-        env:
-          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
-        run: |
-          tags="ghcr.io/zyno-io/v8s:${VERSION}"
-          if [[ "$PRERELEASE" != true ]]; then tags+=$'\n'"ghcr.io/zyno-io/v8s:latest"; fi
-          { echo 'tags<<EOF'; echo "$tags"; echo EOF; } >> "$GITHUB_OUTPUT"
       # The Dockerfile builds the UI and cross-compiles the agent on the build platform, so no QEMU is needed.
       - id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -305,7 +348,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ needs.meta.outputs.images }}
           build-args: VERSION=${{ env.VERSION }}
           provenance: mode=max
           sbom: true
@@ -313,13 +356,16 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}
             org.opencontainers.image.licenses=MIT
+      # Signed provenance (Sigstore) on tags only; branch images carry BuildKit's unsigned provenance and SBOM.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: needs.meta.outputs.tagged == 'true'
         with:
           subject-name: ghcr.io/zyno-io/v8s
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
       # The Helm chart is published as an OCI artifact next to the image (helm is preinstalled on ubuntu runners).
       - name: Package and push the Helm chart
+        if: needs.meta.outputs.tagged == 'true'
         env:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -331,6 +377,7 @@ jobs:
 
   publish:
     needs: [meta, cli, desktop, container]
+    if: needs.meta.outputs.tagged == 'true'
     runs-on: ubuntu-latest
     environment: release
     permissions:
