@@ -379,8 +379,10 @@ async function main() {
             await page.getByText('Sorted by %MEM/R (desc)').waitFor();
             await page.locator('.scroller .row:not(.sk) .ub .b.w, .scroller .row:not(.sk) .ub .b.d').first().waitFor();
             await page.screenshot({ path: shot('pods-mem-request') });
+            // Leave the sort as the steps that follow expect it (%CPU/L ascending, where the reset above lands): one more click
+            // returns %MEM/R to the default, then one on %CPU/L.
             await memReq.click();
-            await memReq.click();
+            await lim.click();
         });
 
         // ---- node usage and the Overview capacity card ----
