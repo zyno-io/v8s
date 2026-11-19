@@ -3,6 +3,7 @@ import type { Kind, ObjectOwner, ObjectRef } from '@v8s/client';
 import { shallowRef } from 'vue';
 
 import { resolveKind } from './kinds.ts';
+import { HELM_RELEASES_GVR } from './route.ts';
 
 /** What a k9s-style row key asks for. */
 export type RowIntent = 'delete' | 'owner' | 'yaml' | 'copy-name' | 'copy-namespace' | 'node' | 'portforward' | 'restart';
@@ -14,9 +15,8 @@ export type RowIntent = 'delete' | 'owner' | 'yaml' | 'copy-name' | 'copy-namesp
 export function rowIntent(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>): RowIntent | null {
     if (e.metaKey || e.altKey) return null;
     if (e.ctrlKey) return !e.shiftKey && e.key === 'd' ? 'delete' : null;
-    // The key value carries the shift (`J`, `F`); only the capital letters count, not Shift with another key.
-    if (e.key === 'J') return 'owner';
-    if (e.key === 'F') return 'portforward';
+    // Shift+J / Shift+F; CapsLock alone (a capital without Shift) does not count.
+    if (e.shiftKey) return e.key === 'J' ? 'owner' : e.key === 'F' ? 'portforward' : null;
     switch (e.key) {
         case 'y':
             return 'yaml';
@@ -53,6 +53,14 @@ export interface KeyAction {
 }
 export const keyAction = shallowRef<KeyAction | null>(null);
 let seq = 0;
-export function requestKeyAction(gvr: string, action: string, targets: ObjectRef[]) {
+/** Queues a request; ignored (false) while another is pending, so a second key never replaces a dialog being prepared or shown. */
+export function requestKeyAction(gvr: string, action: string, targets: ObjectRef[]): boolean {
+    if (keyAction.value) return false;
     keyAction.value = { seq: ++seq, gvr, action, targets };
+    return true;
+}
+
+/** The virtual Helm releases kind has its own actions (Uninstall, Upgrade, ...) in its drawer; Delete and Restart do not apply. */
+export function keyActionBlocked(gvr: string): boolean {
+    return gvr === HELM_RELEASES_GVR;
 }

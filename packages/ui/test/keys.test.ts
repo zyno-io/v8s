@@ -81,6 +81,18 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
+describe('inside an open native dialog', () => {
+    it('row keys and Ctrl+D do not reach the page', () => {
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const radio = new FakeEl('INPUT', 'r', 'radio');
+        radio.closest = () => ({}) as never;
+        key('d', radio, { ctrlKey: true });
+        key('o', radio);
+        expect(h).not.toHaveBeenCalled();
+    });
+});
+
 describe('Ctrl+D', () => {
     it('reaches the page handler from the list, and is consumed when handled', () => {
         const h = vi.fn(() => true);

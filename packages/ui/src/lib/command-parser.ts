@@ -127,8 +127,8 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
         return text ? { type: 'ip', text } : { type: 'error', message: 'usage: :ip <address|cidr|range>' };
     }
     if (cmd?.name === 'ns') {
-        if (!args.length) {
-            // Bare `:ns` opens the Namespaces list, like `:namespaces`.
+        if (!args.length && !/\s$/.test(input)) {
+            // Bare `:ns` (no trailing space: `ns ` is still choosing a namespace) opens the Namespaces list, like `:namespaces`.
             const k = findKind('namespaces', ctx.kinds);
             if (k && 'kind' in k && k.kind.available) return { type: 'open-kind', gvr: k.kind.gvr, plural: k.kind.plural };
             return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };

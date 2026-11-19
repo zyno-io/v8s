@@ -166,6 +166,9 @@ describe('parseCommand', () => {
         expect(parseCommand('namespace', withNs)).toEqual(open);
         expect(parseCommand('ns payments', withNs)).toEqual({ type: 'ns', namespace: 'payments' });
         expect(parseCommand('ns', ctx).type).toBe('error'); // no Namespaces kind served
+        // `ns ` (trailing space) is choosing a namespace: not the bare command
+        expect(parseCommand('ns ', withNs).type).toBe('error');
+        expect(parseCommand('namespace ', withNs).type).toBe('error');
         expect(parseCommand('pb', ctx)).toEqual({ type: 'problems' });
         expect(parseCommand('problems', ctx)).toEqual({ type: 'problems' });
     });

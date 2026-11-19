@@ -116,6 +116,8 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             }
             return;
         }
+        // Native <dialog> modals the store does not track (port-forward, ...) own the keyboard while open.
+        if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return;
         if (
             e.ctrlKey &&
             !e.metaKey &&

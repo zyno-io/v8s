@@ -21,14 +21,22 @@ import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
-import { ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
+import { keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
 import { usageCardLine, usageHint, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
-const props = defineProps<{ handle: ViewHandle; gvr: string; plan: TablePlan; title: string; namespaced: boolean; decor?: TableDecor | null }>();
+const props = defineProps<{
+    handle: ViewHandle;
+    gvr: string;
+    plan: TablePlan;
+    title: string;
+    namespaced: boolean;
+    decor?: TableDecor | null;
+    keyActions?: boolean;
+}>();
 const emit = defineEmits<{ resize: [key: string, width: number] }>();
 
 const table = useTableStore();
@@ -468,25 +476,54 @@ async function jumpToOwner(ref: ObjectRef) {
     }
 }
 
+function openNode(pod: ObjectRef, node: string) {
+    if (node) void openObject(router, { cluster: pod.cluster, gvr: 'v1/nodes', name: node });
+    else appUi.toast('info', 'Not scheduled on a node');
+}
+
+/** A pod open in the drawer without a focused row: its node comes from the object. */
+async function openNodeOfOpenPod(pod: ObjectRef) {
+    try {
+        const p = await getAgent().call<ObjectPayload>('object.get', {
+            cluster: pod.cluster,
+            gvr: pod.gvr,
+            namespace: pod.namespace,
+            name: pod.name
+        });
+        const { load } = await import('js-yaml');
+        const doc = load(p.yaml) as { spec?: { nodeName?: string } } | null;
+        openNode(pod, doc?.spec?.nodeName ?? '');
+    } catch (e) {
+        appUi.toast('danger', `Could not read the node: ${errorText(e)}`);
+    }
+}
+
 /** k9s-style row keys (`rowIntent` maps them). Each uses the existing action or drawer path; true when the key was taken. */
 function rowKey(e: KeyboardEvent): boolean {
     const intent = rowIntent(e);
     if (!intent) return false;
     const f = focusedRow();
+    // The focused row, else the object open in the drawer (like y/e/d): after a jump the target page has no row focus yet.
+    const target = f?.ref ?? parseDrawer(props.gvr, router.currentRoute.value.query)?.ref;
     const sel = ui.value.selected;
     switch (intent) {
         case 'delete':
         case 'restart': {
-            if (!actionById(props.gvr, intent)) return false;
-            // The selection when there is one (the bulk bar's path), else the focused row.
-            const targets = sel.size ? [...sel.values()] : f ? [f.ref] : [];
-            if (!targets.length) return intent === 'delete';
-            requestKeyAction(props.gvr, intent, targets);
+            // Only a page that hosts the one-shot ActionBar (not an embedded table, e.g. Policies) can run an action.
+            if (!props.keyActions || !actionById(props.gvr, intent)) return false;
+            if (keyActionBlocked(props.gvr)) {
+                appUi.toast('info', 'Helm releases have their own actions: open the release and use Uninstall or Upgrade');
+                return true;
+            }
+            // The selection when there is one (the bulk bar's path), else the focused row or the open object.
+            const targets = sel.size ? [...sel.values()] : target ? [target] : [];
+            if (!targets.length) appUi.toast('info', 'Focus a row first');
+            else requestKeyAction(props.gvr, intent, targets);
             return true;
         }
         case 'portforward':
-            if (!f || !actionById(props.gvr, 'portforward') || !portForwardAvailable()) return false;
-            requestKeyAction(props.gvr, 'portforward', [f.ref]);
+            if (!props.keyActions || !target || !actionById(props.gvr, 'portforward') || !portForwardAvailable()) return false;
+            requestKeyAction(props.gvr, 'portforward', [target]);
             return true;
         case 'yaml': {
             if (!tabsFor(props.gvr).includes('yaml')) return false;
@@ -500,30 +537,30 @@ function rowKey(e: KeyboardEvent): boolean {
             return true;
         }
         case 'copy-name':
-            if (!f?.ref.name) return false;
-            void copyText(f.ref.name, f.ref.name);
+            if (!target?.name) return false;
+            void copyText(target.name, target.name);
             return true;
         case 'copy-namespace':
-            if (!f?.ref.namespace) return false;
-            void copyText(f.ref.namespace, f.ref.namespace);
+            if (!target?.namespace) return false;
+            void copyText(target.namespace, target.namespace);
             return true;
         case 'owner':
-            if (!f) return false;
-            void jumpToOwner(f.ref);
+            if (!target) return false;
+            void jumpToOwner(target);
             return true;
         case 'node': {
-            if (!f || props.gvr !== 'v1/pods') return false;
-            const ni = (props.handle.columns.value ?? []).findIndex(c => c.key === 'node');
-            const node = ni >= 0 ? (f.row[ni + 2] as string) : '';
-            if (node) void openObject(router, { cluster: f.ref.cluster, gvr: 'v1/nodes', name: node });
-            else appUi.toast('info', 'Not scheduled on a node');
+            if (!target || props.gvr !== 'v1/pods') return false;
+            if (f) {
+                const ni = (props.handle.columns.value ?? []).findIndex(c => c.key === 'node');
+                openNode(target, ni >= 0 ? (f.row[ni + 2] as string) : '');
+            } else void openNodeOfOpenPod(target);
             return true;
         }
     }
 }
 
 setPageKeyHandler(e => {
-    if (e.ctrlKey || e.key === 'J' || e.key === 'F') return rowKey(e);
+    if (e.ctrlKey || (e.shiftKey && (e.key === 'J' || e.key === 'F'))) return rowKey(e);
     switch (e.key) {
         case 'j':
         case 'ArrowDown':

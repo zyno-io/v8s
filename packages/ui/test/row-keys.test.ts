@@ -2,7 +2,7 @@ import type { Kind, ObjectRef } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import { ownerRef, rowIntent } from '../src/lib/row-keys.ts';
+import { keyAction, keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '../src/lib/row-keys.ts';
 
 const k = (key: string, extra: Record<string, boolean> = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...extra });
 
@@ -25,6 +25,28 @@ describe('rowIntent', () => {
         expect(rowIntent(k('r', { ctrlKey: true }))).toBeNull();
         expect(rowIntent(k('j', { shiftKey: true }))).toBeNull();
         expect(rowIntent(k('y', { altKey: true }))).toBeNull();
+    });
+});
+
+describe('CapsLock and Shift', () => {
+    it('needs Shift for J and F', () => {
+        expect(rowIntent(k('J'))).toBeNull();
+        expect(rowIntent(k('F'))).toBeNull();
+    });
+});
+
+describe('key actions', () => {
+    it('ignores a request while one is pending', () => {
+        keyAction.value = null;
+        const a = { cluster: 'c', gvr: 'v1/pods', name: 'a' };
+        expect(requestKeyAction('v1/pods', 'delete', [a])).toBe(true);
+        expect(requestKeyAction('v1/pods', 'delete', [{ ...a, name: 'b' }])).toBe(false);
+        expect((keyAction as { value: { targets: ObjectRef[] } | null }).value?.targets[0].name).toBe('a');
+        keyAction.value = null;
+    });
+    it('blocks Delete and Restart on the virtual Helm kind only', () => {
+        expect(keyActionBlocked('helm.sh/v1/releases')).toBe(true);
+        expect(keyActionBlocked('apps/v1/deployments')).toBe(false);
     });
 });
 

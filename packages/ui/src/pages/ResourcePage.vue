@@ -120,11 +120,15 @@ watch(
     () => table.resetInteraction(props.gvr)
 );
 // A row key's action (Ctrl+D, r, Shift+F) is a one-shot request: never replay it after leaving this type.
+keyAction.value = null;
 watch(
     () => props.gvr,
     () => (keyAction.value = null)
 );
 onBeforeUnmount(() => (keyAction.value = null));
+function onKeyActionEnd() {
+    keyAction.value = null;
+}
 function onKeyActionDone() {
     keyAction.value = null;
     table.clearSelection(props.gvr);
@@ -252,6 +256,7 @@ function star() {
                 :title="title"
                 :namespaced="namespaced"
                 :decor="decor"
+                key-actions
                 @resize="saveWidth"
             />
             <ActionBar
@@ -263,6 +268,7 @@ function star() {
                 variant="key"
                 :run="keyAction.action"
                 @done="onKeyActionDone"
+                @end="onKeyActionEnd"
             />
             <div v-if="selected.length" class="bulk" role="toolbar" aria-label="Bulk actions">
                 <span class="selcount">{{ selected.length }} selected</span>
