@@ -91,6 +91,8 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         }
         if (e.key === 'Escape') {
             if (ui.dialog || ui.paletteOpen || ui.createOpen) return; // those own Esc
+            // So do native <dialog> modals the store does not track (port-forward, drain, Helm): Esc closes only them.
+            if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return;
             // Esc inside the YAML editor only leaves the editor; it must never close the drawer over unsaved edits.
             if (e.target instanceof HTMLElement && e.target.closest('.cm-editor')) {
                 e.target.blur();

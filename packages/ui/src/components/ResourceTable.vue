@@ -510,7 +510,8 @@ function rowKey(e: KeyboardEvent): boolean {
         case 'delete':
         case 'restart': {
             // Only a page that hosts the one-shot ActionBar (not an embedded table, e.g. Policies) can run an action.
-            if (!props.keyActions || !actionById(props.gvr, intent)) return false;
+            // Ctrl+D is still consumed there, so the browser never bookmarks while a list is on screen.
+            if (!props.keyActions || !actionById(props.gvr, intent)) return intent === 'delete';
             if (keyActionBlocked(props.gvr)) {
                 appUi.toast('info', 'Helm releases have their own actions: open the release and use Uninstall or Upgrade');
                 return true;
