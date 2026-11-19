@@ -2,10 +2,10 @@ import type { Row } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import type { UsageIdx } from '../src/lib/columns.ts';
+import type { UsageIdx, UsageSub } from '../src/lib/columns.ts';
 
-import { formatUsage, usageBar, usageTone } from '../src/lib/format.ts';
-import { cpuText, memText, usageCardLine, usageTitle } from '../src/lib/usage.ts';
+import { formatUsage, usageBar, usageReqTone, usageTone } from '../src/lib/format.ts';
+import { cpuText, memText, usageCardLine, usageHint, usageTitle } from '../src/lib/usage.ts';
 
 const IDX: UsageIdx = {
     cpuUse: 2,
@@ -116,7 +116,7 @@ describe('usageTitle', () => {
         );
         expect(t.split('\n')).toEqual([
             'CPU 16m used · 50m requested (32%) · 250m limit (6.4%) · 0.4% of node-12 allocatable',
-            'MEM 163Mi used · 128Mi requested (127%) · 256Mi limit (64%) · 0.3% of node-12 allocatable'
+            'MEM 163Mi used · 128Mi requested (127%) · 256Mi limit (64%) · 0.3% of node-12 allocatable · over request: evicted first if the node runs short of memory'
         ]);
         expect(t).toContain('requested');
     });
@@ -187,5 +187,40 @@ describe('usageBar', () => {
         expect(usageBar(null, 400, -1)).toEqual({ tier: 'ok', fill: 40 });
         expect(usageBar(null, 2500, null)).toEqual({ tier: 'hot', fill: 100 });
         expect(usageBar(null, 750)).toEqual({ tier: 'warn', fill: 75 });
+    });
+});
+
+describe('usageReqTone', () => {
+    it('tints a memory request next to a limit above 100 % and 200 % of the shown percentage', () => {
+        expect(usageReqTone('mem', 1004, 500)).toBe('');
+        expect(usageReqTone('mem', 1005, 500)).toBe('warning');
+        expect(usageReqTone('mem', 2004, 0)).toBe('warning');
+        expect(usageReqTone('mem', 2005, 900)).toBe('danger');
+    });
+    it('leaves CPU, no limit, and no data alone', () => {
+        expect(usageReqTone('cpu', 3000, 500)).toBe('');
+        expect(usageReqTone('mem', 3000, -1)).toBe('');
+        expect(usageReqTone('mem', 3000, null)).toBe('');
+        expect(usageReqTone('mem', 3000, undefined)).toBe('');
+        expect(usageReqTone('mem', null, 500)).toBe('');
+    });
+});
+
+describe('usage hints', () => {
+    const sub = (key: string, res: 'cpu' | 'mem', tone: UsageSub['tone'], unit = 'permille'): UsageSub =>
+        ({ key, label: key, text: key, suffix: '', idx: 2, unit, metrics: true, res, width: 36, tone, pctNode: false }) as UsageSub;
+    it('explains each percentage header and skips raw columns', () => {
+        expect(usageHint(sub('cpuUse', 'cpu', null, 'millicores'))).toBe('');
+        expect(usageHint(sub('cpuPctLim', 'cpu', 'lim'))).toMatch(/limit, green below 70 %, amber from 70 %, red from 90 %/);
+        expect(usageHint(sub('cpuPctAlloc', 'cpu', 'node'))).toMatch(/allocatable/);
+        expect(usageHint(sub('memPctReq', 'mem', null))).toMatch(/amber above 100 % of the request, red above 200 %/);
+        expect(usageHint(sub('cpuPctReq', 'cpu', null))).toMatch(/With a limit: no bar \(running over a CPU request is normal\)/);
+    });
+    it('gives a row the reason only for memory over its request next to a limit', () => {
+        const reason = /evicted first/;
+        expect(usageTitle(IDX, row({ memUse: 300, memReq: 100, memLim: 400, memPctReq: 3000, memPctLim: 750 }))).toMatch(reason);
+        expect(usageTitle(IDX, row({ memUse: 90, memReq: 100, memLim: 400, memPctReq: 900, memPctLim: 225 }))).not.toMatch(reason);
+        expect(usageTitle(IDX, row({ memUse: 300, memReq: 100, memPctReq: 3000, memPctLim: -1 }))).not.toMatch(reason);
+        expect(usageTitle(IDX, row({ cpuUse: 300, cpuReq: 100, cpuLim: 400, cpuPctReq: 3000, cpuPctLim: 750 }))).not.toMatch(reason);
     });
 });

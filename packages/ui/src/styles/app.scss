@@ -495,6 +495,13 @@ h1 {
         --bar: var(--bar-hot);
         color: var(--text);
     }
+    // A memory request percentage next to a limit: no bar, the text is tinted instead.
+    .b.w {
+        color: var(--warning);
+    }
+    .b.d {
+        color: var(--danger);
+    }
 }
 // Body rows: the block's line box is the row, so a percentage's bar can fill the row's height (less its 1px border).
 .tr.row .ub {

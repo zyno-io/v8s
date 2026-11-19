@@ -370,6 +370,17 @@ async function main() {
             // Back to the default order for the steps that follow.
             await lim.click();
             await lim.click();
+
+            // The memory request header explains its tint; pods far over their memory request (with a limit) are tinted.
+            const memReq = page.getByRole('button', { name: 'Sort by %MEM/R', exact: true });
+            assert.match((await memReq.getAttribute('title')) ?? '', /amber above 100 % of the request, red above 200 %/);
+            await memReq.click();
+            await memReq.click();
+            await page.getByText('Sorted by %MEM/R (desc)').waitFor();
+            await page.locator('.scroller .row:not(.sk) .ub .b.w, .scroller .row:not(.sk) .ub .b.d').first().waitFor();
+            await page.screenshot({ path: shot('pods-mem-request') });
+            await memReq.click();
+            await memReq.click();
         });
 
         // ---- node usage and the Overview capacity card ----

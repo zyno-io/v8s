@@ -49,3 +49,14 @@ export function usageBar(rule: 'lim' | 'node' | null, v: unknown, lim?: unknown)
     if (rule == null && typeof lim === 'number' && lim >= 0) return null;
     return { tier: v >= 900 ? 'hot' : v >= 700 ? 'warn' : 'ok', fill: Math.min(v, 1000) / 10 };
 }
+
+/**
+ * Text colour for a memory request percentage next to a limit (it has no bar then): `warning` above 100 %, `danger` above 200 %
+ * of the request, on the shown (rounded) percentage. A pod over its memory request is among the first evicted when its node runs
+ * short of memory. CPU requests stay uncoloured: running over a CPU request is normal for bursty pods.
+ */
+export function usageReqTone(res: 'cpu' | 'mem', v: unknown, lim: unknown): 'warning' | 'danger' | '' {
+    if (res !== 'mem' || typeof v !== 'number' || v < 0 || typeof lim !== 'number' || lim < 0) return '';
+    const p = Math.round(v / 10);
+    return p > 200 ? 'danger' : p > 100 ? 'warning' : '';
+}
