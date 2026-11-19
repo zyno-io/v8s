@@ -57,6 +57,24 @@ func TestParseDefaults(t *testing.T) {
 	}
 }
 
+func TestUpdateCheckOption(t *testing.T) {
+	c, err := Parse([]byte(good))
+	if err != nil || !c.UpdateCheckOn() {
+		t.Fatalf("default: %v on=%v", err, c != nil && c.UpdateCheckOn())
+	}
+	c, err = Parse([]byte("updateCheck: false\n" + good))
+	if err != nil || c.UpdateCheckOn() {
+		t.Fatalf("false: %v", err)
+	}
+	c, err = Parse([]byte("updateCheck: true\n" + good))
+	if err != nil || !c.UpdateCheckOn() {
+		t.Fatalf("true: %v", err)
+	}
+	if _, err := Parse([]byte("updateChek: false\n" + good)); err == nil {
+		t.Fatal("unknown key accepted")
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	sub := func(old, new string) string { return strings.Replace(good, old, new, 1) }
 	cases := map[string]string{

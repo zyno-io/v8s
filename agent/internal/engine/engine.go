@@ -29,6 +29,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/settings"
 	"github.com/zyno-io/v8s/agent/internal/streams"
 	_ "github.com/zyno-io/v8s/agent/internal/trivy"
+	"github.com/zyno-io/v8s/agent/internal/updatecheck"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/internal/wire"
@@ -60,6 +61,8 @@ type Config struct {
 	// bound). Nil: the engine creates one bound to Ctx with JobsClock and stops it with the engine.
 	Jobs      *jobs.Manager
 	JobsClock jobs.Clock
+	// Updates answers update.status. Nil (fake mode, tests, opted out): always an empty status.
+	Updates *updatecheck.Checker
 
 	// Wire front end.
 	Token          string
@@ -189,6 +192,10 @@ func New(cfg Config) *Engine {
 	e.Hubble.RegisterStreams(e.Streams)
 	for k, v := range e.Hubble.Handlers() {
 		e.Handlers[k] = v
+	}
+	// Always registered so a nil checker answers {} instead of "unknown method". Handlers run off the conn goroutine.
+	e.Handlers["update.status"] = func(ctx context.Context, _ func(any) error) (any, error) {
+		return cfg.Updates.Status(ctx), nil
 	}
 	e.Server = wire.NewServer(wire.Options{Handlers: e.Handlers,
 		Manager: mgr, Engine: e.View, Ops: e.Ops, Settings: set, Streams: e.Streams, Jobs: e.Jobs, Drain: e.Drain, Flux: e.Flux, Helm: e.Helm,

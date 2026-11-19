@@ -400,7 +400,7 @@ export const KindJob: FrameKind = 9;
 export interface Hello {
   version: number /* int */;
   agentVersion: string;
-  mode: string; // "desktop" | "serve" | "fake"
+  mode: string; // "desktop" | "hosted" | "fake" ("desktop" also covers `v8s serve`)
 }
 /**
  * Request is a client call. Method names and their params/result types:
@@ -439,6 +439,7 @@ export interface Hello {
  * 	"hubble.status"      HubbleStatusParams → HubbleStatus
  * 	"hubble.serviceMap"  HubbleServiceMapParams → HubbleServiceMap
  * 	"hubble.drops"       HubbleDropsParams → HubbleDrops
+ * 	"update.status"      → UpdateStatus (no params)
  */
 export interface Request {
   method: string;
@@ -917,6 +918,15 @@ export interface SearchParams {
    * IPPerKind caps the hits per kind of an IP search (default 5, max 50).
    */
   ipPerKind?: number /* int */;
+}
+/**
+ * UpdateStatus answers update.status: the newest stable v8s release when it is newer than this agent. The agent
+ * checks GitHub itself; the request only waits on the network for this process's first check (≤10 s). Empty when
+ * this build is current, the check is off, this is a development/branch build, or no check has succeeded yet.
+ */
+export interface UpdateStatus {
+  latest?: string; // "0.5.0" (no "v")
+  url?: string; // Latest's GitHub release page
 }
 export interface SearchHit {
   cluster: string;

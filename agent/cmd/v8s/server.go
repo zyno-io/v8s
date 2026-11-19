@@ -15,6 +15,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/hosted"
 	"github.com/zyno-io/v8s/agent/internal/hosted/config"
 	"github.com/zyno-io/v8s/agent/internal/klogbridge"
+	"github.com/zyno-io/v8s/agent/internal/updatecheck"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/webui"
 )
@@ -41,6 +42,17 @@ func runServer(args []string) error {
 	}
 
 	opt := hosted.Options{Config: cfg, Log: log}
+	// One checker for the whole server; memory-only cache (the data dir holds per-user settings only).
+	updateCheck := "off"
+	switch {
+	case !cfg.UpdateCheckOn() || updateCheckEnvOff():
+	case !updatecheck.Checkable(version.Version):
+		updateCheck = "dev"
+	default:
+		opt.Updates = updatecheck.New(updatecheck.Options{Current: version.Version, Log: log})
+		go opt.Updates.Run(ctx)
+		updateCheck = "on"
+	}
 	if webui.Available() {
 		opt.UI = webui.Handler()
 	}
@@ -54,7 +66,7 @@ func runServer(args []string) error {
 	}
 	go srv.Run(ctx)
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	log.Info("v8s server listening", "addr", ln.Addr().String(), "publicUrl", cfg.PublicURL, "version", version.Version, "clusters", len(cfg.Clusters))
+	log.Info("v8s server listening", "addr", ln.Addr().String(), "publicUrl", cfg.PublicURL, "version", version.Version, "clusters", len(cfg.Clusters), "updateCheck", updateCheck)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- hs.Serve(ln) }()

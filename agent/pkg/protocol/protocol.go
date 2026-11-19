@@ -49,7 +49,7 @@ const (
 type Hello struct {
 	Version  int    `msgpack:"version" json:"version"`
 	AgentVer string `msgpack:"agentVersion" json:"agentVersion"`
-	Mode     string `msgpack:"mode" json:"mode"` // "desktop" | "serve" | "fake"
+	Mode     string `msgpack:"mode" json:"mode"` // "desktop" | "hosted" | "fake" ("desktop" also covers `v8s serve`)
 }
 
 // Request is a client call. Method names and their params/result types:
@@ -89,6 +89,7 @@ type Hello struct {
 //	"hubble.status"      HubbleStatusParams → HubbleStatus
 //	"hubble.serviceMap"  HubbleServiceMapParams → HubbleServiceMap
 //	"hubble.drops"       HubbleDropsParams → HubbleDrops
+//	"update.status"      → UpdateStatus (no params)
 type Request struct {
 	Method string `msgpack:"method" json:"method"`
 	Params any    `msgpack:"params,omitempty" json:"params,omitempty" tstype:"unknown"`
@@ -577,6 +578,16 @@ type SearchParams struct {
 	Limit int    `msgpack:"limit" json:"limit"`
 	// IPPerKind caps the hits per kind of an IP search (default 5, max 50).
 	IPPerKind int `msgpack:"ipPerKind,omitempty" json:"ipPerKind,omitempty"`
+}
+
+// ---- update check ---------------------------------------------------------------------
+
+// UpdateStatus answers update.status: the newest stable v8s release when it is newer than this agent. The agent
+// checks GitHub itself; the request only waits on the network for this process's first check (≤10 s). Empty when
+// this build is current, the check is off, this is a development/branch build, or no check has succeeded yet.
+type UpdateStatus struct {
+	Latest string `msgpack:"latest,omitempty" json:"latest,omitempty"` // "0.5.0" (no "v")
+	URL    string `msgpack:"url,omitempty" json:"url,omitempty"`       // Latest's GitHub release page
 }
 
 type SearchHit struct {
