@@ -283,9 +283,13 @@ jobs:
           TAGGED: ${{ needs.meta.outputs.tagged }}
         run: |
           set -euo pipefail
-          unsigned=()
-          if [[ "$TAGGED" != true ]]; then unsigned=(-c.win.azureSignOptions=null); fi
-          yarn workspace @v8s/desktop exec electron-builder --win --x64 --publish never "-c.extraMetadata.version=$VERSION" ${unsigned[@]+"${unsigned[@]}"}
+          config=electron-builder.yml
+          if [[ "$TAGGED" != true ]]; then
+            # Unsigned: the same config without azureSignOptions (the CLI cannot unset a key: "-c.x=null" is a string).
+            config=electron-builder.unsigned.json
+            (cd packages/desktop && node -e "const fs=require('fs'),c=require('js-yaml').load(fs.readFileSync('electron-builder.yml','utf8'));delete c.win.azureSignOptions;fs.writeFileSync('$config',JSON.stringify(c))")
+          fi
+          yarn workspace @v8s/desktop exec electron-builder --config "$config" --win --x64 --publish never "-c.extraMetadata.version=$VERSION"
 
       - name: Package (Linux)
         if: matrix.name == 'linux'
