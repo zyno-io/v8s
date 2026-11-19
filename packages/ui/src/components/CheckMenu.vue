@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
 // A button that opens a popover of checkboxes over a bitmask (each option is one bit). The popover is teleported to <body> with
 // fixed positioning so a table header's overflow does not clip it.
@@ -45,11 +45,10 @@ function close() {
     open.value = false;
     btnEl.value?.focus();
 }
-function toggle(bit: number) {
-    const next = props.modelValue ^ bit;
-    if (props.required && !(next & props.options.reduce((m, o) => m | o.bit, 0))) return;
-    emit('update:modelValue', next);
-}
+const allBits = computed(() => props.options.reduce((m, o) => m | o.bit, 0));
+/** With `required`, the last checked option cannot be unchecked. */
+const locked = (bit: number) => !!props.required && (props.modelValue & allBits.value) === bit;
+const toggle = (bit: number) => emit('update:modelValue', props.modelValue ^ bit);
 </script>
 
 <template>
@@ -79,7 +78,7 @@ function toggle(bit: number) {
             >
                 <div v-if="heading" class="cm-head">{{ heading }}</div>
                 <label v-for="o in options" :key="o.bit" class="cm-opt" :title="o.hint">
-                    <input class="cb" type="checkbox" :checked="(modelValue & o.bit) !== 0" @change="toggle(o.bit)" />
+                    <input class="cb" type="checkbox" :checked="(modelValue & o.bit) !== 0" :disabled="locked(o.bit)" @change="toggle(o.bit)" />
                     <span class="cm-l">{{ o.label }}</span>
                     <span v-if="o.hint" class="cm-hint muted">{{ o.hint }}</span>
                 </label>

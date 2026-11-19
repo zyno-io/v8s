@@ -6,6 +6,7 @@ import (
 
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -107,6 +108,10 @@ func TestExposureOf(t *testing.T) {
 	f.put(t, gvrPods, pod("n", "solo"))
 	f.put(t, gvrPods, pod("n", "idle-0", "StatefulSet", "idle"))
 	f.put(t, gvrPods, pod("g", "nightly-29000000-xyz", "Job", "nightly-29000000"))
+	f.put(t, gvrJobs, &batchv1.Job{ObjectMeta: meta("g", "nightly-29000000", "CronJob", "nightly")})
+	f.put(t, gvrSlices, slice("g", "gw", "db-migrate-abcde"))
+	f.put(t, gvrPods, pod("g", "db-migrate-abcde", "Job", "db-migrate"))
+	f.put(t, gvrJobs, &batchv1.Job{ObjectMeta: meta("g", "db-migrate")})
 
 	ex := ExposureOf(f.scan, "c")
 	const S, NP, LB, IN = protocol.ExposureService, protocol.ExposureNodePort, protocol.ExposureLoadBalancer, protocol.ExposureIngress
@@ -123,6 +128,8 @@ func TestExposureOf(t *testing.T) {
 		{"Pod", "n", "web-5d8f-aaaaa"}:        S | IN | LB,
 		{"StatefulSet", "other-ns", "db"}:     0,
 		{"Deployment", "g", "nightly-290000"}: 0,
+		{"Job", "g", "db-migrate"}:            S | IN,
+		{"CronJob", "g", "db"}:                0, // a plain Job's name is not a CronJob's
 	}
 	for w, bits := range want {
 		if got := ex[w]; got != bits {

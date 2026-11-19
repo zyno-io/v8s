@@ -1,8 +1,6 @@
 package security
 
 import (
-	"strings"
-
 	"github.com/zyno-io/v8s/agent/internal/ingest"
 	"github.com/zyno-io/v8s/agent/internal/platform"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
@@ -14,13 +12,15 @@ import (
 //	Service.type       → NodePort / LoadBalancer bits of that Service
 //	Ingress, routes    → Ingress bit of the Services they name as backends
 //
-// One pass over Services, Ingresses, routes and EndpointSlices, then one over pods; only exposed pods allocate.
+// One pass over Services, Ingresses, routes and EndpointSlices, then one over pods (and Jobs when an exposed pod
+// belongs to one); only exposed pods allocate.
 
 const (
 	gvrPods      = "v1/pods"
 	gvrServices  = "v1/services"
 	gvrSlices    = "discovery.k8s.io/v1/endpointslices"
 	gvrIngresses = "networking.k8s.io/v1/ingresses"
+	gvrJobs      = "batch/v1/jobs"
 )
 
 // gvrRoutes are the Gateway API route kinds whose backends count as Ingress, at every version the platform module
@@ -110,9 +110,11 @@ func ExposureOf(scan ScanFn, cluster string) Exposure {
 		return nil
 	}
 
-	// Workload ← pod: the pod itself, its owner, and the owner's rollup (ReplicaSet → Deployment, Job → CronJob).
+	// Workload ← pod: the pod itself, its owner, and the owner's rollup (ReplicaSet → Deployment by name, as the
+	// scanners do; Job → CronJob from the Job's own owner reference).
 	out := Exposure{}
 	add := func(w WorkloadRef, bits int) { out[w] |= bits }
+	jobs := map[nsName]int{}
 	scan(cluster, gvrPods, func(r *ingest.Row) bool {
 		ns := r.NS().Value()
 		bits := pods[nsName{ns, r.Name()}]
@@ -128,12 +130,19 @@ func ExposureOf(scan ScanFn, cluster string) Exposure {
 		switch kind {
 		case "ReplicaSet":
 			add(NormalizeWorkload(kind, ns, name), bits)
-		case "Job": // a CronJob's Jobs are "<cronjob>-<schedule time>"
-			if i := strings.LastIndexByte(name, '-'); i > 0 {
-				add(WorkloadRef{"CronJob", ns, name[:i]}, bits)
-			}
+		case "Job":
+			jobs[nsName{ns, name}] |= bits
 		}
 		return true
 	})
+	if len(jobs) > 0 {
+		scan(cluster, gvrJobs, func(r *ingest.Row) bool {
+			ns := r.NS().Value()
+			if bits := jobs[nsName{ns, r.Name()}]; bits != 0 && r.OwnerKind().Value() == "CronJob" {
+				add(WorkloadRef{"CronJob", ns, r.OwnerName().Value()}, bits)
+			}
+			return true
+		})
+	}
 	return out
 }

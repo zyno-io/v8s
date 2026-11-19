@@ -367,7 +367,16 @@ function onScan() {
                                     ><span v-else class="muted">0</span></span
                                 >
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].workloads) }}</span>
-                                <span class="c ctags" role="cell" data-testid="exposure-cell">
+                                <span
+                                    class="c ctags"
+                                    role="cell"
+                                    data-testid="exposure-cell"
+                                    :title="
+                                        shownOf(view[vi.index])
+                                            .map(e => e.label)
+                                            .join(', ') || 'Not exposed'
+                                    "
+                                >
                                     <span v-for="e in shownOf(view[vi.index])" :key="e.bit" class="tag" :title="e.hint">{{ e.short }}</span>
                                     <span v-if="!shownOf(view[vi.index]).length" class="muted" title="Not exposed">-</span>
                                 </span>
@@ -452,15 +461,15 @@ h1 {
 }
 .vp {
     position: relative;
-    min-width: 1100px;
+    min-width: 1130px;
 }
 .tr {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) repeat(5, 56px) 84px 128px 72px 190px 90px;
+    grid-template-columns: minmax(260px, 1fr) repeat(5, 56px) 84px 160px 72px 190px 90px;
     align-items: center;
     gap: 12px;
     padding: 0 16px;
-    min-width: 1100px;
+    min-width: 1130px;
 }
 .row {
     position: absolute;
@@ -610,7 +619,7 @@ h1 {
 }
 @container (max-width: 800px) {
     .tr:not(.mcard) {
-        grid-template-columns: minmax(160px, 1fr) repeat(5, 40px) 70px 104px 84px;
+        grid-template-columns: minmax(160px, 1fr) repeat(5, 40px) 70px 132px 84px;
         gap: 8px;
         padding: 0 10px;
         min-width: 0;
