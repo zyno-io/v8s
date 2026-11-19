@@ -95,6 +95,29 @@ export function upsertEntry(
     return (ns ? [{ key, ns }, ...rest] : rest).slice(0, max);
 }
 
+/** Moves `key` to the front (a use, not a change); no-op when it has no entry. */
+export function touchEntry(entries: readonly NamespaceEntry[], key: string): NamespaceEntry[] {
+    const e = entries.find(x => x.key === key);
+    return e ? upsertEntry(entries, key, e.ns) : [...entries];
+}
+
+/** Sets one kind's filter inside `key`'s entry, leaving its other kinds as stored (another tab may have changed them). */
+export function setKindFilter(entries: readonly NamespaceEntry[], key: string, gvr: string, list: readonly string[]): NamespaceEntry[] {
+    const ns: Record<string, readonly string[]> = { ...entries.find(e => e.key === key)?.ns };
+    if (list.length) ns[gvr] = list;
+    else delete ns[gvr];
+    return upsertEntry(entries, key, compactFilters(ns));
+}
+
+/** The same cluster set under a new key (a group was created, renamed or deleted): `ns` replaces whatever `to` held, `from` is dropped. */
+export function moveEntry(entries: readonly NamespaceEntry[], from: string, to: string, ns: NamespaceFilters | null): NamespaceEntry[] {
+    return upsertEntry(
+        entries.filter(e => e.key !== from),
+        to,
+        ns
+    );
+}
+
 export function parseEntries(raw: unknown): NamespaceEntry[] {
     if (!Array.isArray(raw)) return [];
     const out: NamespaceEntry[] = [];
@@ -116,13 +139,15 @@ export const sameFilters = (a: NamespaceFilters | null, b: NamespaceFilters | nu
 
 /** Query keys that open the object drawer; they name an object of a cluster that may not be connected next time. */
 const DRAWER_KEYS = ['c', 'ns', 'n', 'tab'];
+/** One-shot query keys (the hosted signed-out splash) that must never be replayed from a remembered route. */
+const ONE_SHOT_KEYS = ['signedout'];
 
-/** The route worth remembering (path + query, drawer keys dropped), or null for `/` and non-app paths. */
+/** The route worth remembering (path + query, drawer and one-shot keys dropped), or null for `/` and non-app paths. */
 export function routeToRemember(path: string, query: Readonly<Record<string, unknown>>): string | null {
     if (path === '/' || !path.startsWith('/') || path.startsWith('//')) return null;
     const sp = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) {
-        if (DRAWER_KEYS.includes(k)) continue;
+        if (DRAWER_KEYS.includes(k) || ONE_SHOT_KEYS.includes(k)) continue;
         for (const x of Array.isArray(v) ? v : [v]) if (typeof x === 'string') sp.append(k, x);
     }
     const q = sp.toString();

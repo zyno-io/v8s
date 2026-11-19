@@ -101,7 +101,8 @@ export const useClustersStore = defineStore('clusters', () => {
             remembered.value = ids;
             writeJson(KEY_SELECTION, storeSelection(ids, groupMap.value));
             refreshKinds(0);
-            focusAfterClose = 'table';
+            // Only when the selector was open: an auto-connect must not leave the next Esc/Cancel focusing the table.
+            if (popoverOpen.value) focusAfterClose = 'table';
             popoverOpen.value = false;
         } catch (e) {
             error.value = e instanceof Error ? e.message : String(e);

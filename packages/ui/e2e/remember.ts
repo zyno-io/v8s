@@ -49,9 +49,15 @@ async function main() {
                 await page.goto(stack.url);
                 await dialogOf(page).waitFor({ timeout: 20000 });
                 await check(page, [0, 2]);
+                const names: string[] = [];
+                for (const box of await dialogOf(page).locator('.crow input[type=checkbox]:checked').all()) {
+                    names.push(((await box.getAttribute('aria-label')) ?? '').replace(/^Select /, ''));
+                }
+                assert.equal(names.length, 2);
                 await dialogOf(page).getByRole('button', { name: 'Connect' }).click();
                 await firstRow(page).waitFor({ timeout: 30000 });
-                assert.deepEqual(JSON.parse((await stored(page, 'v8s:selection'))!), { ids: JSON.parse((await stored(page, 'v8s:selection'))!).ids });
+                const sel = JSON.parse((await stored(page, 'v8s:selection'))!) as { ids: string[] };
+                assert.deepEqual([...sel.ids].sort(), [...names].sort());
                 // The agent keeps its selection per process: restart it so the reload starts with nothing connected (localStorage must supply the pre-check).
                 await stack.restartAgent();
                 await page.reload();
@@ -95,6 +101,21 @@ async function main() {
                 await dialogOf(page).locator('.chip', { hasText: 'duo' }).click();
                 await dialogOf(page).getByRole('button', { name: 'Connect' }).click();
                 await page.getByRole('button', { name: new RegExp(`Namespace: ${ns}`) }).waitFor({ timeout: 20000 });
+            });
+
+            await step('renaming the group keeps the filter (same clusters, new key)', async () => {
+                await page.locator('.cluster-btn').click();
+                const d = dialogOf(page);
+                await d.waitFor();
+                await d.getByRole('button', { name: 'Manage' }).click();
+                await d.getByRole('button', { name: 'Rename' }).first().click();
+                await d.getByLabel('Rename duo').fill('pair');
+                await d.getByLabel('Rename duo').press('Enter');
+                await d.locator('.chip', { hasText: 'pair' }).waitFor();
+                await page.keyboard.press('Escape');
+                await page.getByRole('button', { name: /Namespace: (?!all)/ }).waitFor();
+                const keys = (JSON.parse((await stored(page, 'v8s:namespaces'))!) as { key: string }[]).map(e => e.key);
+                assert.ok(keys.includes('g:pair') && !keys.includes('g:duo'), keys.join());
             });
 
             await step('opening / in a fresh page load lands on the last page; in-app / still works', async () => {

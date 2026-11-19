@@ -90,8 +90,8 @@ export const useTableStore = defineStore('table', () => {
     // Namespace filters are remembered per cluster set (lib/namespace-memory.ts), which listens here. The watchers live in a detached scope:
     // a state is created lazily from whichever component first asks for it, and must outlive that component.
     const scope = effectScope(true);
-    const nsListeners: (() => void)[] = [];
-    const onNamespacesChange = (fn: () => void) => void nsListeners.push(fn);
+    const nsListeners: ((gvr: string) => void)[] = [];
+    const onNamespacesChange = (fn: (gvr: string) => void) => void nsListeners.push(fn);
 
     function of(gvr: string): TableState {
         let s = states.get(gvr);
@@ -102,7 +102,7 @@ export const useTableStore = defineStore('table', () => {
             scope.run(() =>
                 watch(
                     () => created.namespaces,
-                    () => nsListeners.forEach(fn => fn())
+                    () => nsListeners.forEach(fn => fn(gvr))
                 )
             );
         }

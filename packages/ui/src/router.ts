@@ -1,5 +1,7 @@
+import { watch } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
+import { bootState } from './lib/agent.ts';
 import { KEY_ROUTE, readJson, restoreRoute, routeToRemember, writeJson } from './lib/remember.ts';
 import { isPhone } from './lib/viewport.ts';
 
@@ -43,10 +45,16 @@ router.beforeEach(to => {
     const r = router.resolve(dest);
     return { path: r.path, query: r.query, hash: to.hash };
 });
-router.afterEach((to, _from, failure) => {
-    if (failure) return;
+// Nothing is saved before the app is ready (a signed-out or failed boot is not a page to come back to); the page the app
+// was opened on is saved once it becomes ready.
+const remember = (to: { path: string; query: Record<string, unknown> }) => {
+    if (bootState.value !== 'ready') return;
     const r = routeToRemember(to.path, to.query);
     if (r) writeJson(KEY_ROUTE, r);
+};
+router.afterEach((to, _from, failure) => {
+    if (!failure) remember(to);
 });
+watch(bootState, () => remember(router.currentRoute.value));
 
 export default router;

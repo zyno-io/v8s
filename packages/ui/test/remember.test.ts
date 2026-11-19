@@ -4,6 +4,9 @@ import {
     compactFilters,
     connectionKey,
     matchGroup,
+    moveEntry,
+    setKindFilter,
+    touchEntry,
     parseEntries,
     parseSelection,
     resolveChecked,
@@ -80,7 +83,32 @@ describe('namespace entries', () => {
     });
 });
 
+describe('entry updates', () => {
+    const e = (key: string, ns: Record<string, string[]>) => ({ key, ns });
+    it('sets one kind without touching the others, and removes an emptied entry', () => {
+        const base = [e('a', { p: ['1'], q: ['2'] })];
+        expect(setKindFilter(base, 'a', 'p', ['9'])).toEqual([e('a', { q: ['2'], p: ['9'] })]);
+        expect(setKindFilter(base, 'a', 'p', [])).toEqual([e('a', { q: ['2'] })]);
+        expect(setKindFilter([e('a', { p: ['1'] })], 'a', 'p', [])).toEqual([]);
+        expect(setKindFilter([], 'b', 'p', ['1'])).toEqual([e('b', { p: ['1'] })]);
+    });
+    it('touches a key to the front without changing it', () => {
+        const base = [e('a', { p: ['1'] }), e('b', { p: ['2'] })];
+        expect(touchEntry(base, 'b').map(x => x.key)).toEqual(['b', 'a']);
+        expect(touchEntry(base, 'zz')).toEqual(base);
+    });
+    it('moves an entry to a new key, replacing what the new key held', () => {
+        const base = [e('g:x', { p: ['old'] }), e('a,b', { p: ['1'] })];
+        expect(moveEntry(base, 'a,b', 'g:x', { p: ['1'] })).toEqual([e('g:x', { p: ['1'] })]);
+        expect(moveEntry(base, 'a,b', 'g:y', null)).toEqual([e('g:x', { p: ['old'] })]);
+    });
+});
+
 describe('route memory', () => {
+    it('never remembers signedout', () => {
+        expect(routeToRemember('/pods', { signedout: '1' })).toBe('/pods');
+        expect(routeToRemember('/pods', { signedout: '1', q: 'x' })).toBe('/pods?q=x');
+    });
     it('remembers path and query without drawer keys', () => {
         expect(routeToRemember('/pods', { q: 'x', c: 'k', n: 'p', ns: 'd', tab: 'logs' })).toBe('/pods?q=x');
         expect(routeToRemember('/r/v1/secrets', {})).toBe('/r/v1/secrets');
