@@ -371,6 +371,7 @@ func registerNetworking() {
 			} else if rd < len(e.Endpoints) {
 				r.tone = ToneWarning
 			}
+			setFacts(r, endpointSliceFacts(e))
 			r.ips = endpointSliceIPs(e)
 			return r
 		})

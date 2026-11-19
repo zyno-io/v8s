@@ -2,6 +2,7 @@ package platform
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,8 +25,15 @@ type RouteIssue struct {
 	Since                         int64
 }
 
-// RouteFacts lists the failing parent conditions of a route (nil when all are fine).
-type RouteFacts struct{ Issues []RouteIssue }
+// RouteBackend is a Service a route sends traffic to.
+type RouteBackend struct{ NS, Name string }
+
+// RouteFacts lists the failing parent conditions of a route and the Services it routes to (nil when all
+// parents are fine and it has no Service backend).
+type RouteFacts struct {
+	Issues   []RouteIssue
+	Backends []RouteBackend
+}
 
 // GatewayFacts: Accepted and Programmed conditions of a Gateway.
 type GatewayFacts struct{ Accepted, Programmed bool }
@@ -33,6 +41,16 @@ type GatewayFacts struct{ Accepted, Programmed bool }
 func decodeRoute(raw []byte) (runtime.Object, error) {
 	var w struct {
 		meta
+		Spec struct {
+			Rules []struct {
+				BackendRefs []struct {
+					Group     *string `json:"group"`
+					Kind      *string `json:"kind"`
+					Namespace string  `json:"namespace"`
+					Name      string  `json:"name"`
+				} `json:"backendRefs"`
+			} `json:"rules"`
+		} `json:"spec"`
 		Status struct {
 			Parents []struct {
 				ParentRef struct {
@@ -47,6 +65,21 @@ func decodeRoute(raw []byte) (runtime.Object, error) {
 		return nil, err
 	}
 	f := &RouteFacts{}
+	for _, ru := range w.Spec.Rules {
+		for _, b := range ru.BackendRefs {
+			// group "" and kind Service are the defaults; other kinds (ServiceImport, custom backends) are not Services.
+			if b.Name == "" || (b.Group != nil && *b.Group != "") || (b.Kind != nil && *b.Kind != "Service") {
+				continue
+			}
+			be := RouteBackend{NS: b.Namespace, Name: b.Name}
+			if be.NS == "" {
+				be.NS = w.Metadata.Namespace
+			}
+			if !slices.Contains(f.Backends, be) {
+				f.Backends = append(f.Backends, be)
+			}
+		}
+	}
 	parents := 0
 	for _, p := range w.Status.Parents {
 		parents++
@@ -69,6 +102,8 @@ func decodeRoute(raw []byte) (runtime.Object, error) {
 	if len(f.Issues) > 0 {
 		status = f.Issues[0].Type + "=False"
 		r.SetTone(ingest.ToneDanger)
+	}
+	if len(f.Issues) > 0 || len(f.Backends) > 0 {
 		r.SetFacts(f)
 	}
 	r.PutS(status)

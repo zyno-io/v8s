@@ -1,5 +1,7 @@
 import type { ImageVulnSummary, ReportDetail } from '@v8s/client';
 
+import { ExposureIngress, ExposureLoadBalancer, ExposureNodePort, ExposureService } from '@v8s/client';
+
 import type { Tone } from './table-decor.ts';
 
 // Pure logic of the Security section (no agent access: see security-api.ts for the requests).
@@ -50,6 +52,51 @@ export const resultRank = (r: string): number => RESULT_RANK[r.toLowerCase()] ??
 
 export const sourceLabel = (s: string): string => (s === 'trivy' ? 'Trivy' : s === 'kubescape' ? 'Kubescape' : s ? sevLabel(s) : '');
 
+// ---- exposure ("Exposed via") ----
+
+/**
+ * The exposure kinds of an image row (protocol `Exposure*` bits), widest first. The bit values double as the sort
+ * rank (Ingress 8 > LoadBalancer 4 > NodePort 2 > Service 1).
+ */
+export const EXPOSURES = [
+    { bit: ExposureIngress, label: 'Ingress', short: 'Ingress', hint: 'Ingress or Gateway API route' },
+    { bit: ExposureLoadBalancer, label: 'LoadBalancer', short: 'LB', hint: 'Service of type LoadBalancer' },
+    { bit: ExposureNodePort, label: 'NodePort', short: 'NodePort', hint: 'Service of type NodePort' },
+    { bit: ExposureService, label: 'Service', short: 'Service', hint: 'Any Service (cluster-internal)' }
+] as const;
+
+/** What counts as exposed until the viewer changes it: everything reachable from outside the cluster (not a plain Service). */
+export const DEFAULT_EXPOSURE_DEF = ExposureIngress | ExposureLoadBalancer | ExposureNodePort;
+const ALL_EXPOSURE = DEFAULT_EXPOSURE_DEF | ExposureService;
+/** Filter bit for rows with no exposure under the definition (outside the protocol bits). */
+export const NOT_EXPOSED = 1 << 8;
+
+/** Keeps only known definition bits; an empty definition falls back to the default. */
+export const normExposureDef = (def: number): number => def & ALL_EXPOSURE || DEFAULT_EXPOSURE_DEF;
+
+/**
+ * The kinds a row shows under a definition: its bits within the definition. Service is dropped when a wider kind is shown
+ * (every LoadBalancer / NodePort / routed workload is also behind a Service). 0 = not exposed (`-`).
+ */
+export function shownExposure(bits: number | undefined, def: number): number {
+    const m = (bits ?? 0) & def;
+    const wide = m & ~ExposureService;
+    return wide || m;
+}
+
+/** Display entries of shown bits, widest first. */
+export const exposureList = (shown: number) => EXPOSURES.filter(e => shown & e.bit);
+
+/** Drops filter bits for kinds the definition no longer includes (NOT_EXPOSED stays). */
+export const normExposureFilter = (filter: number, def: number): number => filter & (def | NOT_EXPOSED);
+
+/** True when a row passes the "Exposed via" filter: no bits = no filtering; otherwise any shown kind (or none, with NOT_EXPOSED) is checked. */
+export function matchesExposure(bits: number | undefined, def: number, filter: number): boolean {
+    if (!filter) return true;
+    const shown = shownExposure(bits, def);
+    return shown ? (shown & filter) !== 0 : (filter & NOT_EXPOSED) !== 0;
+}
+
 // ---- images overview ----
 
 export type SourceFilter = '' | 'trivy' | 'kubescape';
@@ -57,31 +104,60 @@ export interface ImageFilter {
     text: string;
     source: SourceFilter;
     onlyCritical: boolean;
+    /** "Exposed via" filter bits (EXPOSURES bits, NOT_EXPOSED); 0 or absent = any. */
+    exposedVia?: number;
+    /** What counts as exposed (EXPOSURES bits); defaults to DEFAULT_EXPOSURE_DEF. */
+    exposureDef?: number;
 }
 
 export function filterImages(images: readonly ImageVulnSummary[], f: ImageFilter): ImageVulnSummary[] {
     const t = f.text.trim().toLowerCase();
+    const ev = f.exposedVia ?? 0;
+    const def = f.exposureDef ?? DEFAULT_EXPOSURE_DEF;
     return images.filter(
-        i => (!t || i.image.toLowerCase().includes(t)) && (!f.source || i.source === f.source) && (!f.onlyCritical || i.critical > 0)
+        i =>
+            (!t || i.image.toLowerCase().includes(t)) &&
+            (!f.source || i.source === f.source) &&
+            (!f.onlyCritical || i.critical > 0) &&
+            (!ev || matchesExposure(i.exposure, def, ev))
     );
 }
 
-export type ImageSortKey = 'image' | 'critical' | 'high' | 'medium' | 'low' | 'unknown' | 'workloads' | 'reports' | 'clusters' | 'source';
+export type ImageSortKey =
+    | 'image'
+    | 'critical'
+    | 'high'
+    | 'medium'
+    | 'low'
+    | 'unknown'
+    | 'workloads'
+    | 'exposure'
+    | 'reports'
+    | 'clusters'
+    | 'source';
 export const DEFAULT_SORT: { key: ImageSortKey; desc: boolean } = { key: 'critical', desc: true };
 
 const sevCmp = (a: ImageVulnSummary, b: ImageVulnSummary) =>
     b.critical - a.critical || b.high - a.high || b.medium - a.medium || b.low - a.low || b.unknown - a.unknown;
 
-function valueOf(i: ImageVulnSummary, key: ImageSortKey): number | string {
-    return key === 'clusters' ? i.clusters.length : i[key];
+function valueOf(i: ImageVulnSummary, key: ImageSortKey, def: number): number | string {
+    return key === 'clusters' ? i.clusters.length : key === 'exposure' ? shownExposure(i.exposure, def) : i[key];
 }
 
-/** Sorted copy. Ties fall back to the server's ranking (critical, high, ...) then the image name, so the order is total and stable. */
-export function sortImages(images: readonly ImageVulnSummary[], key: ImageSortKey = DEFAULT_SORT.key, desc = DEFAULT_SORT.desc): ImageVulnSummary[] {
+/**
+ * Sorted copy. Ties fall back to the server's ranking (critical, high, ...) then the image name, so the order is total and stable.
+ * `def` is the exposure definition the `exposure` key ranks by (widest shown kind first when descending).
+ */
+export function sortImages(
+    images: readonly ImageVulnSummary[],
+    key: ImageSortKey = DEFAULT_SORT.key,
+    desc = DEFAULT_SORT.desc,
+    def = DEFAULT_EXPOSURE_DEF
+): ImageVulnSummary[] {
     const dir = desc ? -1 : 1;
     return [...images].sort((a, b) => {
-        const va = valueOf(a, key);
-        const vb = valueOf(b, key);
+        const va = valueOf(a, key, def);
+        const vb = valueOf(b, key, def);
         const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
         return c * dir || sevCmp(a, b) || a.image.localeCompare(b.image) || a.source.localeCompare(b.source);
     });

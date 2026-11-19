@@ -110,6 +110,10 @@ export type {
 } from './protocol.gen.ts';
 export {
     CapacityGVR,
+    ExposureIngress,
+    ExposureLoadBalancer,
+    ExposureNodePort,
+    ExposureService,
     HelmGVR,
     MaxObjectEvents,
     ProblemsGVR,

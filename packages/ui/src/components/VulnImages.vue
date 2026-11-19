@@ -6,11 +6,28 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 
 import type { ImageSortKey, SourceFilter } from '@/lib/security.ts';
 
+import CheckMenu from '@/components/CheckMenu.vue';
 import { clusterColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { fetchImages, kubescapeScanNow } from '@/lib/security-api.ts';
-import { DEFAULT_SORT, filterImages, SEVERITIES, sevLabel, sevTone, sortImages, sourceLabel, totalsOf } from '@/lib/security.ts';
+import {
+    DEFAULT_EXPOSURE_DEF,
+    DEFAULT_SORT,
+    EXPOSURES,
+    exposureList,
+    filterImages,
+    normExposureDef,
+    normExposureFilter,
+    NOT_EXPOSED,
+    SEVERITIES,
+    sevLabel,
+    sevTone,
+    shownExposure,
+    sortImages,
+    sourceLabel,
+    totalsOf
+} from '@/lib/security.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
@@ -30,6 +47,37 @@ const source = ref<SourceFilter>('');
 const onlyCritical = ref(false);
 const sort = ref<{ key: ImageSortKey; desc: boolean }>({ ...DEFAULT_SORT });
 const scanMenu = ref(false);
+// "Exposed via": the definition (which kinds count as exposed, per viewer) and the filter over the shown kinds.
+const EXPOSURE_DEF_KEY = 'v8s:vuln-exposure-def';
+function loadExposureDef(): number {
+    try {
+        const v = Number(localStorage.getItem(EXPOSURE_DEF_KEY));
+        return v ? normExposureDef(v) : DEFAULT_EXPOSURE_DEF;
+    } catch {
+        return DEFAULT_EXPOSURE_DEF;
+    }
+}
+const exposureDef = ref(loadExposureDef());
+const exposedVia = ref(0);
+watch(exposureDef, def => {
+    exposedVia.value = normExposureFilter(exposedVia.value, def);
+    try {
+        if (def === DEFAULT_EXPOSURE_DEF) localStorage.removeItem(EXPOSURE_DEF_KEY);
+        else localStorage.setItem(EXPOSURE_DEF_KEY, String(def));
+    } catch {
+        // ignore: the definition just will not persist
+    }
+});
+const defOptions = EXPOSURES.map(e => ({ bit: e.bit, label: e.label, hint: e.hint }));
+const filterOptions = computed(() => [
+    ...EXPOSURES.filter(e => exposureDef.value & e.bit).map(e => ({ bit: e.bit, label: e.label })),
+    { bit: NOT_EXPOSED, label: 'Not exposed' }
+]);
+const filterLabel = computed(() => {
+    const on = filterOptions.value.filter(o => exposedVia.value & o.bit);
+    return !on.length ? 'any' : on.length === 1 ? on[0].label : `${on.length} selected`;
+});
+const shownOf = (i: ImageVulnSummary) => exposureList(shownExposure(i.exposure, exposureDef.value));
 const scanning = ref('');
 
 let seq = 0;
@@ -73,9 +121,16 @@ watch(
 
 const view = computed(() =>
     sortImages(
-        filterImages(images.value, { text: text.value, source: source.value, onlyCritical: onlyCritical.value }),
+        filterImages(images.value, {
+            text: text.value,
+            source: source.value,
+            onlyCritical: onlyCritical.value,
+            exposedVia: exposedVia.value,
+            exposureDef: exposureDef.value
+        }),
         sort.value.key,
-        sort.value.desc
+        sort.value.desc,
+        exposureDef.value
     )
 );
 const totals = computed(() => totalsOf(view.value));
@@ -100,7 +155,7 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
 );
 const items = computed(() => virtualizer.value.getVirtualItems());
 watch(
-    () => [text.value, source.value, onlyCritical.value],
+    () => [text.value, source.value, onlyCritical.value, exposedVia.value],
     () => scroller.value?.scrollTo({ top: 0 })
 );
 
@@ -116,6 +171,7 @@ const COLS: { key: ImageSortKey; label: string; right?: boolean }[] = [
     { key: 'low', label: 'Low', right: true },
     { key: 'unknown', label: 'Unk', right: true },
     { key: 'workloads', label: 'Workloads', right: true },
+    { key: 'exposure', label: 'Exposed via' },
     { key: 'reports', label: 'Reports', right: true },
     { key: 'clusters', label: 'Clusters' },
     { key: 'source', label: 'Source' }
@@ -187,6 +243,31 @@ function onScan() {
                     <option v-for="s in sources" :key="s" :value="s">{{ sourceLabel(s) }}</option>
                 </select>
             </label>
+            <CheckMenu
+                v-model="exposedVia"
+                :options="filterOptions"
+                label="Exposed via filter"
+                heading="Show images exposed via"
+                clearable
+                btn-class="btn"
+                testid="exposure-filter"
+            >
+                Exposed via: {{ filterLabel }}
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="M4 6l4 4 4-4" />
+                </svg>
+            </CheckMenu>
+            <CheckMenu
+                v-if="isPhone"
+                v-model="exposureDef"
+                :options="defOptions"
+                label="What counts as exposed"
+                heading="Count as exposed"
+                required
+                btn-class="btn"
+            >
+                Exposure definition
+            </CheckMenu>
             <label class="chip-wrap">
                 <input v-model="onlyCritical" class="sr-only chip-input" type="checkbox" data-testid="only-critical" />
                 <span class="chip" :class="{ on: onlyCritical }">Only critical</span>
@@ -216,10 +297,33 @@ function onScan() {
                 tabindex="0"
             >
                 <div v-if="!isPhone" class="tr th" role="row">
-                    <span v-for="c in COLS" :key="c.key" class="c" :class="{ r: c.right }" role="columnheader" :aria-sort="ariaSort(c.key)">
+                    <span
+                        v-for="c in COLS"
+                        :key="c.key"
+                        class="c"
+                        :class="{ r: c.right, thx: c.key === 'exposure' }"
+                        role="columnheader"
+                        :aria-sort="ariaSort(c.key)"
+                    >
                         <button class="th-btn" type="button" :title="`Sort by ${(FULL[c.label] ?? c.label).toLowerCase()}`" @click="sortBy(c.key)">
                             {{ c.label }}{{ arrow(c.key) }}
                         </button>
+                        <CheckMenu
+                            v-if="c.key === 'exposure'"
+                            v-model="exposureDef"
+                            :options="defOptions"
+                            label="What counts as exposed"
+                            heading="Count as exposed"
+                            note="Rows show - when none of these apply."
+                            required
+                            btn-class="th-cfg"
+                            btn-title="Choose what counts as exposed"
+                            testid="exposure-def"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                                <path d="M2 4h12M4 8h8M6 12h4" />
+                            </svg>
+                        </CheckMenu>
                     </span>
                 </div>
                 <div class="vp" :style="{ height: virtualizer.getTotalSize() + 'px' }">
@@ -247,8 +351,13 @@ function onScan() {
                                     >
                                 </div>
                                 <div class="l3 muted">
-                                    {{ view[vi.index].workloads }} workloads · {{ view[vi.index].reports }} reports ·
-                                    {{ view[vi.index].clusters.map(nameOf).join(', ') }}
+                                    {{ view[vi.index].workloads }} workloads ·
+                                    {{
+                                        shownOf(view[vi.index])
+                                            .map(e => e.short)
+                                            .join(', ') || 'not exposed'
+                                    }}
+                                    · {{ view[vi.index].reports }} reports · {{ view[vi.index].clusters.map(nameOf).join(', ') }}
                                 </div>
                             </template>
                             <template v-else>
@@ -258,6 +367,10 @@ function onScan() {
                                     ><span v-else class="muted">0</span></span
                                 >
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].workloads) }}</span>
+                                <span class="c ctags" role="cell" data-testid="exposure-cell">
+                                    <span v-for="e in shownOf(view[vi.index])" :key="e.bit" class="tag" :title="e.hint">{{ e.short }}</span>
+                                    <span v-if="!shownOf(view[vi.index]).length" class="muted" title="Not exposed">-</span>
+                                </span>
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].reports) }}</span>
                                 <span class="c ctags" role="cell">
                                     <span v-for="id in view[vi.index].clusters.slice(0, 2)" :key="id" class="tag"
@@ -339,15 +452,15 @@ h1 {
 }
 .vp {
     position: relative;
-    min-width: 960px;
+    min-width: 1100px;
 }
 .tr {
     display: grid;
-    grid-template-columns: minmax(260px, 1fr) repeat(5, 56px) 84px 72px 190px 90px;
+    grid-template-columns: minmax(260px, 1fr) repeat(5, 56px) 84px 128px 72px 190px 90px;
     align-items: center;
     gap: 12px;
     padding: 0 16px;
-    min-width: 960px;
+    min-width: 1100px;
 }
 .row {
     position: absolute;
@@ -384,6 +497,30 @@ h1 {
     cursor: pointer;
 }
 .th-btn:focus-visible {
+    outline: 2px solid var(--focus);
+}
+.thx {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.thx :deep(.th-cfg) {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    color: var(--text3);
+    cursor: pointer;
+}
+.thx :deep(.th-cfg:hover),
+.thx :deep(.th-cfg[aria-expanded='true']) {
+    background: var(--hover);
+    color: var(--text);
+}
+.thx :deep(.th-cfg:focus-visible) {
     outline: 2px solid var(--focus);
 }
 .c {
@@ -473,17 +610,17 @@ h1 {
 }
 @container (max-width: 800px) {
     .tr:not(.mcard) {
-        grid-template-columns: minmax(160px, 1fr) repeat(5, 40px) 70px 84px;
+        grid-template-columns: minmax(160px, 1fr) repeat(5, 40px) 70px 104px 84px;
         gap: 8px;
         padding: 0 10px;
         min-width: 0;
     }
-    .tr:not(.mcard) > :nth-child(8),
-    .tr:not(.mcard) > :nth-child(9) {
+    .tr:not(.mcard) > :nth-child(9),
+    .tr:not(.mcard) > :nth-child(10) {
         display: none;
     }
-    .tr:not(.mcard) > :nth-child(10) {
-        grid-column: 8;
+    .tr:not(.mcard) > :nth-child(11) {
+        grid-column: 9;
     }
     .vp {
         min-width: 0;

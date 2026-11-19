@@ -38,7 +38,19 @@ type ImageVulnSummary struct {
 	Workloads  int      `msgpack:"workloads" json:"workloads"`
 	Reports    int      `msgpack:"reports" json:"reports"`
 	Clusters   []string `msgpack:"clusters" json:"clusters"`
+	// Exposure is the union over the image's workloads of how their pods are reachable (Exposure* bits). A pod is
+	// behind a Service when one of its EndpointSlices targets it; the other bits follow from that Service (its type,
+	// or an Ingress / Gateway API route that sends traffic to it). ExposureService is set for any Service type.
+	Exposure int `msgpack:"exposure,omitempty" json:"exposure,omitempty"`
 }
+
+// Exposure bits (ImageVulnSummary.Exposure).
+const (
+	ExposureService      = 1 << 0
+	ExposureNodePort     = 1 << 1
+	ExposureLoadBalancer = 1 << 2
+	ExposureIngress      = 1 << 3 // an Ingress, HTTPRoute or GRPCRoute backend
+)
 
 type SecurityImagesResult struct {
 	// Images are ranked by critical then high counts.
