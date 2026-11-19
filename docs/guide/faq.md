@@ -6,7 +6,7 @@ It is built around a performance budget. A Go agent keeps compact projections of
 
 ## Does v8s send my cluster data anywhere?
 
-No. The agent runs on your machine, or in your own infrastructure for [hosted mode](/guide/hosted), and talks to your clusters directly. There is no v8s cloud service and no telemetry you did not opt into.
+No. The agent runs on your machine, or in your own infrastructure for [hosted mode](/guide/hosted), and talks to your clusters directly. There is no v8s cloud service and no telemetry. The one outside request is a once-a-day check of GitHub for a newer release: it carries no cluster data and no version or identifiers, and you can [turn it off](/guide/install#updates).
 
 ## Which credentials does v8s use?
 
