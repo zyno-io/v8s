@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	osuser "os/user"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/klogbridge"
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/internal/settings"
+	"github.com/zyno-io/v8s/agent/internal/updatecheck"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/webui"
 )
@@ -48,6 +50,16 @@ func main() {
 	}
 }
 
+// updateCheckEnvOff is the V8S_UPDATE_CHECK opt-out (0, false or off); the desktop app's only switch, since its
+// agent inherits the environment.
+func updateCheckEnvOff() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("V8S_UPDATE_CHECK"))) {
+	case "0", "false", "off":
+		return true
+	}
+	return false
+}
+
 func runAgent(args []string, hooks agentHooks) error {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	listen := fs.String("listen", "127.0.0.1:0", "listen address")
@@ -56,6 +68,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	staticDir := fs.String("static-dir", "", "serve UI files from this directory at /")
 	devToken := fs.String("dev-token", "", "fixed token (only with --fake)")
 	settingsPath := fs.String("settings", "", "settings file (default: <user config dir>/v8s/settings.json; memory-only with --fake unless set)")
+	noUpdateCheck := fs.Bool("no-update-check", false, "do not check GitHub for a newer release (also: V8S_UPDATE_CHECK=off)")
 	lifeline := fs.Bool("stdin-lifeline", false, "exit when stdin reaches EOF")
 	var origins stringList
 	fs.Var(&origins, "allowed-origin", "allowed WebSocket Origin (repeatable)")
@@ -122,7 +135,21 @@ func runAgent(args []string, hooks agentHooks) error {
 		// Remembered selection in fake mode = all fake clusters; the UI still calls clusters.select.
 		log.Info("fake mode", "clusters", len(src.Clusters()))
 	}
-	e := engine.New(engine.Config{Ctx: ctx, Source: src, Settings: set, Log: log, User: user, AllowPortForward: true, FakeHelm: fakeSet,
+	// Never in fake mode (e2e/perf/screenshots must not reach the network). The cache sits beside settings.json so
+	// each desktop launch does not call GitHub again.
+	var chk *updatecheck.Checker
+	updateCheck := "off"
+	switch {
+	case fakeSet || *noUpdateCheck || updateCheckEnvOff():
+	case !updatecheck.Checkable(version.Version):
+		updateCheck = "dev"
+	default:
+		chk = updatecheck.New(updatecheck.Options{Current: version.Version, Log: log,
+			CachePath: filepath.Join(filepath.Dir(spath), "update-check.json")})
+		go chk.Run(ctx)
+		updateCheck = "on"
+	}
+	e := engine.New(engine.Config{Ctx: ctx, Source: src, Settings: set, Log: log, User: user, AllowPortForward: true, FakeHelm: fakeSet, Updates: chk,
 		Token: token, Port: port, AllowedOrigins: origins, DevOrigins: fakeSet && *devToken != "", StaticDir: *staticDir})
 	defer e.Close()
 	srv := e.Server
@@ -141,7 +168,7 @@ func runAgent(args []string, hooks agentHooks) error {
 		}{port, token})
 		fmt.Fprintf(os.Stdout, "%s\n", line)
 	}
-	log.Info("agent listening", "addr", ln.Addr().String(), "version", version.Version, "mode", src.Mode())
+	log.Info("agent listening", "addr", ln.Addr().String(), "version", version.Version, "mode", src.Mode(), "updateCheck", updateCheck)
 
 	if *lifeline {
 		go func() {

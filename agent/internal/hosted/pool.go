@@ -341,7 +341,7 @@ func (s *Server) activate(ue *userEngine) *activation {
 	log := s.log.With("user", ue.ident.Username)
 	e := engine.New(engine.Config{Ctx: ue.ctx, Source: ue.src, Settings: ue.set, Log: log, Now: s.clock.Now, Tick: s.tick,
 		User: ue.ident.Username, AllowPortForward: false, RuntimeErr: "this cluster is read-only or has no runtime",
-		Jobs: ue.jobs, PreAuthorized: true})
+		Jobs: ue.jobs, PreAuthorized: true, Updates: s.updates})
 	return &activation{eng: e, srv: e.Server}
 }
 

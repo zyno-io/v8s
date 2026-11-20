@@ -74,6 +74,7 @@ Surrounding whitespace is trimmed, and an empty value is an error. OIDC client s
 | `clusters`       | The cluster records, below                                                                                                                                                                            |                |
 | `adminGroups`    | IdP groups that can see every cluster                                                                                                                                                                 | none           |
 | `limits`         | Request limits, below                                                                                                                                                                                 | as listed      |
+| `updateCheck`    | `false` turns off the daily check of GitHub for a newer v8s release (see [Security model](#security-model)). `V8S_UPDATE_CHECK=off` in the environment does the same                                  | `true`         |
 | `correlationKey` | Secret reference that keys the correlation id sent to clusters. Random per start if unset, so ids do not match across restarts                                                                        | random         |
 
 ### `session`
@@ -459,6 +460,7 @@ Put it behind a TLS-terminating ingress at your `publicUrl`. v8s runs as a singl
 - **Browser.** Holds only a host-only `__Host-` session cookie (HttpOnly, Secure, SameSite=Strict). No tokens, no cluster credentials.
 - **Tokens.** IdP tokens live in the server's memory, only for the life of the session. They are deleted at sign-out and at expiry, and never written to disk. Sessions have an absolute lifetime (12 hours by default).
 - **Storage.** The only thing written to disk is each user's settings file: stars, bookmarks, groups, layouts, and acknowledgements. There is no database and no activity log.
+- **Update check.** Once a day the server asks `api.github.com` for the latest v8s release (no cluster data, no user data, no version or identifiers; the proxy variables are honored). When a newer one exists it logs `update available` and users see a "Server update" pill; v8s never updates itself. Turn it off with `updateCheck: false`.
 - **Per-user access.** Each user's watches carry that user's own token. Problems contain only what that user's token can read. A user sees only the clusters mapped to their IdP groups, and v8s connects to a cluster only after they select it.
 - **No long-term logs.** v8s keeps a short, in-memory list of a user's own recent actions, cleared at sign-out. The authoritative records are your gateway's and the Kubernetes audit log. v8s sends `User-Agent: v8s/<version> (corr <id>)`, where the id is an HMAC of the session, never the session itself.
 - **Request checks.** `Origin` and `Sec-Fetch-Site` are checked on every HTTP endpoint. WebSocket handshakes must carry an `Origin` equal to `publicUrl` (Chromium sends no `Sec-Fetch-*` headers there, so `Sec-Fetch-Site` is checked only when present).

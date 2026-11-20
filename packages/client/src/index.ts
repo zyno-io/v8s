@@ -101,6 +101,7 @@ export type {
     IPMatch,
     IPQueryMode,
     Settings,
+    UpdateStatus,
     StreamOpenParams,
     StreamOpenResult,
     StreamReady,

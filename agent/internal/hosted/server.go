@@ -21,6 +21,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/hosted/config"
 	"github.com/zyno-io/v8s/agent/internal/hosted/oidc"
 	"github.com/zyno-io/v8s/agent/internal/settings"
+	"github.com/zyno-io/v8s/agent/internal/updatecheck"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
@@ -53,6 +54,8 @@ type Options struct {
 	Tick time.Duration
 	// CorrelationKey keys the HMAC of the session id (nil: the configured key, else random per start).
 	CorrelationKey []byte
+	// Updates is shared by every user's engine (nil: update.status answers empty).
+	Updates *updatecheck.Checker
 }
 
 // Server is the `v8s server` HTTP handler.
@@ -66,6 +69,7 @@ type Server struct {
 	factory ClusterFactory
 	tick    time.Duration
 	corrKey []byte
+	updates *updatecheck.Checker
 
 	store    *Store
 	pool     *Pool
@@ -120,7 +124,7 @@ func New(ctx context.Context, opt Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{cfg: cfg, log: opt.Log, clock: opt.Clock, origin: pu.Scheme + "://" + strings.ToLower(pu.Host),
-		https: pu.Scheme == "https", ui: opt.UI, factory: opt.Factory, tick: opt.Tick, flows: map[string]*flow{}, byBind: map[string]string{},
+		https: pu.Scheme == "https", ui: opt.UI, factory: opt.Factory, tick: opt.Tick, updates: opt.Updates, flows: map[string]*flow{}, byBind: map[string]string{},
 		limiters: &clusterLimiters{qps: cfg.Limits.ClusterQPS, burst: cfg.Limits.ClusterBurst}}
 	if s.factory == nil {
 		s.factory = kubeFactory(opt.Clock.Now)

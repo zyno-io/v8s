@@ -3,10 +3,11 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import SideNav from '@/components/SideNav.vue';
-import { getProblemsAll, kinds } from '@/lib/agent.ts';
+import { getAgent, getProblemsAll, kinds } from '@/lib/agent.ts';
 import { formatCount } from '@/lib/format.ts';
 import { buildSidebar } from '@/lib/kinds.ts';
 import { gvrPath } from '@/lib/route.ts';
+import { updateStatus, versionTitle } from '@/lib/update.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -19,6 +20,8 @@ const clusters = useClustersStore();
 const settings = useSettingsStore();
 const problems = getProblemsAll();
 const count = computed(() => problems.total.value);
+const agentInfo = getAgent().agentInfo;
+const updateHref = computed(() => (updateStatus.value?.url?.startsWith('https://') ? updateStatus.value.url : ''));
 const starred = computed(() => buildSidebar(kinds.value, settings.stars).starred);
 
 const sheet = ref<Sheet>('');
@@ -71,6 +74,16 @@ const on = (prefix: string) => route.path === prefix || route.path.startsWith(pr
                         <h2>More</h2>
                         <button class="btn" type="button" @click="ui.cycleTheme()">Theme: {{ ui.theme }}</button>
                     </div>
+                    <p class="muted ver" data-testid="sheet-version">
+                        {{ versionTitle(agentInfo?.version)
+                        }}<template v-if="updateStatus?.latest">
+                            ·
+                            <a v-if="updateHref" :href="updateHref" target="_blank" rel="noopener noreferrer"
+                                >{{ updateStatus.latest }} available ↗</a
+                            >
+                            <template v-else>{{ updateStatus.latest }} available</template>
+                        </template>
+                    </p>
                     <SideNav class="sheet-nav" />
                 </template>
             </div>
@@ -211,6 +224,10 @@ h2 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+}
+.ver {
+    margin: 0 0 4px;
+    font-size: 12px;
 }
 .item {
     display: flex;

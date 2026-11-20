@@ -71,6 +71,7 @@ func runServe(args []string) error {
 	port := fs.Int("port", 7931, "port to listen on (loopback only)")
 	noBrowser := fs.Bool("no-browser", false, "print the URL without opening a browser")
 	kubeconfig := fs.String("kubeconfig", "", "kubeconfig path (default: client-go loading rules, $KUBECONFIG merged)")
+	noUpdateCheck := fs.Bool("no-update-check", false, "do not check GitHub for a newer release (also: V8S_UPDATE_CHECK=off)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -83,6 +84,9 @@ func runServe(args []string) error {
 	agentArgs := []string{"--listen", "127.0.0.1:" + strconv.Itoa(*port)}
 	if *kubeconfig != "" {
 		agentArgs = append(agentArgs, "--kubeconfig", *kubeconfig)
+	}
+	if *noUpdateCheck {
+		agentArgs = append(agentArgs, "--no-update-check")
 	}
 	return runAgent(agentArgs, agentHooks{onReady: func(p int, token string) {
 		url := fmt.Sprintf("http://localhost:%d/#agent=ws://localhost:%d/ws&token=%s", p, p, token)

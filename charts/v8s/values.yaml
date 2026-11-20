@@ -15,6 +15,7 @@ fullnameOverride: ""
 # The server configuration, rendered verbatim to /etc/v8s/config.yaml (schema: docs/protocol.md "Hosted" and
 # agent/internal/hosted/config). `listen` and `dataDir` are set by the chart.
 config:
+  # updateCheck: false   # stop the daily GitHub check for a newer v8s release (default on)
   # REQUIRED. The browser-facing origin, https, no path. Cookies and the WebSocket Origin check are bound to it.
   publicUrl: ""
   session:
