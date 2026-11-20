@@ -1,7 +1,7 @@
 import type { Browser, CDPSession, Page } from 'playwright';
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 import { startStack, uiDir } from './stack.ts';
@@ -12,6 +12,13 @@ const CHURN_MS = 10_000;
 
 /** Budgets (docs/performance.md §11). Asserted on desktop only. */
 const BUDGETS = { scrollFrameP95Ms: 20, longTaskMs: 50, heapMB: 80, scriptingP95Ms: 4 };
+
+/** Variants to run (comma list). The A/B check runs `desktop` only. */
+const VARIANTS = (process.env.PERF_VARIANTS || 'desktop,mobile-4x')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+const NO_ASSERT = process.env.PERF_NO_ASSERT === '1';
 
 type Phase = 'idle' | 'scroll' | 'filter' | 'churn';
 
@@ -286,6 +293,7 @@ async function runVariant(browser: Browser, v: Variant, url: string) {
             frameP95Ms: round(pct(f, 0.95)),
             frameP99Ms: round(pct(f, 0.99)),
             frameMaxMs: round(Math.max(0, ...f)),
+            droppedPct: round(f.length ? (100 * f.filter(x => x > 25).length) / f.length : 0, 1),
             longTasks: lt.length,
             longTaskMaxMs: round(Math.max(0, ...lt)),
             longTaskTotalMs: round(lt.reduce((a, b) => a + b, 0))
@@ -296,6 +304,8 @@ async function runVariant(browser: Browser, v: Variant, url: string) {
         frames: scriptFrames.length,
         p50Ms: round(pct(scriptFrames, 0.5)),
         p95Ms: scriptingP95Ms,
+        totalMs: round(scriptFrames.reduce((a, b) => a + b, 0)),
+        meanMs: round(scriptFrames.length ? scriptFrames.reduce((a, b) => a + b, 0) / scriptFrames.length : 0),
         maxMs: round(Math.max(0, ...scriptFrames))
     };
     const peakHeapMB = Math.max(...heapSamples.map(s => s.mb));
@@ -355,21 +365,26 @@ async function main() {
     const browser = await chromium.launch({ headless: true, args: ['--enable-precise-memory-info'] });
     const results = [];
     try {
-        results.push(await runVariant(browser, { name: 'desktop', mobile: false, cpuThrottle: 1, assert: true }, stack.url));
-        results.push(await runVariant(browser, { name: 'mobile-4x', mobile: true, cpuThrottle: 4, assert: false }, stack.url));
+        const all: Variant[] = [
+            { name: 'desktop', mobile: false, cpuThrottle: 1, assert: true },
+            { name: 'mobile-4x', mobile: true, cpuThrottle: 4, assert: false }
+        ];
+        const unknown = VARIANTS.filter(n => !all.some(v => v.name === n));
+        if (unknown.length) throw new Error(`unknown PERF_VARIANTS: ${unknown.join(', ')}`);
+        for (const v of all.filter(v => VARIANTS.includes(v.name))) results.push(await runVariant(browser, v, stack.url));
     } finally {
         await browser.close();
         await stack.stop();
     }
     const out = { when: new Date().toISOString(), fake: FAKE, budgets: BUDGETS, results };
-    mkdirSync(join(uiDir, 'test-results'), { recursive: true });
-    const file = join(uiDir, 'test-results', 'perf.json');
+    const file = process.env.PERF_OUT ? resolve(process.env.PERF_OUT) : join(uiDir, 'test-results', 'perf.json');
+    mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(out, null, 2));
     console.log(JSON.stringify(out, null, 2));
     const failed = results
         .filter(r => r.asserted)
         .flatMap(r => r.checks.filter(c => !c.ok).map(c => `${r.name}: ${c.name} ${c.actual} > ${c.budget}`));
-    if (failed.length) {
+    if (failed.length && !NO_ASSERT) {
         console.error('PERF BUDGETS EXCEEDED:\n' + failed.join('\n'));
         process.exit(1);
     }

@@ -68,10 +68,10 @@ export async function startStack(fake: string, token = 'perf'): Promise<Stack> {
 
     const procs: ChildProcess[] = [];
     const viteBin = join(dirname(createRequire(import.meta.url).resolve('vite/package.json')), 'bin/vite.js');
-    const preview = spawn(process.execPath, [viteBin, 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'], {
-        cwd: uiDir,
-        stdio: ['ignore', 'ignore', 'inherit']
-    });
+    const previewArgs = [viteBin, 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'];
+    // `PERF_DIST` serves a UI build from elsewhere (the A/B check serves the base revision's) with this checkout's vite config.
+    if (process.env.PERF_DIST) previewArgs.push('--outDir', resolve(process.env.PERF_DIST));
+    const preview = spawn(process.execPath, previewArgs, { cwd: uiDir, stdio: ['ignore', 'ignore', 'inherit'] });
     procs.push(preview);
 
     const startAgent = async (listen: string) => {

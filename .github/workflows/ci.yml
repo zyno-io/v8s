@@ -48,11 +48,12 @@ jobs:
   perf:
     name: Perf
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Informational until the budgets have been stable on shared runners.
-    continue-on-error: true
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Pull requests need the merge commit's first parent (HEAD^1) for the A/B base worktree.
+          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: agent/go.mod
@@ -60,12 +61,32 @@ jobs:
       - uses: ./.github/actions/setup-js
       - name: Install Playwright Chromium
         run: yarn workspace @v8s/ui playwright install --with-deps chromium
-      - name: Perf test
-        # Shared runners occasionally stall for a few frames (other runs: p95 16.8 ms, no long tasks). Retry once:
-        # a real regression fails both runs; a noisy runner does not turn the check red.
+      # Pull requests: A/B against the base commit on this same runner, alternating runs, failing on the relative
+      # difference. Absolute budgets on shared runners are too noisy to gate on (docs/performance.md section 11).
+      - name: Check out base
+        if: github.event_name == 'pull_request'
+        env:
+          YARN_ENABLE_SCRIPTS: 'false'
+          YARN_ENABLE_TELEMETRY: '0'
+          # Reuse the cache setup-js restored for the head checkout.
+          YARN_CACHE_FOLDER: ${{ github.workspace }}/.yarn/cache
+        # A pull_request checkout is the merge commit: its first parent is exactly the base the PR merges onto.
+        run: |
+          git worktree add ../base HEAD^1
+          cd ../base
+          yarn install --immutable
+      - name: Perf A/B
+        if: github.event_name == 'pull_request'
+        working-directory: packages/ui
+        run: node perf/ab.ts --base-dir ../../../base --rounds 3 --out-dir test-results/ab
+      # Pushes to main: the absolute budgets, informational only. A noisy runner can stall for a few frames
+      # (p95 16.8 ms, no long tasks, in other runs), so retry once: a real regression fails both runs.
+      - name: Perf test (absolute budgets)
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
         run: yarn test:perf || { echo "::warning::perf budgets missed; retrying once"; yarn test:perf; }
       - name: Print numbers
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         run: |
           f=packages/ui/test-results/perf.json
           if [ -f "$f" ]; then
@@ -78,7 +99,9 @@ jobs:
         if: always()
         with:
           name: perf
-          path: packages/ui/test-results/perf.json
+          path: |
+            packages/ui/test-results/perf.json
+            packages/ui/test-results/ab/*.json
           if-no-files-found: warn
           retention-days: 14
 
