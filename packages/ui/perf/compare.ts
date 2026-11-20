@@ -11,12 +11,17 @@ import { appendFileSync, readFileSync } from 'node:fs';
  * - `pointsAbs`: head > base + points (percentage points).
  * - `floor`/`marginAbs` (long task): head > max(base, floor) + margin, in ms.
  * `firstRowsMs` and `filterSettleMs` are report-only.
+ *
+ * Tuned on GitHub runners (3 rounds a side): with no change, medians differed by 1-1.5 % in scripting total and
+ * under 0.5 points in dropped frames; a deliberate ~2 µs-per-row render cost showed +13.5 % scripting total and
+ * +5.1 points of dropped frames. The thresholds sit at ~5x the no-change noise. Base levels differ a lot between
+ * runners (scripting total 212 vs 259 ms for the same commit), which is why only the in-job difference is gated.
  */
 export const RULES = {
-    scriptingTotal: { ratio: 1.15, minDeltaAbs: 40 }, // ms
-    scriptingP95: { ratio: 1.2, minDeltaAbs: 0.3 }, // ms
-    scrollDroppedPct: { pointsAbs: 5 },
-    churnDroppedPct: { pointsAbs: 5 },
+    scriptingTotal: { ratio: 1.08, minDeltaAbs: 15 }, // ms
+    scriptingP95: { ratio: 1.15, minDeltaAbs: 0.15 }, // ms; noisier than the total: a backstop
+    scrollDroppedPct: { pointsAbs: 3 },
+    churnDroppedPct: { pointsAbs: 3 },
     longTask: { floor: 50, marginAbs: 40 }, // ms
     heapPeak: { ratio: 1.15, minDeltaAbs: 5 } // MB
 } as const;

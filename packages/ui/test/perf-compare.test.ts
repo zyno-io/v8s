@@ -42,18 +42,18 @@ describe('compareRuns', () => {
         expect([r.base, r.head, r.delta]).toEqual([150, 400, 250]);
     });
     it('scripting total needs both the ratio and the absolute delta', () => {
-        expect(failing([run({ scriptingTotalMs: 400 })], [run({ scriptingTotalMs: 461 })])).toEqual(['scriptingTotalMs']);
-        expect(failing([run({ scriptingTotalMs: 400 })], [run({ scriptingTotalMs: 450 })])).toEqual([]); // < 15%
-        expect(failing([run({ scriptingTotalMs: 100 })], [run({ scriptingTotalMs: 135 })])).toEqual([]); // < 40 ms
+        expect(failing([run({ scriptingTotalMs: 400 })], [run({ scriptingTotalMs: 433 })])).toEqual(['scriptingTotalMs']);
+        expect(failing([run({ scriptingTotalMs: 400 })], [run({ scriptingTotalMs: 430 })])).toEqual([]); // < 8%
+        expect(failing([run({ scriptingTotalMs: 100 })], [run({ scriptingTotalMs: 112 })])).toEqual([]); // < 15 ms
     });
     it('scripting p95', () => {
-        expect(failing([run({ scriptingP95Ms: 2 })], [run({ scriptingP95Ms: 2.5 })])).toEqual(['scriptingP95Ms']);
-        expect(failing([run({ scriptingP95Ms: 0.5 })], [run({ scriptingP95Ms: 0.7 })])).toEqual([]); // < 0.3 ms
+        expect(failing([run({ scriptingP95Ms: 2 })], [run({ scriptingP95Ms: 2.31 })])).toEqual(['scriptingP95Ms']);
+        expect(failing([run({ scriptingP95Ms: 0.5 })], [run({ scriptingP95Ms: 0.64 })])).toEqual([]); // < 0.15 ms
     });
     it('dropped frames, scroll and churn separately', () => {
-        expect(failing([run()], [run({ scrollDroppedPct: 6.1 })])).toEqual(['scrollDroppedPct']);
-        expect(failing([run()], [run({ churnDroppedPct: 6.1 })])).toEqual(['churnDroppedPct']);
-        expect(failing([run()], [run({ churnDroppedPct: 5.9 })])).toEqual([]);
+        expect(failing([run()], [run({ scrollDroppedPct: 4.1 })])).toEqual(['scrollDroppedPct']);
+        expect(failing([run()], [run({ churnDroppedPct: 4.1 })])).toEqual(['churnDroppedPct']);
+        expect(failing([run()], [run({ churnDroppedPct: 3.9 })])).toEqual([]);
     });
     it('longest task is floored at 50 ms', () => {
         expect(failing([run({ longTaskMaxMs: 0 })], [run({ longTaskMaxMs: 89 })])).toEqual([]);

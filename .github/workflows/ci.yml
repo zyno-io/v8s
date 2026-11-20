@@ -49,8 +49,6 @@ jobs:
     name: Perf
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Informational for now. Flip this off once the A/B thresholds (packages/ui/perf/compare.ts) have been tuned on real runs.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,6 +83,7 @@ jobs:
       # (p95 16.8 ms, no long tasks, in other runs), so retry once: a real regression fails both runs.
       - name: Perf test (absolute budgets)
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         run: yarn test:perf || { echo "::warning::perf budgets missed; retrying once"; yarn test:perf; }
       - name: Print numbers
         if: always() && github.event_name != 'pull_request'
