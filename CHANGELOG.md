@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-19
+
 ### Added
 
 - **Version and update check.** Hover the logo to see the running version (also in the hosted account menu and the phone More sheet). The agent checks GitHub once a day for a newer stable release; when there is one, an **Update** pill (hosted: **Server update**) appears next to the theme button with a link to the release notes and a per-version **Dismiss**. Development builds never check, fake mode makes no request, and nothing is sent but a plain `GET`. Turn it off with `--no-update-check`, `V8S_UPDATE_CHECK=off`, or `updateCheck: false` in the hosted config.
