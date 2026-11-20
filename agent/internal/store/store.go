@@ -56,6 +56,12 @@ type Store struct {
 	// OnReplace is called after every Replace (initial sync or relist); OnActivity after any other mutation.
 	OnReplace  func(n int)
 	OnActivity func()
+
+	// OnVPA is called (outside the lock) when the store goes from no VPA-managed rows to some, or back
+	// (ingest.Row.VPAManaged; only pods set it). Maintained by add/update/delete at one flag test per change.
+	OnVPA  func(any bool)
+	vpaN   int  // rows with VPAManaged, under mu
+	vpaAny bool // vpaN > 0 as last reported to OnVPA, under mu
 }
 
 var _ cache.Store = (*Store)(nil)
@@ -91,6 +97,7 @@ func (s *Store) upsertLocked(row *ingest.Row) uint32 {
 		}
 		row.SetVer(old.Ver() + 1)
 		s.rows[h] = row
+		s.vpaN += vpaDelta(old, row)
 		s.feed = append(s.feed, Event{H: h, Gen: s.gens[h], Old: old, New: row})
 		if s.tap != nil {
 			s.tap(old, row)
@@ -110,6 +117,9 @@ func (s *Store) upsertLocked(row *ingest.Row) uint32 {
 	}
 	s.gens[h]++
 	row.SetVer(1)
+	if row.VPAManaged() {
+		s.vpaN++
+	}
 	s.rows[h] = row
 	s.byUID[uid] = h
 	l := s.ns[row.NS()]
@@ -132,6 +142,9 @@ func (s *Store) deleteLocked(h uint32) {
 		return
 	}
 	delete(s.byUID, old.UID())
+	if old.VPAManaged() {
+		s.vpaN--
+	}
 	l := s.ns[old.NS()]
 	p := s.pos[h]
 	last := l.hs[len(l.hs)-1]
@@ -147,6 +160,39 @@ func (s *Store) deleteLocked(h uint32) {
 	if s.tap != nil {
 		s.tap(old, nil)
 	}
+}
+
+func vpaDelta(old, new *ingest.Row) int {
+	switch o, n := old.VPAManaged(), new.VPAManaged(); {
+	case n && !o:
+		return 1
+	case o && !n:
+		return -1
+	}
+	return 0
+}
+
+// vpaEdgeLocked reports whether "any VPA-managed row" changed since it was last reported, and its new value.
+func (s *Store) vpaEdgeLocked() (fire, any bool) {
+	any = s.vpaN > 0
+	if any == s.vpaAny || s.OnVPA == nil {
+		return false, any
+	}
+	s.vpaAny = any
+	return true, any
+}
+
+func (s *Store) reportVPA(fire, any bool) {
+	if fire {
+		s.OnVPA(any)
+	}
+}
+
+// VPAAny reports whether the store holds a VPA-managed row.
+func (s *Store) VPAAny() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.vpaN > 0
 }
 
 // Seq is a counter that increases with every mutation (add, update, delete, replace, bookmark). A consumer that
@@ -179,7 +225,9 @@ func (s *Store) Provisional(rows []*ingest.Row) {
 	for _, r := range rows {
 		s.upsertLocked(r)
 	}
+	fire, any := s.vpaEdgeLocked()
 	s.mu.Unlock()
+	s.reportVPA(fire, any)
 	s.seq.Add(1)
 	if f := s.notify.Load(); f != nil {
 		(*f)()
@@ -221,7 +269,9 @@ func (s *Store) Update(obj interface{}) error {
 	}
 	s.mu.Lock()
 	s.upsertLocked(row)
+	fire, any := s.vpaEdgeLocked()
 	s.mu.Unlock()
+	s.reportVPA(fire, any)
 	s.after(false, 0)
 	return nil
 }
@@ -235,7 +285,9 @@ func (s *Store) Delete(obj interface{}) error {
 	if h, ok := s.byUID[row.UID()]; ok {
 		s.deleteLocked(h)
 	}
+	fire, any := s.vpaEdgeLocked()
 	s.mu.Unlock()
+	s.reportVPA(fire, any)
 	s.after(false, 0)
 	return nil
 }
@@ -271,7 +323,9 @@ func (s *Store) Replace(list []interface{}, rv string) error {
 	}
 	s.rv = rv
 	s.synced = true
+	fire, any := s.vpaEdgeLocked()
 	s.mu.Unlock()
+	s.reportVPA(fire, any)
 	s.after(true, len(rows))
 	return nil
 }

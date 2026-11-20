@@ -527,6 +527,11 @@ export interface ClusterState {
   message?: string;
   metrics?: MetricsAvail; // usage availability; set only while a view polls usage
   metricsMessage?: string; // why usage is unavailable
+  /**
+   * VPA: some pod of the cluster has its requests set by a VerticalPodAutoscaler (the vpaUpdates annotation); the
+   * UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
+   */
+  vpa?: boolean;
 }
 export interface ClusterStates {
   states: ClusterState[];

@@ -27,6 +27,7 @@ const (
 	flagDeleting uint8 = 1 << iota
 	flagInitialEventsEnd
 	flagTerminal // pod phase Succeeded/Failed (capacity skips these)
+	flagVPA      // pods: requests set by a VPA (the store counts these rows; see store.Store.OnVPA)
 )
 
 // Res holds the CPU/memory amounts usage columns divide by. Pods: effective requests (CPUReq, MemReq) and
@@ -200,6 +201,9 @@ func (r *Row) SetVer(v uint32)  { r.ver = v }
 func (r *Row) Tone() uint8      { return r.tone }
 func (r *Row) Deleting() bool   { return r.flags&flagDeleting != 0 }
 func (r *Row) Terminal() bool   { return r.flags&flagTerminal != 0 }
+
+// VPAManaged reports a pod whose requests a VerticalPodAutoscaler set (a non-empty VPA cell). Any kind may ask.
+func (r *Row) VPAManaged() bool { return r.flags&flagVPA != 0 }
 
 // Requests returns the pod's effective CPU (millicores) and memory (bytes) requests; 0 = none.
 func (r *Row) Requests() (uint32, uint64) { return r.res.CPUReq, r.res.MemReq }

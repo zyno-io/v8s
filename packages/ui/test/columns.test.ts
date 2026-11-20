@@ -344,6 +344,13 @@ describe('planColumns: pods vpa column', () => {
         expect(planColumns(PODS, { gvr: 'v1/pods', showCluster: false }).cols.find(c => c.key === 'vpa')).toMatchObject({ kind: 'vpa', width: 36 });
         expect(planColumns(PODS, { gvr: 'x', showCluster: false }).cols.find(c => c.key === 'vpa')!.kind).toBe('text');
     });
+
+    it('is dropped and listed disabled when no active cluster has VPA-managed pods', () => {
+        const p = planColumns(PODS, { gvr: 'v1/pods', showCluster: false, vpaOff: true });
+        expect(p.cols.some(c => c.key === 'vpa')).toBe(false);
+        expect(p.all.find(c => c.key === 'vpa')?.note).toBe('no pods managed by VPA');
+        expect(p.cols.some(c => c.key === 'usage')).toBe(true);
+    });
 });
 
 describe('guessPodsUsage', () => {

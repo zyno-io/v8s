@@ -29,7 +29,11 @@ func Project(p *corev1.Pod) *Row {
 	r.putN(int64(total))
 	r.putS(reason)
 	r.putN(int64(restarts))
-	r.putH(vpaName(p.Annotations))
+	vpa := vpaName(p.Annotations)
+	r.putH(vpa)
+	if vpa != emptyStr {
+		r.flags |= flagVPA
+	}
 	r.putS(p.Spec.NodeName)
 	r.tone = StatusTone(reason, p.Status.Phase, ready, total)
 	r.res = podRes(p)

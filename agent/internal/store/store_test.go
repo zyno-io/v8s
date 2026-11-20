@@ -149,3 +149,32 @@ func TestProvisionalRowsThenReplaceReconciles(t *testing.T) {
 		t.Fatal("provisional rows must be ignored once synced")
 	}
 }
+
+func vpaRow(uid, name, vpa string) *ingest.PodRow {
+	p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", UID: types.UID("uid-" + uid), ResourceVersion: "2"}}
+	if vpa != "" {
+		p.Annotations = map[string]string{"vpaUpdates": "Pod resources updated by " + vpa + ": container 0: cpu request"}
+	}
+	p.Spec.Containers = []corev1.Container{{Name: "c"}}
+	return ingest.Project(p)
+}
+
+// OnVPA fires only on the none <-> some edges, across add, update, delete and Replace.
+func TestOnVPAEdges(t *testing.T) {
+	s := New()
+	var got []bool
+	s.OnVPA = func(any bool) { got = append(got, any) }
+	_ = s.Replace([]interface{}{vpaRow("1", "a", ""), vpaRow("2", "b", "")}, "1")
+	_ = s.Update(vpaRow("1", "a", "api")) // update: none -> some
+	_ = s.Add(vpaRow("3", "c", "api"))    // still some
+	_ = s.Update(vpaRow("1", "a", ""))    // one left
+	if !s.VPAAny() {
+		t.Fatal("pod c is still managed")
+	}
+	_ = s.Delete(vpaRow("3", "c", "api"))                      // delete: some -> none
+	_ = s.Replace([]interface{}{vpaRow("4", "d", "web")}, "2") // replace adds one, drops a and b
+	_ = s.Replace([]interface{}{vpaRow("5", "e", "")}, "3")    // replace drops it
+	if want := []bool{true, false, true, false}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("edges %v, want %v", got, want)
+	}
+}

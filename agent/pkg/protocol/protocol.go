@@ -175,6 +175,9 @@ type ClusterState struct {
 	Message        string       `msgpack:"message,omitempty" json:"message,omitempty"`
 	Metrics        MetricsAvail `msgpack:"metrics,omitempty" json:"metrics,omitempty"`               // usage availability; set only while a view polls usage
 	MetricsMessage string       `msgpack:"metricsMessage,omitempty" json:"metricsMessage,omitempty"` // why usage is unavailable
+	// VPA: some pod of the cluster has its requests set by a VerticalPodAutoscaler (the vpaUpdates annotation); the
+	// UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
+	VPA bool `msgpack:"vpa,omitempty" json:"vpa,omitempty"`
 }
 
 type ClusterStates struct {

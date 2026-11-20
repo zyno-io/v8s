@@ -138,6 +138,8 @@ export interface PlanOptions {
     layout?: ColumnLayout;
     /** Every active cluster reports no metrics API: metrics columns are dropped (listed disabled in the Columns menu). */
     metricsOff?: boolean;
+    /** Pods: no active cluster has a pod whose requests a VPA set (ClusterState.vpa): the `vpa` column is dropped (listed disabled). */
+    vpaOff?: boolean;
     /** Kind-specific extras (see table-decor.ts): virtual columns and default-hidden keys. */
     decor?: { extraCols?: { key: string; label: string; width: number; mono?: boolean }[]; defaultHidden?: string[] } | null;
 }
@@ -172,6 +174,7 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
     const userShown = new Set(opts.layout?.shown ?? []);
     const isVisible = (key: string) => !userHidden.has(key) && (!defaultHidden.has(key) || userShown.has(key));
     const metricsOff = !!opts.metricsOff;
+    const vpaOff = !!opts.vpaOff;
     const widths = opts.layout?.widths ?? {};
     const isPods = opts.gvr === 'v1/pods';
 
@@ -239,6 +242,7 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
             continue;
         }
         if (!isVisible(c.key) && c.key !== 'name') continue;
+        if (vpaOff && isPods && c.key === 'vpa') continue;
         if (c.key === 'cluster' && !opts.showCluster) continue;
         if (isPods && c.key === 'containers') continue; // folded into `ready` as "ready/containers"
         if (isTone && statusKey) continue;
@@ -287,7 +291,8 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
             label: labelOf(c),
             idx: i + 2,
             hideable: c.key !== 'name' && c.key !== 'statusTone' && c.type !== 'tone' && !(c.key === 'cluster'),
-            note: metricsOff && c.metrics ? 'metrics-server not installed' : undefined
+            note:
+                metricsOff && c.metrics ? 'metrics-server not installed' : vpaOff && isPods && c.key === 'vpa' ? 'no pods managed by VPA' : undefined
         }))
         .filter(c => !(isPods && c.key === 'containers'))
         .concat(extra.map(e => ({ key: e.key, label: e.label, idx: e.idx, hideable: true, note: undefined })));

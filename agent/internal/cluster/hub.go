@@ -92,6 +92,7 @@ type runner struct {
 	synced  atomic.Int64
 	message atomic.Value // string
 	everOK  atomic.Bool
+	vpaPods atomic.Bool // some pod's requests were set by a VPA (protocol.ClusterState.VPA)
 
 	mu        sync.Mutex
 	watches   map[string]*watchEntry
@@ -119,7 +120,7 @@ func (r *runner) state() protocol.ClusterState {
 	msg, _ := r.message.Load().(string)
 	ma, mm := r.usage.avail()
 	return protocol.ClusterState{ID: r.id, Phase: r.phase.Load().(protocol.ClusterPhase), Synced: int(r.synced.Load()), Message: msg,
-		Metrics: ma, MetricsMessage: mm}
+		Metrics: ma, MetricsMessage: mm, VPA: r.vpaPods.Load()}
 }
 
 func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
@@ -309,6 +310,10 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			r.synced.Store(int64(n))
 			r.everOK.Store(true)
 			r.setPhase(protocol.PhaseReady, "")
+		}
+		w.st.OnVPA = func(any bool) {
+			r.vpaPods.Store(any)
+			r.m.kick()
 		}
 		w.st.OnActivity = func() {
 			if p := r.phase.Load(); p == protocol.PhaseReconnecting || p == protocol.PhaseDegraded {

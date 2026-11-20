@@ -50,13 +50,16 @@ const showCluster = computed(() => clusters.activeIds.length > 1);
 const decor = decorFor(props.gvr);
 // Every active cluster without a metrics API: the metrics columns are dropped (the Columns menu lists them disabled).
 const metricsOff = computed(() => clusters.states.length > 0 && clusters.states.every(s => s.metrics === 'absent'));
+// Pods: the VPA column shows only while some active cluster has a pod whose requests a VPA set (installed-but-unused stays hidden).
+const vpaOff = computed(() => props.gvr === 'v1/pods' && !clusters.states.some(s => s.vpa));
 const plan = computed(() =>
     planColumns(handle.columns.value, {
         gvr: props.gvr,
         showCluster: showCluster.value,
         layout: settings.layout(props.gvr),
         decor,
-        metricsOff: metricsOff.value
+        metricsOff: metricsOff.value,
+        vpaOff: vpaOff.value
     })
 );
 
