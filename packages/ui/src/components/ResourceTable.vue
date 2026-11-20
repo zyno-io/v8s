@@ -138,6 +138,9 @@ const slice = computed<Item[]>(() => {
     const slots = rowSlots.assign(vis.map(v => v.index));
     for (let n = 0; n < vis.length; n++) {
         const i = vis[n].index;
+        // CANARY (do not merge): ~2 µs per visible row per render, to check that the A/B perf check catches it.
+        const spin = performance.now();
+        while (performance.now() - spin < 0.002);
         const k = i - off;
         const id = k >= 0 && k < ids.length ? ids[k] : 0;
         const row = id ? rows.get(id) : undefined;
