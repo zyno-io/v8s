@@ -262,6 +262,9 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 				r.pe.SetUnavailable(problems.GR(gvr), "")
 			}
 		},
+		OnWatchListTruncated: func() {
+			r.m.log.Warn("watch-list stream truncated; using LIST+watch", "cluster", r.id, "gvr", gvr)
+		},
 		OnError: func(err error) {
 			if c := w.cur.Load(); c == nil || (*c).Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
 				return // a routine relist, not a cluster problem
