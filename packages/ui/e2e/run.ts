@@ -844,11 +844,16 @@ async function main() {
                 const all = (await names.allInnerTexts()).map(n => n.trim());
                 const first0 = all[0];
                 // A filter that keeps at least three rows but not the first one, so a focus left on the old first row would be visible.
-                const target = all[Math.min(14, all.length - 1)];
+                // Start from the 15th row but try every row: the fake clusters share pod names, and an earlier step leaves the list
+                // sorted by usage, so the rows can come in same-named pairs where no prefix of one name matches three.
                 let filterText = '';
-                for (let n = target.length; n >= 3 && !filterText; n--) {
-                    const p = target.slice(0, n);
-                    if (all.filter(x => x.includes(p)).length >= 3 && !first0.includes(p)) filterText = p;
+                const start = Math.min(14, all.length - 1);
+                for (const target of [...all.slice(start), ...all.slice(1, start)]) {
+                    for (let n = target.length; n >= 3 && !filterText; n--) {
+                        const p = target.slice(0, n);
+                        if (all.filter(x => x.includes(p)).length >= 3 && !first0.includes(p)) filterText = p;
+                    }
+                    if (filterText) break;
                 }
                 assert.ok(filterText, 'found a filter that excludes the first row and keeps three');
                 const filter = page.locator('#pods-filter');

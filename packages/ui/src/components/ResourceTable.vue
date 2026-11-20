@@ -381,11 +381,13 @@ function toggle(id: number) {
 function onPointerDown(e: PointerEvent) {
     if (!isPhone.value) return;
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
-    if (!el) return;
+    // The id now: row elements are reused for other rows (keyed by slot), so the element may show another row in 500 ms.
+    const id = Number(el?.dataset.id);
+    if (!id) return;
     longPressed = false;
     pressTimer = setTimeout(() => {
         longPressed = true;
-        toggle(Number(el.dataset.id));
+        toggle(id);
     }, 500);
 }
 function cancelPress() {
@@ -404,6 +406,9 @@ function onBodyClick(e: MouseEvent) {
     if (!id) return;
     if (t instanceof HTMLInputElement) {
         toggle(id);
+        // Keep focus on the list, not on the checkbox: row elements are reused for other rows while scrolling (keyed
+        // by slot), so a focused checkbox would end up on another row, and Space would select that one.
+        scroller.value?.focus({ preventScroll: true });
         return;
     }
     ui.value.focusId = id;
