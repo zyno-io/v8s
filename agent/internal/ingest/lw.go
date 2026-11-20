@@ -2,8 +2,11 @@ package ingest
 
 import (
 	"context"
+	"errors"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,7 +51,23 @@ type Hooks struct {
 	// OnRows receives each batch of projected rows (a list page, or up to 256 initial watch events) while
 	// the first sync is in progress, so the owner can show them provisionally before the reflector's Replace.
 	OnRows func(rows []*Row)
+	// OnWatchListTruncated fires once per ListerWatcher when a watch-list stream closed before its
+	// initial-events-end bookmark (a proxy/gateway cutting it short). The ListerWatcher then refuses
+	// further watch-list requests so the reflector falls back to LIST + watch.
+	OnWatchListTruncated func()
 }
+
+// Pacing of re-watches after a source stream closes early (package vars so tests can shrink them).
+var (
+	// minHealthyWatch is how long a watch must live to count as healthy and reset the backoff.
+	minHealthyWatch  = 30 * time.Second
+	watchBackoffBase = time.Second
+	watchBackoffMax  = 60 * time.Second
+)
+
+// errWatchListBroken is returned (not an API status, so client-go treats it as non-retriable and
+// falls back to LIST) for a watch-list request once the stream is known to be truncated.
+var errWatchListBroken = errors.New("watch-list unsupported by this endpoint (stream truncated); use LIST + watch")
 
 // ListerWatcher implements cache.ListerWatcher (and the WithContext variants) over an API,
 // projecting every decoded object into a *Row before the reflector sees it.
@@ -65,6 +84,11 @@ type ListerWatcher struct {
 	NoWatchList bool
 	Hooks       Hooks
 	count       atomic.Int64
+
+	// watchListBroken is set once a watch-list stream ended without its initial-events-end bookmark.
+	watchListBroken atomic.Bool
+	// shortStreak counts consecutive source-closed watches that lived under minHealthyWatch.
+	shortStreak atomic.Int32
 
 	mu      sync.Mutex
 	mapping []int // table column → cell index of the latest columnDefinitions
@@ -161,6 +185,8 @@ func (l *ListerWatcher) ListWithContext(ctx context.Context, opts metav1.ListOpt
 		}
 		m.Each(obj, func(r *Row) { out.Items = append(out.Items, r) })
 	}
+	// A LIST answered: whatever cut the earlier watches short, start the next one without waiting.
+	l.shortStreak.Store(0)
 	if l.Hooks.OnOK != nil {
 		l.Hooks.OnOK()
 	}
@@ -173,7 +199,38 @@ func (l *ListerWatcher) ListWithContext(ctx context.Context, opts metav1.ListOpt
 	return out, nil
 }
 
+// pace waits out the backoff after consecutive early source closes (ctx-aware).
+func (l *ListerWatcher) pace(ctx context.Context) error {
+	n := l.shortStreak.Load()
+	if n <= 0 {
+		return nil
+	}
+	d := watchBackoffBase
+	for i := int32(1); i < n && d < watchBackoffMax; i++ {
+		d *= 2
+	}
+	if d > watchBackoffMax {
+		d = watchBackoffMax
+	}
+	d = time.Duration(float64(d) * (0.8 + 0.4*rand.Float64()))
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 func (l *ListerWatcher) WatchWithContext(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+	initial := opts.SendInitialEvents != nil && *opts.SendInitialEvents
+	if initial && l.watchListBroken.Load() {
+		return nil, errWatchListBroken
+	}
+	if err := l.pace(ctx); err != nil {
+		return nil, err
+	}
 	src, err := l.API.Watch(ctx, l.tweak(opts))
 	if err != nil {
 		l.err(err)
@@ -182,11 +239,11 @@ func (l *ListerWatcher) WatchWithContext(ctx context.Context, opts metav1.ListOp
 	if l.Hooks.OnOK != nil {
 		l.Hooks.OnOK()
 	}
-	if opts.SendInitialEvents != nil && *opts.SendInitialEvents {
+	if initial {
 		l.count.Store(0)
 	}
-	w := &projWatch{src: src, out: make(chan watch.Event), done: make(chan struct{}), l: l,
-		initial: opts.SendInitialEvents != nil && *opts.SendInitialEvents}
+	w := &projWatch{ctx: ctx, src: src, out: make(chan watch.Event), done: make(chan struct{}), l: l,
+		initial: initial, start: time.Now()}
 	go w.run()
 	return w, nil
 }
@@ -206,12 +263,45 @@ func (l *ListerWatcher) err(err error) {
 }
 
 type projWatch struct {
+	ctx     context.Context
 	src     watch.Interface
 	out     chan watch.Event
 	done    chan struct{}
 	once    sync.Once
 	l       *ListerWatcher
 	initial bool
+	start   time.Time
+}
+
+// sourceClosed runs when the source stream ended. Only a clean end on its own counts: not one the caller
+// stopped, not a cancelled context (checked first: cancellation sets Err before the transport closes), and
+// not one that ended after an error event (the reflector handles those itself, e.g. relist on expiry). It
+// updates the short-watch streak (only an early close that delivered no events is suspicious; a stream a
+// proxy cuts every N seconds while events flow re-watches at once, as before) and, for a watch-list cut
+// off before its bookmark, marks the ListerWatcher so the reflector falls back to LIST + watch. It reports
+// whether the stream was truncated.
+func (w *projWatch) sourceClosed(inInitial, sawErr bool, delivered int) bool {
+	if sawErr || w.ctx.Err() != nil {
+		return false
+	}
+	select {
+	case <-w.done:
+		return false
+	default:
+	}
+	l := w.l
+	if delivered == 0 && time.Since(w.start) < minHealthyWatch {
+		l.shortStreak.Add(1)
+	} else {
+		l.shortStreak.Store(0)
+	}
+	if w.initial && inInitial {
+		if l.watchListBroken.CompareAndSwap(false, true) && l.Hooks.OnWatchListTruncated != nil {
+			l.Hooks.OnWatchListTruncated()
+		}
+		return true
+	}
+	return false
 }
 
 func (w *projWatch) ResultChan() <-chan watch.Event { return w.out }
@@ -227,6 +317,8 @@ func (w *projWatch) run() {
 	defer close(w.out)
 	inInitial := w.initial
 	n := 0
+	delivered := 0 // non-bookmark events passed on
+	sawErr := false
 	var batch []*Row
 	flush := func() {
 		if len(batch) > 0 && w.l.Hooks.OnRows != nil {
@@ -255,6 +347,9 @@ func (w *projWatch) run() {
 					h(n)
 				}
 			}
+			if ev.Type != watch.Bookmark {
+				delivered++
+			}
 			ev.Object = row
 		}
 		select {
@@ -265,8 +360,12 @@ func (w *projWatch) run() {
 		}
 	}
 	for ev := range w.src.ResultChan() {
+		if ev.Type == watch.Error {
+			sawErr = true
+		}
 		switch o := ev.Object.(type) {
 		case *metav1.Status:
+			sawErr = true
 			w.l.err(apierrors.FromObject(o))
 			if !emit(ev, nil) {
 				return
@@ -307,5 +406,15 @@ func (w *projWatch) run() {
 				return
 			}
 		}
+	}
+	if w.sourceClosed(inInitial, sawErr, delivered) {
+		// Not routed through l.err: this must not flip the cluster to Degraded. A non-retriable,
+		// non-expired status makes client-go's watchList return the error and fall back to LIST.
+		emit(watch.Event{Type: watch.Error, Object: &metav1.Status{
+			Status:  metav1.StatusFailure,
+			Reason:  metav1.StatusReasonUnknown,
+			Code:    500,
+			Message: "watch-list stream ended before the initial-events-end bookmark",
+		}}, nil)
 	}
 }

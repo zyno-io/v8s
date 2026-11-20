@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- v8s no longer floods the API server or a gateway in front of it when a proxy truncates watch-list streams or closes watches early. A truncated watch-list makes that resource fall back to LIST + watch (logged once as a warning), and repeated early closes back off from 1 s up to 60 s instead of re-watching immediately.
+
 ## 0.6.0 — 2026-11-20
 
 ### Added
