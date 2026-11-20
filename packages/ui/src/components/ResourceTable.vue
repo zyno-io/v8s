@@ -883,6 +883,14 @@ function metricText(c: ColPlan, row: Row): string {
                             <template v-else-if="c.kind === 'ready'"
                                 >{{ it.row[c.idx] }}/{{ containersIdx >= 0 ? it.row[containersIdx] : '' }}</template
                             >
+                            <template v-else-if="c.kind === 'vpa'"
+                                ><span
+                                    v-if="it.row[c.idx]"
+                                    class="tag info"
+                                    :title="`Requests set by VerticalPodAutoscaler ${it.row[c.idx]}. VPA sizes them from observed usage, so usage above the request is expected. Open the pod to see the recommendation.`"
+                                    >VPA</span
+                                ></template
+                            >
                             <template v-else-if="c.kind === 'age'">{{ formatAge(n(it.row[c.idx]), nowMs) }}</template>
                             <template v-else>{{
                                 it.row[c.idx] === '' || it.row[c.idx] == null ? (c.kind === 'name' ? '' : '—') : it.row[c.idx]

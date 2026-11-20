@@ -313,6 +313,12 @@ func (c *Cluster) pod(p *fakePod) *corev1.Pod {
 			pod.Annotations = map[string]string{"k8s.v1.cni.cncf.io/network-status": podNetworkStatus(pod.Status.PodIP, p.host)}
 		}
 	}
+	if has, auto := vpaApp(int(p.app)); has && auto { // the VPA admission controller stamps the pods it resized
+		if pod.Annotations == nil {
+			pod.Annotations = map[string]string{}
+		}
+		pod.Annotations["vpaUpdates"] = vpaAnnotation(int(p.app))
+	}
 	for i := 0; i < int(p.nc); i++ {
 		name := app
 		if i > 0 {

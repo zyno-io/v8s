@@ -336,6 +336,7 @@ var PodColumns = []Column{
 	{Key: "status", Type: ColDict, Label: "Status", Width: 120},                       // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
 	{Key: "statusTone", Type: ColTone, Label: "Tone", Width: 40},
 	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 68, Align: "right"},
+	{Key: "vpa", Type: ColDict, Label: "VPA", Width: 36}, // name of the VerticalPodAutoscaler that set the pod's requests (vpaUpdates annotation); "" = none
 	// Usage columns (one dense block in the UI). Values are ints; nil = no data, -1 = n/a (no request/limit/node).
 	{Key: "cpuUse", Type: ColInt, Label: "CPU", Width: 44, Align: "right", Unit: "millicores", Metrics: true},
 	{Key: "cpuReq", Type: ColInt, Label: "CPU req", Short: "req", Width: 44, Align: "right", Unit: "millicores", Hidden: true},

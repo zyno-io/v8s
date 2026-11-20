@@ -1,3 +1,5 @@
+import { isVpaGvr, vpaTarget } from './vpa.ts';
+
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'release' | 'neutral';
 
 export interface StatusTag {
@@ -92,7 +94,11 @@ export function keyFields(gvr: string, obj: Obj | null): Field[] {
         const v = str(value);
         if (v) f.push({ label, value: v, mono });
     };
-    switch (gvr) {
+    switch (isVpaGvr(gvr) ? 'vpa' : gvr) {
+        case 'vpa':
+            add('Target', vpaTarget(obj));
+            add('Update mode', get(obj, 'spec.updatePolicy.updateMode') ?? 'Auto');
+            break;
         case 'apps/v1/deployments':
         case 'apps/v1/statefulsets':
         case 'apps/v1/replicasets':

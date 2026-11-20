@@ -168,7 +168,7 @@ Every kind goes through the same engine; a **module** per kind supplies GVR, col
 
 | GVR | Columns |
 | --- | --- |
-| `v1/pods` | ready, containers, status, restarts, then the usage columns cpuUse, cpuReq, cpuLim, cpuPctReq, cpuPctLim, cpuPctNode, memUse, memReq, memLim, memPctReq, memPctLim, memPctNode ([Metrics](data-model.md#metrics)), node, ip (hidden by default) |
+| `v1/pods` | ready, containers, status, restarts, vpa (the VPA that set the requests, `""` = none), then the usage columns cpuUse, cpuReq, cpuLim, cpuPctReq, cpuPctLim, cpuPctNode, memUse, memReq, memLim, memPctReq, memPctLim, memPctNode ([Metrics](data-model.md#metrics)), node, ip (hidden by default) |
 | `apps/v1/deployments` | ready, upToDate, available, images |
 | `apps/v1/statefulsets` | ready, images |
 | `apps/v1/daemonsets` | desired, current, ready, upToDate, available, images |

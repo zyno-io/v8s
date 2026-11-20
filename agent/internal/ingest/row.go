@@ -128,12 +128,12 @@ func allocRow(n int) *Row {
 // resourceVersion; the owner (controller reference, else the first) is recorded for every kind.
 func newRow(m *metav1.ObjectMeta, n int) *Row { return initRow(m, allocRow(n)) }
 
-// newRowIP1 is newRow for a 5-cell row whose single IP token lives in the same allocation (pods: the common
+// newRowIP1 is newRow for a 6-cell row whose single IP token lives in the same allocation (pods: the common
 // case of one address costs no extra object).
 func newRowIP1(m *metav1.ObjectMeta, t ipx.Tok) *Row {
 	x := &struct {
 		Row
-		c [5]Cell
+		c [6]Cell
 		s ipx.Set
 		t [1]ipx.Tok
 	}{}
@@ -227,12 +227,13 @@ func (r *Row) Cell(i int) Cell {
 // StrCell returns the string of cell i ("" when absent).
 func (r *Row) StrCell(i int) string { return r.Cell(i).S.Value() }
 
-// Pod cell layout: 0 ready, 1 containers, 2 status, 3 restarts, 4 node.
+// Pod cell layout: 0 ready, 1 containers, 2 status, 3 restarts, 4 vpa, 5 node.
 func (r *Row) Ready() uint16   { return uint16(r.Cell(0).N) }
 func (r *Row) Total() uint16   { return uint16(r.Cell(1).N) }
 func (r *Row) Status() Str     { return r.Cell(2).S }
 func (r *Row) Restarts() int32 { return int32(r.Cell(3).N) }
-func (r *Row) Node() Str       { return r.Cell(4).S }
+func (r *Row) VPA() Str        { return r.Cell(4).S }
+func (r *Row) Node() Str       { return r.Cell(5).S }
 
 // IPs returns the row's IP tokens (nil when it holds none). The slice is immutable.
 func (r *Row) IPs() []ipx.Tok {

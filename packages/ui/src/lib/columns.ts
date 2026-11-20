@@ -2,7 +2,7 @@ import type { Column } from '@v8s/client';
 
 import type { ColumnLayout } from './settings.ts';
 
-export type CellKind = 'cluster' | 'name' | 'text' | 'mono' | 'int' | 'age' | 'status' | 'tone' | 'ready' | 'usage';
+export type CellKind = 'cluster' | 'name' | 'text' | 'mono' | 'int' | 'age' | 'status' | 'tone' | 'ready' | 'vpa' | 'usage';
 
 /** One sub-column of the dense usage block (CPU, %R, %L, MEM, …). */
 export interface UsageSub {
@@ -62,6 +62,8 @@ export interface UsageIdx {
     cpuAlloc: number;
     memPctAlloc: number;
     memAlloc: number;
+    /** Pods: the `vpa` column (the VPA object that sets this pod's requests, else ''). */
+    vpa: number;
 }
 
 export interface TablePlan {
@@ -246,6 +248,7 @@ export function planColumns(columns: readonly Column[] | null, opts: PlanOptions
         else if (isTone) kind = 'tone';
         else if (c.key === statusKey) kind = 'status';
         else if (isPods && c.key === 'ready') kind = 'ready';
+        else if (isPods && c.key === 'vpa') kind = 'vpa';
         else if (c.type === 'time') kind = 'age';
         else if (c.type === 'int') kind = 'int';
         else if (MONO.test(c.key)) kind = 'mono';
@@ -399,7 +402,8 @@ function usageIdx(columns: readonly Column[]): UsageIdx | null {
         cpuPctAlloc: at('cpuPctAlloc'),
         cpuAlloc: at('cpu'),
         memPctAlloc: at('memPctAlloc'),
-        memAlloc: at('memory')
+        memAlloc: at('memory'),
+        vpa: at('vpa')
     };
     return u.cpuUse >= 0 && u.memUse >= 0 ? u : null;
 }

@@ -21,7 +21,7 @@ func Project(p *corev1.Pod) *Row {
 	if t, ok := b.Single(); ok {
 		r = newRowIP1(&p.ObjectMeta, t) // the usual single address shares the row's allocation
 	} else {
-		r = newRow(&p.ObjectMeta, 5)
+		r = newRow(&p.ObjectMeta, 6)
 		r.ips = b.Set()
 	}
 	reason, restarts, ready, total := PodStatus(p)
@@ -29,6 +29,7 @@ func Project(p *corev1.Pod) *Row {
 	r.putN(int64(total))
 	r.putS(reason)
 	r.putN(int64(restarts))
+	r.putH(vpaName(p.Annotations))
 	r.putS(p.Spec.NodeName)
 	r.tone = StatusTone(reason, p.Status.Phase, ready, total)
 	r.res = podRes(p)
@@ -39,6 +40,30 @@ func Project(p *corev1.Pod) *Row {
 		r.facts = f
 	}
 	return r
+}
+
+// vpaUpdatesAnnotation is stamped by the VPA admission controller on every pod whose requests it set.
+const vpaUpdatesAnnotation = "vpaUpdates"
+
+const vpaPrefix = "Pod resources updated by "
+
+func vpaName(ann map[string]string) Str {
+	v, ok := ann[vpaUpdatesAnnotation]
+	if !ok {
+		return emptyStr
+	}
+	return intern(VPAName(v))
+}
+
+// VPAName extracts the VPA name from a vpaUpdates annotation value
+// ("Pod resources updated by <name>: container 0: cpu request, ..."); "" when the value is not in that form.
+func VPAName(annotation string) string {
+	rest, ok := strings.CutPrefix(annotation, vpaPrefix)
+	if !ok {
+		return ""
+	}
+	name, _, _ := strings.Cut(rest, ":")
+	return strings.TrimSpace(name)
 }
 
 // ProjectBookmark converts a bookmark event object (only resourceVersion and annotations matter).

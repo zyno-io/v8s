@@ -528,3 +528,40 @@ func TestUsageOrdUnits(t *testing.T) {
 		t.Error("an unknown node is n/a")
 	}
 }
+
+// A negative unit cell (a VPA without a recommendation) goes out as nil; a plain int cell keeps its value.
+func TestEncodeUnitCellNegativeIsNil(t *testing.T) {
+	mod := &ingest.Module{GVR: "x/v1/things", Kind: "Thing", Cols: []ingest.Col{ingest.ColCluster(), ingest.ColName(),
+		ingest.ColInt("plain", "Plain", 40), ingest.ColUnitInt("rec", "Rec", "", "millicores", 44), ingest.ColUnitInt("none", "None", "", "MiB", 44)}}
+	ingest.Register(mod)
+	r := ingest.NewRow("u", "n", "1", "", 0, false, 3)
+	r.PutN(-1)
+	r.PutN(250)
+	r.PutN(-1)
+	got := encoded(t, mod, &PendRow{ID: 1, Row: r})
+	if got["plain"] == nil || num(got["plain"]) != -1 || num(got["rec"]) != 250 || got["none"] != nil {
+		t.Fatalf("plain %v rec %v none %v", got["plain"], got["rec"], got["none"])
+	}
+}
+
+// A unit cell below zero (no recommendation) is encoded nil and sorts last in both directions, as usage cells do.
+func TestUnitCellMissingSortsLast(t *testing.T) {
+	mod := &ingest.Module{GVR: "x/v1/recs", Kind: "Rec", Cols: []ingest.Col{ingest.ColCluster(), ingest.ColName(),
+		ingest.ColUnitInt("cpuTarget", "CPU", "", "millicores", 44)}}
+	ingest.Register(mod)
+	row := func(uid, name string, n int64) *ingest.Row {
+		r := ingest.NewRow(uid, name, "1", "", 0, false, 1)
+		r.PutN(n)
+		return r
+	}
+	e := newEngine()
+	attachKind(e, "c1", "x/v1/recs", row("1", "a", 300), row("2", "b", -1), row("3", "c", 100), row("4", "d", 0))
+	for _, c := range []struct {
+		desc bool
+		want string
+	}{{false, "d,c,a,b"}, {true, "a,c,d,b"}} {
+		if got := viewOrder(t, e, protocol.ViewQuery{GVR: "x/v1/recs", Sort: []protocol.Sort{{Col: "cpuTarget", Desc: c.desc}}}); got != c.want {
+			t.Fatalf("desc=%v: %s, want %s", c.desc, got, c.want)
+		}
+	}
+}
