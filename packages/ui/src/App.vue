@@ -122,7 +122,7 @@ onBeforeUnmount(() => uninstall?.());
 <template>
     <div v-if="bootState === 'ready'" class="frame">
         <TopBar />
-        <div v-if="unreachable" class="banner warn" role="status" data-testid="agent-unreachable">
+        <div v-if="unreachable" class="banner" role="alert" data-testid="agent-unreachable">
             Can't reach the agent.
             <button class="btn sm" type="button" @click="retryNow">Retry now</button>
             <button class="btn sm" type="button" @click="reload">Reload</button>
