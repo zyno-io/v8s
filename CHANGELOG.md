@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- Vulnerabilities: the **Unknown** (`?`) state of the Exposed via column and the fix for rows overlapping after a phone / desktop resize (in Vulnerabilities and the CVE table), both listed under 0.4.0, missed that release's merge; they ship now. While a cluster's Services, endpoints, pods or Ingresses are still loading or cannot be read, its images show `?` instead of `-`, never count as **Not exposed**, can be found with the **Unknown** filter, and the list re-reads every 10 s a few times until they resolve.
+
 ## 0.5.0 — 2026-11-19
 
 ### Added
