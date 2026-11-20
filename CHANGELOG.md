@@ -8,10 +8,18 @@ release notes when the tag has no annotation.
 ### Added
 
 - **Version and update check.** Hover the logo to see the running version (also in the hosted account menu and the phone More sheet). The agent checks GitHub once a day for a newer stable release; when there is one, an **Update** pill (hosted: **Server update**) appears next to the theme button with a link to the release notes and a per-version **Dismiss**. Development builds never check, fake mode makes no request, and nothing is sent but a plain `GET`. Turn it off with `--no-update-check`, `V8S_UPDATE_CHECK=off`, or `updateCheck: false` in the hosted config.
+- **k9s-style row keys** on resource tables: `Ctrl+D` delete, `Shift+J` jump to the owner (pod → ReplicaSet → Deployment, Job → CronJob), `r` restart, `Shift+F` port-forward, `o` open the pod's node, `y` YAML, `c` / `n` copy the name / namespace. They act on the focused row (or the selection, or the object open in the drawer) through the same actions, permission checks and confirmations as the buttons; a key always asks first, with **Cancel** focused. `:ns` with no namespace opens the Namespaces list.
+- **Remembered per browser:** the clusters you last connected (as the group when they are exactly one), the last page (opening `/` returns to it), and the namespace filters of each cluster set. When only one cluster is configured, v8s connects to it without asking.
 
 ### Changed
 
 - Dropdowns: every native select is now a **smart select**: a button that opens a list with a search field when there are eight or more options, arrow, Home/End and type-ahead keys, and highlighted matches. On a phone it opens as a bottom sheet with 44 px rows. It draws above dialogs and drawers and renders only the rows in view.
+- Tables: a focused row no longer also draws a focus ring around the whole table.
+- Releases: every push to `main` builds the CLI, the desktop installers and the container image (`ghcr.io/zyno-io/v8s:main` and `:<short sha>`) unsigned, so a release can be tried before it is tagged; signing, notarization, attestations, the Helm chart and the GitHub release stay tag-only.
+
+### Fixed
+
+- Problems: the acknowledge / snooze menu opens at its button instead of far away, and no longer scrolls the list.
 
 ## 0.4.0 — 2026-11-19
 
