@@ -63,7 +63,10 @@ dist/*/v8s serve                # open the UI in your browser
 yarn docs:dev                   # docs site at http://localhost:5173/v8s/
 ```
 
-Releases are cut by tagging `vX.Y.Z` (`.github/workflows/release.yml`). See [CHANGELOG.md](CHANGELOG.md).
+Releases are cut by tagging `vX.Y.Z` (`.github/workflows/release.yml`). See [CHANGELOG.md](CHANGELOG.md). Every push to `main`
+runs the same workflow unsigned: the CLI archives and desktop installers as run artifacts (7 days), and the container image
+as `ghcr.io/zyno-io/v8s:main` (and `:<short sha>`), so a release can be tried live before it is tagged. Signing,
+notarization, attestations, the Helm chart and the GitHub release happen on tags only.
 
 ## Design docs
 
