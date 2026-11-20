@@ -362,6 +362,10 @@ Reference hardware: desktop = 2021 M1 MacBook Pro / equivalent x86 laptop; mobil
 | Added exec keystroke latency | ≤ 5 ms | ≤ 15 ms | ≤ 15 ms |
 | Idle data on Problems view | n/a | ≤ 30 KB/min | ≤ 30 KB/min; 0 when hidden |
 
+### CI: A/B check, not absolute budgets
+
+Shared CI runners differ in speed from run to run, and the scroll frame p95 is quantised to 16.7 / 33.3 ms, so the absolute budgets above are only informational there (the `perf` job runs them on pushes to `main`). On pull requests the job instead builds the PR and its base commit, then runs `packages/ui/perf/ab.ts`: three alternating rounds (base→head, head→base, base→head) on the same runner, each against its own UI build and agent, 50k pods, desktop variant. `perf/compare.ts` takes the median per side and fails on the relative difference. The rules live in `RULES` at the top of that file: scripting total during scroll (> 15% and > 40 ms), scripting p95 per frame (> 20% and > 0.3 ms), dropped frames (> 25 ms) in scroll and in churn (> 5 points each), longest task (> max(base, 50) + 40 ms) and peak heap (> 15% and > 5 MB). First-rows and filter-settle times are reported only. The job stays `continue-on-error` until the thresholds have been tuned on real runs. Locally: `node perf/ab.ts --base-dir <checkout of the base, yarn installed>` from `packages/ui`.
+
 ### Mobile specifics
 
 - Phones subscribe narrowly: the problems summary (cluster × class counts, ~1 KB), the problems window (± 60 rows), the current list window (± 60 rows, fewer columns), the open object. Sidebar counts are fetched once, not kept live.
