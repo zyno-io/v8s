@@ -38,6 +38,9 @@ func genVPA(w *World, c *Cluster) {
 			mode = "Off"
 		}
 		status := map[string]any{"conditions": []any{cond("RecommendationProvided", "True", "", "", 3*time.Hour)}}
+		if a%40 == 24 { // svc-24, svc-64, …: recommendations from too little history
+			status["conditions"] = append(status["conditions"].([]any), cond("LowConfidence", "True", "", "fewer than 8 days of history", 3*time.Hour))
+		}
 		if a == 4 {
 			status = map[string]any{"conditions": []any{cond("NoPodsMatched", "True", "NoPodsMatched", "No pods match this VPA object", 3*time.Hour)}}
 		} else {
