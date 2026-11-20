@@ -135,6 +135,8 @@ const virtualizer = useVirtualizer<HTMLDivElement, Element>(
     }))
 );
 const items = computed(() => virtualizer.value.getVirtualItems());
+// Rows are placed from cached sizes: re-measure when the layout switches between phone and desktop row heights.
+watch(rowH, () => virtualizer.value.measure());
 watch(
     () => virtualizer.value.range?.endIndex,
     end => {

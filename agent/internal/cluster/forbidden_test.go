@@ -150,6 +150,9 @@ func TestForbiddenBaselineWatchStopsRetrying(t *testing.T) {
 	if m.runnerForTest("prod-us").watchErr(denyGVR) == nil {
 		t.Fatal("parked watch lost its error")
 	}
+	if m.KindSynced("prod-us", denyGVR) || m.KindSynced("prod-us", "example.com/v1/unwatched") || m.KindSynced("nope", denyGVR) {
+		t.Fatal("a parked, unwatched or unknown-cluster kind is not synced")
+	}
 }
 
 func TestForbiddenBaselineWatchRetriesAndRecovers(t *testing.T) {
@@ -165,6 +168,7 @@ func TestForbiddenBaselineWatchRetriesAndRecovers(t *testing.T) {
 	if !m.ScanKind("prod-us", denyGVR, func(*ingest.Row) bool { return false }) {
 		t.Fatal("kind not watched after recovery")
 	}
+	waitFor(t, "synced after recovery", func() bool { return m.KindSynced("prod-us", denyGVR) })
 }
 
 func TestForbiddenParkedWatchRetriedWhenViewAcquires(t *testing.T) {

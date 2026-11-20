@@ -113,7 +113,10 @@ func TestExposureOf(t *testing.T) {
 	f.put(t, gvrPods, pod("g", "db-migrate-abcde", "Job", "db-migrate"))
 	f.put(t, gvrJobs, &batchv1.Job{ObjectMeta: meta("g", "db-migrate")})
 
-	ex := ExposureOf(f.scan, "c")
+	ex, known := ExposureOf(f.scan, nil, "c")
+	if !known {
+		t.Fatal("unknown")
+	}
 	const S, NP, LB, IN = protocol.ExposureService, protocol.ExposureNodePort, protocol.ExposureLoadBalancer, protocol.ExposureIngress
 	want := map[WorkloadRef]int{
 		{"Deployment", "n", "web"}:            S | IN | LB,
@@ -141,11 +144,33 @@ func TestExposureOf(t *testing.T) {
 func TestExposureNilWithoutServices(t *testing.T) {
 	f := fakeStore{}
 	f.put(t, gvrPods, pod("n", "p"))
-	if ex := ExposureOf(f.scan, "c"); ex != nil {
-		t.Fatalf("%v", ex)
+	if ex, known := ExposureOf(f.scan, nil, "c"); ex != nil || !known {
+		t.Fatalf("%v %v", ex, known)
 	}
-	if ex := ExposureOf(nil, "c"); ex != nil {
-		t.Fatalf("%v", ex)
+	if _, known := ExposureOf(nil, nil, "c"); known {
+		t.Fatal("no scan is unknown")
+	}
+}
+
+func TestExposureUnknownUntilInputsSync(t *testing.T) {
+	f := fakeStore{}
+	f.put(t, gvrServices, svc("n", "s", corev1.ServiceTypeNodePort))
+	f.putRoute(t, `{"kind":"HTTPRoute","metadata":{"namespace":"n","name":"r","uid":"r1"},"spec":{"rules":[{"backendRefs":[{"name":"s"}]}]}}`)
+	pending := map[string]bool{}
+	synced := func(_, gvr string) bool { return !pending[gvr] }
+	if _, known := ExposureOf(f.scan, synced, "c"); !known {
+		t.Fatal("all synced: known")
+	}
+	for _, gvr := range append(append([]string{}, exposureInputs...), gvrRoutes[0]) {
+		pending[gvr] = true
+		if _, known := ExposureOf(f.scan, synced, "c"); known {
+			t.Fatalf("%s not synced: want unknown", gvr)
+		}
+		pending[gvr] = false
+	}
+	pending[gvrRoutes[2]] = true // grpcroutes not served (not watched): does not matter
+	if _, known := ExposureOf(f.scan, synced, "c"); !known {
+		t.Fatal("unwatched route kind: known")
 	}
 }
 
@@ -170,5 +195,12 @@ func TestImagesCarryExposure(t *testing.T) {
 	}
 	if got["exp:1"] != protocol.ExposureService|protocol.ExposureLoadBalancer || got["int:1"] != 0 {
 		t.Fatalf("%v", got)
+	}
+	s = New(Config{Scan: f.scan, Synced: func(_, gvr string) bool { return gvr != gvrPods }})
+	res, _ = s.Images(context.Background(), protocol.SecurityImagesParams{Clusters: []string{"exp"}})
+	for _, i := range res.Images {
+		if i.Exposure != protocol.ExposureUnknown {
+			t.Fatalf("pods not synced: %+v", i)
+		}
 	}
 }

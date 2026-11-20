@@ -1036,6 +1036,7 @@ async function main() {
 
         await step('network: the Flows tab of a workload shows flows and a dropped flow', async () => {
             // The fake relay speaks for shop/frontend, shop/backend and shop/probe; the fake cluster has no such workloads, so create them.
+            await page.evaluate(() => localStorage.removeItem('v8s:namespaces')); // the restored namespace filter would empty the deployments list
             await page.goto(`http://127.0.0.1:${stack.previewPort}/r/apps/v1/deployments`);
             await page.locator('.scroller .row:not(.sk)').first().waitFor({ timeout: 30000 });
             await page.getByTestId('create').click();

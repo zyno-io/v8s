@@ -698,6 +698,22 @@ func (m *Manager) ScanKind(clusterID, gvr string, fn func(*ingest.Row) bool) boo
 	return true
 }
 
+// KindSynced reports whether gvr is watched in the cluster, not parked, and its store has completed its first
+// list (what ScanKind returns is then the whole kind, not a partial or empty read).
+func (m *Manager) KindSynced(clusterID, gvr string) bool {
+	m.mu.Lock()
+	r := m.runners[clusterID]
+	m.mu.Unlock()
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	w := r.watches[gvr]
+	parked := w != nil && w.parked
+	r.mu.Unlock()
+	return w != nil && !parked && w.st != nil && w.st.Synced()
+}
+
 // WatchInfo describes one running watch (diagnostics and tests).
 type WatchInfo struct {
 	GVR       string

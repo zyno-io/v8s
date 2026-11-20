@@ -36,12 +36,32 @@ type nsName struct{ ns, name string }
 // CronJob, Pod, or the raw owner kind) to its exposure bits.
 type Exposure map[WorkloadRef]int
 
-// ExposureOf resolves the exposure of every workload of a cluster with exposed pods. nil when nothing is exposed
-// or the cluster's stores are not watched.
-func ExposureOf(scan ScanFn, cluster string) Exposure {
+// exposureInputs must be watched and synced for a cluster's exposure to be known.
+var exposureInputs = []string{gvrServices, gvrSlices, gvrPods, gvrIngresses}
+
+// ExposureOf resolves the exposure of every workload of a cluster with exposed pods (nil when none is). known is
+// false when an input is not loaded yet or not readable (synced reports it; a watched route kind must be synced
+// too): the result would read as "not exposed" while it is only unknown.
+func ExposureOf(scan ScanFn, synced func(cluster, gvr string) bool, cluster string) (ex Exposure, known bool) {
 	if scan == nil {
-		return nil
+		return nil, false
 	}
+	if synced != nil {
+		for _, gvr := range exposureInputs {
+			if !synced(cluster, gvr) {
+				return nil, false
+			}
+		}
+		for _, gvr := range gvrRoutes {
+			if scan(cluster, gvr, func(*ingest.Row) bool { return false }) && !synced(cluster, gvr) {
+				return nil, false
+			}
+		}
+	}
+	return exposureOf(scan, cluster), true
+}
+
+func exposureOf(scan ScanFn, cluster string) Exposure {
 	// Service → bits from its type, then from the Ingresses / routes that point at it.
 	svc := map[nsName]int{}
 	if mod := ingest.Lookup(gvrServices); mod != nil {

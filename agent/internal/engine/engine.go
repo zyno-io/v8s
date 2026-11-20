@@ -183,7 +183,7 @@ func New(cfg Config) *Engine {
 	e.Helm = helm.New(helmCfg)
 	go e.View.Run(ctx)
 
-	e.Security = security.New(security.Config{Route: e.Ops.Route, Conn: connFn, Scan: mgr.ScanKind, Clusters: selected})
+	e.Security = security.New(security.Config{Route: e.Ops.Route, Conn: connFn, Scan: mgr.ScanKind, Synced: mgr.KindSynced, Clusters: selected})
 	for k, v := range e.Security.Handlers() {
 		e.Handlers[k] = v
 	}
