@@ -185,6 +185,8 @@ func (l *ListerWatcher) ListWithContext(ctx context.Context, opts metav1.ListOpt
 		}
 		m.Each(obj, func(r *Row) { out.Items = append(out.Items, r) })
 	}
+	// A LIST answered: whatever cut the earlier watches short, start the next one without waiting.
+	l.shortStreak.Store(0)
 	if l.Hooks.OnOK != nil {
 		l.Hooks.OnOK()
 	}
@@ -240,7 +242,7 @@ func (l *ListerWatcher) WatchWithContext(ctx context.Context, opts metav1.ListOp
 	if initial {
 		l.count.Store(0)
 	}
-	w := &projWatch{src: src, out: make(chan watch.Event), done: make(chan struct{}), l: l,
+	w := &projWatch{ctx: ctx, src: src, out: make(chan watch.Event), done: make(chan struct{}), l: l,
 		initial: initial, start: time.Now()}
 	go w.run()
 	return w, nil
@@ -261,6 +263,7 @@ func (l *ListerWatcher) err(err error) {
 }
 
 type projWatch struct {
+	ctx     context.Context
 	src     watch.Interface
 	out     chan watch.Event
 	done    chan struct{}
@@ -270,20 +273,27 @@ type projWatch struct {
 	start   time.Time
 }
 
-// sourceClosed runs when the source stream ended on its own (not caller-stopped): it updates the
-// short-watch streak and, for a watch-list cut off before its bookmark, marks the ListerWatcher so
-// the reflector falls back to LIST + watch. It reports whether the stream was truncated.
-func (w *projWatch) sourceClosed(inInitial bool) bool {
+// sourceClosed runs when the source stream ended. Only a clean end on its own counts: not one the caller
+// stopped, not a cancelled context (checked first: cancellation sets Err before the transport closes), and
+// not one that ended after an error event (the reflector handles those itself, e.g. relist on expiry). It
+// updates the short-watch streak (only an early close that delivered no events is suspicious; a stream a
+// proxy cuts every N seconds while events flow re-watches at once, as before) and, for a watch-list cut
+// off before its bookmark, marks the ListerWatcher so the reflector falls back to LIST + watch. It reports
+// whether the stream was truncated.
+func (w *projWatch) sourceClosed(inInitial, sawErr bool, delivered int) bool {
+	if sawErr || w.ctx.Err() != nil {
+		return false
+	}
 	select {
 	case <-w.done:
 		return false
 	default:
 	}
 	l := w.l
-	if time.Since(w.start) >= minHealthyWatch {
-		l.shortStreak.Store(0)
-	} else {
+	if delivered == 0 && time.Since(w.start) < minHealthyWatch {
 		l.shortStreak.Add(1)
+	} else {
+		l.shortStreak.Store(0)
 	}
 	if w.initial && inInitial {
 		if l.watchListBroken.CompareAndSwap(false, true) && l.Hooks.OnWatchListTruncated != nil {
@@ -307,6 +317,8 @@ func (w *projWatch) run() {
 	defer close(w.out)
 	inInitial := w.initial
 	n := 0
+	delivered := 0 // non-bookmark events passed on
+	sawErr := false
 	var batch []*Row
 	flush := func() {
 		if len(batch) > 0 && w.l.Hooks.OnRows != nil {
@@ -335,6 +347,9 @@ func (w *projWatch) run() {
 					h(n)
 				}
 			}
+			if ev.Type != watch.Bookmark {
+				delivered++
+			}
 			ev.Object = row
 		}
 		select {
@@ -345,8 +360,12 @@ func (w *projWatch) run() {
 		}
 	}
 	for ev := range w.src.ResultChan() {
+		if ev.Type == watch.Error {
+			sawErr = true
+		}
 		switch o := ev.Object.(type) {
 		case *metav1.Status:
+			sawErr = true
 			w.l.err(apierrors.FromObject(o))
 			if !emit(ev, nil) {
 				return
@@ -388,7 +407,7 @@ func (w *projWatch) run() {
 			}
 		}
 	}
-	if w.sourceClosed(inInitial) {
+	if w.sourceClosed(inInitial, sawErr, delivered) {
 		// Not routed through l.err: this must not flip the cluster to Degraded. A non-retriable,
 		// non-expired status makes client-go's watchList return the error and fall back to LIST.
 		emit(watch.Event{Type: watch.Error, Object: &metav1.Status{

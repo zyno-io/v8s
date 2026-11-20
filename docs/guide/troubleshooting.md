@@ -81,6 +81,14 @@ v8s limits itself to 20 reads per second (burst 40) and at most 96 watches per c
 - Behind a gateway, every request is authorized and recorded, which adds latency. Long-lived watches are re-established about every 30 minutes.
 - Fewer clusters at once means less work. Deselect the ones you are not using.
 
+## "watch-list stream truncated" in the agent log
+
+**Symptom.** The agent logs `watch-list stream truncated; using LIST+watch` with a cluster and a kind.
+
+**Cause.** A gateway or proxy between v8s and the API server ended a streaming list early (before the API server's end-of-list marker). One known cause is a proxy that decodes only the first part of a gzip response. v8s stops using streaming lists for that kind and loads it with a paged LIST plus a watch instead, so data stays correct. Watches that a proxy keeps closing early without delivering any events are retried with a growing delay (up to a minute) instead of immediately.
+
+**Fix.** Nothing is needed in v8s. Report it to whoever runs the gateway: other Kubernetes clients behind it (`kubectl`, controllers) may retry those requests in a tight loop.
+
 ## "Reconnecting…" banner
 
 **Symptom.** A grey **Reconnecting…** bar appears under the top bar, and the tables stop updating. After a minute it becomes **Can't reach the agent** with **Retry now** and **Reload** buttons.

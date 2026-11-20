@@ -292,3 +292,75 @@ func TestReflectorFallsBackToListOnTruncatedWatchList(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// An error event followed by the source closing (the API server's normal way to end a watch with an error)
+// is the reflector's to handle: it must not mark the watch-list broken or count as an early close.
+func TestErrorThenCloseNotBroken(t *testing.T) {
+	api := &scriptAPI{}
+	var trunc atomic.Int32
+	lw := &ListerWatcher{API: api, Hooks: Hooks{OnError: func(error) {}, OnWatchListTruncated: func() { trunc.Add(1) }}}
+	w, err := lw.WatchWithContext(context.Background(), initialOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := api.last()
+	src.Add(mkPod(corev1.PodRunning, 1))
+	src.Error(&metav1.Status{Status: metav1.StatusFailure, Reason: metav1.StatusReasonExpired, Code: 410})
+	src.Stop()
+	evs := drain(t, w)
+	if len(evs) != 2 || evs[1].Type != watch.Error {
+		t.Fatalf("events: %+v", evs)
+	}
+	if lw.watchListBroken.Load() || trunc.Load() != 0 || lw.shortStreak.Load() != 0 {
+		t.Fatalf("broken=%v trunc=%d streak=%d", lw.watchListBroken.Load(), trunc.Load(), lw.shortStreak.Load())
+	}
+}
+
+// A cancelled context closing the source is not a truncation, whatever order Stop arrives in.
+func TestCtxCancelNotBroken(t *testing.T) {
+	api := &scriptAPI{}
+	lw := &ListerWatcher{API: api}
+	ctx, cancel := context.WithCancel(context.Background())
+	w, err := lw.WatchWithContext(ctx, initialOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	api.last().Stop() // the transport noticing the cancel, before the caller's Stop
+	drain(t, w)
+	if lw.watchListBroken.Load() || lw.shortStreak.Load() != 0 {
+		t.Fatalf("broken=%v streak=%d", lw.watchListBroken.Load(), lw.shortStreak.Load())
+	}
+}
+
+// A stream a proxy cuts early while events flow is not paced: re-watching at once keeps the data live.
+func TestShortWatchWithEventsNotPaced(t *testing.T) {
+	shrinkPacing(t, time.Second, time.Second, time.Hour)
+	api := &scriptAPI{}
+	lw := &ListerWatcher{API: api}
+	for range 3 {
+		w, err := lw.WatchWithContext(context.Background(), metav1.ListOptions{ResourceVersion: "5"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := api.last()
+		src.Modify(mkPod(corev1.PodRunning, 1))
+		src.Stop()
+		drain(t, w)
+	}
+	if n := lw.shortStreak.Load(); n != 0 {
+		t.Fatalf("streak %d after event-delivering watches", n)
+	}
+}
+
+// A successful LIST clears the streak, so the watch after a relist (or after a park/unpark) is not delayed.
+func TestListResetsStreak(t *testing.T) {
+	lw := &ListerWatcher{API: &scriptAPI{}}
+	lw.shortStreak.Store(5)
+	if _, err := lw.ListWithContext(context.Background(), metav1.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if n := lw.shortStreak.Load(); n != 0 {
+		t.Fatalf("streak %d after LIST", n)
+	}
+}
