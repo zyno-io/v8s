@@ -8,6 +8,7 @@ release notes when the tag has no annotation.
 ### Changed
 
 - **Can't reach the agent** is now a red alert banner instead of an amber warning: the app cannot load or change anything until the connection is back.
+- Tables: faster fast scrolling on large lists. A row that scrolls out of view now lends its element to the one scrolling in, instead of one row being removed and another created: about a quarter less script work and half the garbage collection per frame while flicking through 50k pods, and far fewer dropped frames on slower machines.
 
 ### Fixed
 

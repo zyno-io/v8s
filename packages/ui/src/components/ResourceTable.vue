@@ -23,6 +23,7 @@ import { errorText } from '@/lib/mutations.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
+import { RowSlots } from '@/lib/row-slots.ts';
 import { usageCardLine, usageHint, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
 import { vpaKey } from '@/lib/vpa-status.ts';
@@ -87,6 +88,8 @@ function refOf(row: Row): ObjectRef {
 
 interface Item {
     i: number;
+    /** DOM slot (RowSlots): the row element this item renders into. */
+    k: number;
     id: number;
     row: Row;
     ver: number;
@@ -111,6 +114,9 @@ let nowMs = Date.now();
 /** The focused row is rendered: the table drops its own focus ring (app.scss `.scroller.rowfocus`). */
 const focusInView = computed(() => slice.value.some(it => it.foc));
 
+/** Row elements are keyed by slot, not by index, so one that scrolls out is reused for one that scrolls in (lib/row-slots.ts). */
+const rowSlots = new RowSlots();
+
 const slice = computed<Item[]>(() => {
     void tick.value;
     const decor = props.decor;
@@ -128,8 +134,10 @@ const slice = computed<Item[]>(() => {
     nowMs = Date.now();
     let old = true;
     const out: Item[] = [];
-    for (const vi of virtualizer.value.getVirtualItems()) {
-        const i = vi.index;
+    const vis = virtualizer.value.getVirtualItems();
+    const slots = rowSlots.assign(vis.map(v => v.index));
+    for (let n = 0; n < vis.length; n++) {
+        const i = vis[n].index;
         const k = i - off;
         const id = k >= 0 && k < ids.length ? ids[k] : 0;
         const row = id ? rows.get(id) : undefined;
@@ -155,6 +163,7 @@ const slice = computed<Item[]>(() => {
         }
         out.push({
             i,
+            k: slots[n],
             id,
             row: row ?? EMPTY_ROW,
             ver: row ? row[1] : -1,
@@ -856,8 +865,8 @@ function metricText(c: ColPlan, row: Row): string {
             <template v-if="!isPhone">
                 <div
                     v-for="it in slice"
-                    :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
+                    :key="it.k"
+                    v-memo="[it.i, it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
                     class="tr row"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_DESKTOP + 'px)' }"
@@ -926,8 +935,8 @@ function metricText(c: ColPlan, row: Row): string {
             <template v-else>
                 <div
                     v-for="it in slice"
-                    :key="it.i"
-                    v-memo="[it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
+                    :key="it.k"
+                    v-memo="[it.i, it.id, it.ver, it.sel, it.foc, it.age, it.x, planKey]"
                     class="pcard"
                     :class="{ sel: it.sel, focus: it.foc, sk: it.ver < 0 }"
                     :style="{ transform: 'translateY(' + it.i * ROW_H_PHONE + 'px)' }"
