@@ -32,6 +32,22 @@ Usage needs [metrics-server](https://github.com/kubernetes-sigs/metrics-server) 
 
 Columns you hide or show are remembered per resource type. Resizing a column no longer reveals the columns that are hidden by default (the IP column, the requests and limits).
 
+### Vertical Pod Autoscaler
+
+When a [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) sets a pod's requests, the Pods table shows a **VPA** tag just before the CPU and memory block, so high usage against a request that VPA manages is easy to tell apart from one you set by hand. The tag's colour is the VPA's status:
+
+| Colour | Status            | Meaning                                                         |
+| ------ | ----------------- | --------------------------------------------------------------- |
+| green  | Provided          | VPA has a confident recommendation.                             |
+| amber  | LowConfidence     | Recommendation based on little history; expect it to move.      |
+| amber  | NoPodsMatched     | The VPA's target selects no pods.                               |
+| red    | ConfigUnsupported | VPA rejected the configuration; requests are not being managed. |
+| grey   | Pending           | No recommendation yet (or the VPA list is still loading).       |
+
+Hover the tag for the VPA's name and status. The column appears only while a selected cluster has a VPA-managed pod: a VPA in `Off` mode sets no requests, so its pods are not tagged.
+
+The **VerticalPodAutoscaler** list shows each VPA's target, update mode, status and its recommendation (target, lower and upper bound for CPU and memory, summed over containers). A VPA's Overview lists the recommendation per container, and a managed pod's Overview has a **Vertical Pod Autoscaler** section that compares each container's request to it, with a request outside the lower to upper range highlighted.
+
 ## The detail drawer
 
 Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page.
