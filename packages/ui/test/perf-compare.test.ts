@@ -91,6 +91,18 @@ describe('extractMetrics / parseArgs', () => {
         });
         expect(m).toMatchObject({ scriptingTotalMs: 5, scrollDroppedPct: 2, churnDroppedPct: 3, longTaskMaxMs: 60, heapPeakMB: 30 });
     });
+    it('rejects a run missing a metric (a renamed field must not silently disable a gate)', () => {
+        const phase = { droppedPct: 0, longTaskMaxMs: 0 };
+        const desktop = {
+            name: 'desktop',
+            firstRowsMs: 1,
+            filterSettleMs: -1,
+            heapMB: [{ mb: 10 }],
+            scripting: { p95Ms: 1 },
+            phases: { scroll: phase, filter: phase, churn: phase }
+        };
+        expect(() => extractMetrics({ results: [desktop] })).toThrow(/scriptingTotalMs/);
+    });
     it('splits args by side', () => {
         expect(parseArgs(['--base', 'a', 'b', '--head', 'c'])).toEqual({ base: ['a', 'b'], head: ['c'] });
         expect(() => parseArgs(['--base', 'a'])).toThrow();

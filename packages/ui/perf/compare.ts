@@ -55,7 +55,7 @@ export function median(values: number[]): number {
 export function extractMetrics(out: { results: unknown[] }): RunMetrics {
     const d = (out.results as DesktopResult[]).find(r => r.name === 'desktop');
     if (!d) throw new Error('no desktop variant in results');
-    return {
+    const m: RunMetrics = {
         scriptingTotalMs: d.scripting.totalMs,
         scriptingP95Ms: d.scripting.p95Ms,
         scrollDroppedPct: d.phases.scroll.droppedPct,
@@ -65,6 +65,9 @@ export function extractMetrics(out: { results: unknown[] }): RunMetrics {
         firstRowsMs: d.firstRowsMs,
         filterSettleMs: d.filterSettleMs
     };
+    // A renamed or missing field must not turn a gate into a silent "n/a": bad input exits 2.
+    for (const [k, v] of Object.entries(m)) if (!Number.isFinite(v)) throw new Error(`run is missing metric ${k} (got ${String(v)})`);
+    return m;
 }
 
 export interface Row {

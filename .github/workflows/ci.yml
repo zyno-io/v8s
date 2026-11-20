@@ -54,8 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Pull requests need the base commit for the A/B worktree.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          # Pull requests need the merge commit's first parent (HEAD^1) for the A/B base worktree.
+          fetch-depth: 2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: agent/go.mod

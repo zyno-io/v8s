@@ -55,14 +55,19 @@ async function main(): Promise<number> {
         const order = n % 2 ? (['base', 'head'] as const) : (['head', 'base'] as const);
         for (const side of order) {
             const out = join(tmp, `${side}-${n}.json`);
-            await must('node', [join(here, 'run.ts')], uiDir, {
+            const env = {
                 ...process.env,
                 PERF_VARIANTS: 'desktop',
                 PERF_NO_ASSERT: '1',
                 V8S_AGENT_BIN: sides[side].bin,
                 PERF_DIST: sides[side].dist,
                 PERF_OUT: out
-            });
+            };
+            // One flaky run (a connect timeout on a stalled runner) must not discard the others: retry it once.
+            if ((await exec('node', [join(here, 'run.ts')], uiDir, env)) !== 0) {
+                console.warn(`perf run ${side} ${n} failed; retrying once`);
+                await must('node', [join(here, 'run.ts')], uiDir, env);
+            }
             outs[side].push(out);
         }
     }
