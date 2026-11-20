@@ -86,6 +86,16 @@ describe('edgeActive', () => {
     });
 });
 
+describe('typeahead buffer', () => {
+    const o = listOptions(['Alpha', 'Beta', 'Gamma', 'Gizmo']);
+    const idx = [0, 1, 2, 3];
+    it('a two-letter buffer lands on the second-letter match, not just the first letter', () => {
+        expect(typeahead(idx, o, 'g', -1)).toBe(2);
+        expect(typeahead(idx, o, 'ga', 2)).toBe(2);
+        expect(typeahead(idx, o, 'gi', 2)).toBe(3);
+    });
+});
+
 describe('typeahead', () => {
     it('jumps to the next label with the prefix', () => {
         expect(typeahead(all, opts, 'k', -1)).toBe(1);
@@ -127,6 +137,19 @@ describe('splitHighlight', () => {
             { text: 'abc', hit: true },
             { text: 'd', hit: false }
         ]);
+    });
+    it('keeps offsets right when lowercasing changes the length (İ)', () => {
+        expect(splitHighlight('İstanbul-prod', ['prod'])).toEqual([
+            { text: 'İstanbul-', hit: false },
+            { text: 'prod', hit: true }
+        ]);
+    });
+    it('treats regex metacharacters in a term literally', () => {
+        expect(
+            splitHighlight('a.b (x)', ['.', '(x)'])
+                .filter(x => x.hit)
+                .map(x => x.text)
+        ).toEqual(['.', '(x)']);
     });
     it('never interprets markup: the text comes back verbatim', () => {
         const segs = splitHighlight('<img src=x onerror=alert(1)>', ['img']);

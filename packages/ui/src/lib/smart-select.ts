@@ -95,11 +95,11 @@ export interface Segment {
 /** Splits `text` into runs, marking the parts the terms match (overlaps merged). Plain text only: callers render each run as text. */
 export function splitHighlight(text: string, terms: readonly string[]): Segment[] {
     if (!terms.length || !text) return [{ text, hit: false }];
-    const lower = text.toLowerCase();
+    // Match on the original string: lowercasing can change its length (`İ`), which would skew the slice offsets.
     const ranges: [number, number][] = [];
     for (const t of terms) {
         if (!t) continue;
-        for (let i = lower.indexOf(t); i >= 0; i = lower.indexOf(t, i + t.length)) ranges.push([i, i + t.length]);
+        for (const m of text.matchAll(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'))) ranges.push([m.index, m.index + m[0].length]);
     }
     if (!ranges.length) return [{ text, hit: false }];
     ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);

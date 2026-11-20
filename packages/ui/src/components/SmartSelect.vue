@@ -86,7 +86,7 @@ const rows = computed(() => {
     for (let pos = s; pos < e; pos++) out.push({ pos, idx: items.value[pos], opt: props.options[items.value[pos]] });
     return out;
 });
-const listHeight = computed(() => Math.min(items.value.length * rowH.value + 8, MAX_HEIGHT));
+const listHeight = computed(() => (items.value.length ? Math.min(items.value.length * rowH.value + 8, MAX_HEIGHT) : 0));
 const activeId = computed(() => (active.value >= 0 && open.value ? `${id}-o${items.value[active.value]}` : undefined));
 
 function listViewport(): number {
@@ -118,6 +118,7 @@ async function openList(seed = '') {
     rowH.value = coarse || sheet.value ? 44 : 32;
     // A modal <dialog> makes everything outside it inert, so the popup goes inside the dialog the trigger sits in.
     host.value = trigger.value?.closest('dialog') ?? 'body';
+    opening = true;
     query.value = searchable.value ? seed : '';
     scrollTop.value = 0;
     measure();
@@ -125,8 +126,10 @@ async function openList(seed = '') {
     const list = filterOptions(props.options, query.value);
     const cur = list.findIndex(i => props.options[i].value === props.modelValue);
     active.value = cur >= 0 ? cur : edgeActive(list, optDisabled, false);
-    if (!searchable.value && seed) jumpTo(typeahead(list, props.options, seed, -1));
     await nextTick();
+    // Typing to open: a search seed highlights its first match; a short list jumps by type-ahead (buffer kept, so `ga` works).
+    if (seed && searchable.value) active.value = edgeActive(list, optDisabled, false);
+    else if (seed) typeAhead(seed);
     // popover="manual": top layer, above a modal dialog and out of every `contain:` ancestor's reach.
     if (layer.value && typeof layer.value.showPopover === 'function') {
         try {
@@ -141,6 +144,7 @@ async function openList(seed = '') {
         scrollTop.value = el.scrollTop;
     }
     (searchEl.value ?? listEl.value)?.focus({ preventScroll: true });
+    opening = false;
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);
 }
@@ -158,6 +162,8 @@ function reposition(e?: Event) {
 function closeList(refocus = true) {
     if (!open.value) return;
     open.value = false;
+    // A stale query must not leak into the next open (it would re-filter and move the highlight).
+    query.value = '';
     window.removeEventListener('resize', reposition);
     window.removeEventListener('scroll', reposition, true);
     if (refocus) trigger.value?.focus({ preventScroll: true });
@@ -187,7 +193,10 @@ function setActive(pos: number) {
 }
 const jumpTo = setActive;
 
+// `opening` keeps this from overwriting the highlight openList sets for the current value.
+let opening = false;
 watch(query, () => {
+    if (!open.value || opening) return;
     // The filter changed: back to the top with the first enabled match active.
     scrollTop.value = 0;
     if (listEl.value) listEl.value.scrollTop = 0;
@@ -207,6 +216,7 @@ let buffer = '';
 let bufferTimer: ReturnType<typeof setTimeout> | undefined;
 
 function onListKey(e: KeyboardEvent) {
+    if (e.isComposing || e.keyCode === 229) return; // an IME commit, not a command
     const list = items.value;
     let handled = true;
     switch (e.key) {
@@ -268,7 +278,7 @@ function typeAhead(ch: string) {
 }
 
 function onTriggerKey(e: KeyboardEvent) {
-    if (e.defaultPrevented || props.disabled) return;
+    if (e.defaultPrevented || props.disabled || e.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         void openList();
@@ -397,8 +407,8 @@ const panelStyle = computed(() => {
                             </svg>
                         </div>
                     </div>
-                    <div v-if="!items.length" class="ss-none" role="status">{{ options.length ? 'No matches' : 'No options' }}</div>
                 </div>
+                <div v-if="!items.length" class="ss-none" role="status">{{ options.length ? 'No matches' : 'No options' }}</div>
             </div>
         </div>
     </Teleport>
@@ -508,7 +518,9 @@ const panelStyle = computed(() => {
     color: var(--text3);
 }
 .ss-list {
-    flex: none;
+    /* Shrinks when the popup is capped (short viewport, sheet with a safe-area inset) so the bottom rows stay reachable by scrolling. */
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     outline: 0;
