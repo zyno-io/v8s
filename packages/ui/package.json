@@ -12,7 +12,7 @@
         "typecheck": "vue-tsc --noEmit -p tsconfig.json",
         "test": "vitest run",
         "test:perf": "yarn build-only && node perf/run.ts && node perf/logflood.ts",
-        "test:e2e": "yarn build-only && node e2e/run.ts"
+        "test:e2e": "yarn build-only && node e2e/run.ts && node e2e/remember.ts"
     },
     "dependencies": {
         "@codemirror/commands": "^6.11.1",

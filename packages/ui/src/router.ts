@@ -1,8 +1,11 @@
+import { watch } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 
+import { bootState } from './lib/agent.ts';
+import { KEY_ROUTE, readJson, restoreRoute, routeToRemember, writeJson } from './lib/remember.ts';
 import { isPhone } from './lib/viewport.ts';
 
-export default createRouter({
+const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes: [
         // Problems is the landing tab on a phone, pods on a desktop.
@@ -28,3 +31,30 @@ export default createRouter({
         { path: '/:rest(.*)*', redirect: '/pods' }
     ]
 });
+
+// Opening the app at `/` lands on the last visited page. Only the app's first navigation does this, so going to `/` later
+// (Pods, or Problems on a phone) works as before. The page is remembered as path + query, minus the drawer's object.
+let first = true;
+router.beforeEach(to => {
+    const wasFirst = first;
+    first = false;
+    // `/` is a redirect record, so by the time a guard runs `to` is already Pods: look at where the navigation started.
+    const entry = to.redirectedFrom ?? to;
+    const dest = restoreRoute(wasFirst, entry.path, entry.query, readJson(KEY_ROUTE));
+    if (!dest) return true;
+    const r = router.resolve(dest);
+    return { path: r.path, query: r.query, hash: to.hash };
+});
+// Nothing is saved before the app is ready (a signed-out or failed boot is not a page to come back to); the page the app
+// was opened on is saved once it becomes ready.
+const remember = (to: { path: string; query: Record<string, unknown> }) => {
+    if (bootState.value !== 'ready') return;
+    const r = routeToRemember(to.path, to.query);
+    if (r) writeJson(KEY_ROUTE, r);
+};
+router.afterEach((to, _from, failure) => {
+    if (!failure) remember(to);
+});
+watch(bootState, () => remember(router.currentRoute.value));
+
+export default router;

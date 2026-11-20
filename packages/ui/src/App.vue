@@ -16,6 +16,7 @@ import TopBar from './components/TopBar.vue';
 import { bootMessage, bootState, getAgent, refreshKinds, startAgent } from './lib/agent.ts';
 import { clusterLoginUrl, hostedMe, loginUrl, logoutState, sessionEnded } from './lib/hosted.ts';
 import { installGlobalKeys } from './lib/keys.ts';
+import { installNamespaceMemory } from './lib/namespace-memory.ts';
 import { useClustersStore } from './stores/clusters.ts';
 import { useIntegrationsStore } from './stores/integrations.ts';
 import { useSettingsStore } from './stores/settings.ts';
@@ -94,6 +95,7 @@ async function boot() {
         try {
             await settings.load();
             await clusters.load();
+            installNamespaceMemory();
         } catch (e) {
             bootMessage.value = e instanceof Error ? e.message : String(e);
             bootState.value = 'error';

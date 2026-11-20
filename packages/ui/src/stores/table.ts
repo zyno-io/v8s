@@ -1,7 +1,7 @@
 import type { ObjectRef, Sort, ViewQuery } from '@v8s/client';
 
 import { defineStore } from 'pinia';
-import { ref, shallowReactive } from 'vue';
+import { effectScope, ref, shallowReactive, watch } from 'vue';
 
 export interface ToneChip {
     key: string;
@@ -87,13 +87,42 @@ export const useTableStore = defineStore('table', () => {
     /** The gvr whose page is on screen; the command bar, Esc chain and palette act on it. */
     const currentGvr = ref('');
 
+    // Namespace filters are remembered per cluster set (lib/namespace-memory.ts), which listens here. The watchers live in a detached scope:
+    // a state is created lazily from whichever component first asks for it, and must outlive that component.
+    const scope = effectScope(true);
+    const nsListeners: ((gvr: string) => void)[] = [];
+    const onNamespacesChange = (fn: (gvr: string) => void) => void nsListeners.push(fn);
+
     function of(gvr: string): TableState {
         let s = states.get(gvr);
         if (!s) {
-            s = fresh();
+            const created = fresh();
+            s = created;
             states.set(gvr, s);
+            scope.run(() =>
+                watch(
+                    () => created.namespaces,
+                    () => nsListeners.forEach(fn => fn(gvr))
+                )
+            );
         }
         return s;
+    }
+
+    /** Every kind's namespace filter, for persistence. */
+    function namespaceFilters(): Record<string, string[]> {
+        const out: Record<string, string[]> = {};
+        for (const [gvr, s] of states) out[gvr] = s.namespaces;
+        return out;
+    }
+
+    /** Replaces every kind's namespace filter with `filters` (kinds not listed are cleared). */
+    function applyNamespaceFilters(filters: Readonly<Record<string, readonly string[]>>) {
+        for (const [gvr, s] of states) if (!(gvr in filters) && s.namespaces.length) s.namespaces = [];
+        for (const [gvr, list] of Object.entries(filters)) {
+            const s = of(gvr);
+            if (s.namespaces.join('\n') !== list.join('\n')) s.namespaces = [...list];
+        }
     }
 
     function select(gvr: string, ref: ObjectRef) {
@@ -131,5 +160,18 @@ export const useTableStore = defineStore('table', () => {
         s.tones = [];
     }
 
-    return { currentGvr, of, select, setSelected, clearSelection, resetInteraction, toggleTone, sortBy, clearFilters };
+    return {
+        currentGvr,
+        of,
+        onNamespacesChange,
+        namespaceFilters,
+        applyNamespaceFilters,
+        select,
+        setSelected,
+        clearSelection,
+        resetInteraction,
+        toggleTone,
+        sortBy,
+        clearFilters
+    };
 });
