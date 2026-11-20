@@ -596,6 +596,14 @@ type resolved struct {
 // kind waits (off the connection goroutine) for its first columnDefinitions, and an involved-object events
 // view waits for the object's first events list. cb runs on the connection goroutine and owns res.scope;
 // when cb can never run, the scope is closed here.
+// openScope opens the view's scope: a background one for a side subscription (protocol.ViewQuery.Background).
+func openScope(mgr *cluster.Manager, gvr string, q protocol.ViewQuery) *cluster.Scope {
+	if q.Background {
+		return mgr.OpenBackgroundScope(gvr, q.Clusters)
+	}
+	return mgr.OpenScope(gvr, q.Clusters)
+}
+
 func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(res resolved, err error)) {
 	gvr, mgr := queryGVR(q), c.s.opt.Manager
 	if gvr == ingest.ObjectEventsGVR {
@@ -634,7 +642,7 @@ func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(res re
 		return
 	}
 	if mod := ingest.Lookup(gvr); mod != nil {
-		cb(resolved{mod: mod, scope: mgr.OpenScope(gvr, q.Clusters), q: q}, nil)
+		cb(resolved{mod: mod, scope: openScope(mgr, gvr, q), q: q}, nil)
 		return
 	}
 	go func() {
@@ -643,7 +651,7 @@ func (c *conn) resolve(ctx context.Context, q protocol.ViewQuery, cb func(res re
 		mod, err := mgr.ResolveModule(rctx, gvr, q.Clusters)
 		var scope *cluster.Scope
 		if err == nil {
-			scope = mgr.OpenScope(gvr, q.Clusters)
+			scope = openScope(mgr, gvr, q)
 		}
 		closeScope := func() {
 			if scope != nil {

@@ -19,6 +19,9 @@ export const vpaKey = (cluster: string, namespace: string, name: string): string
 
 const EMPTY: VpaIndex = new Map();
 
+/** The `want` key of useVpaIndex: a string, so an unchanged subscription compares equal. JSON: cluster ids may hold any character. */
+export const vpaWantKey = (gvr: string, clusters: readonly string[]): string => JSON.stringify([gvr, clusters]);
+
 /** Builds the index from a VPA view's rows: cluster/namespace/name → status and tone. */
 export function buildVpaIndex(columns: readonly Column[] | null, ids: ArrayLike<number>, rows: ReadonlyMap<number, Row>): VpaIndex {
     if (!columns) return EMPTY;
@@ -53,9 +56,10 @@ export function sameVpaIndex(a: VpaIndex, b: VpaIndex): boolean {
 }
 
 /**
- * Subscribes to the VPA list while `want` is non-empty (`gvr|cluster,cluster`) and exposes its status index. The pods table colours
+ * Subscribes to the VPA list while `want` is non-empty (a vpaWantKey) and exposes its status index. The pods table colours
  * its VPA tags from it. The index object is replaced only when a status or tone changed, so recommendation updates (every recommender
- * loop) re-render nothing. VPAs are few; the agent watches them only while this subscription is open.
+ * loop) re-render nothing. VPAs are few; the agent watches them only while this subscription is open. It is a background
+ * subscription: where the user may not list VPAs, the refused watch is parked instead of retried for as long as Pods is open.
  */
 export function useVpaIndex(want: Ref<string>): Ref<VpaIndex> {
     const index = shallowRef<VpaIndex>(EMPTY);
@@ -73,9 +77,9 @@ export function useVpaIndex(want: Ref<string>): Ref<VpaIndex> {
         w => {
             close();
             if (!w) return;
-            const [gvr, ids] = w.split('|');
+            const [gvr, clusters] = JSON.parse(w) as [string, string[]];
             const handle = getAgent().subscribeView(
-                { clusters: ids ? ids.split(',') : [], gvr, namespaces: [], text: '', filters: [], sort: [] },
+                { clusters, gvr, namespaces: [], text: '', filters: [], sort: [], background: true },
                 { offset: 0, limit: 20000 }
             );
             h = handle;

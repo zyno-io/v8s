@@ -2,7 +2,7 @@ import type { Column, Row } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildVpaIndex, sameVpaIndex, vpaKey } from '../src/lib/vpa-status.ts';
+import { buildVpaIndex, sameVpaIndex, vpaKey, vpaWantKey } from '../src/lib/vpa-status.ts';
 
 const cols = [
     { key: 'cluster', type: 'dict' },
@@ -34,5 +34,13 @@ describe('VPA status index', () => {
         const c = buildVpaIndex(cols, [1], new Map([[1, row(1, 'api', 'LowConfidence', 2, 250)]]));
         expect(sameVpaIndex(a, b)).toBe(true);
         expect(sameVpaIndex(a, c)).toBe(false);
+    });
+});
+
+describe('vpaWantKey', () => {
+    it('round-trips cluster ids holding separators', () => {
+        const k = vpaWantKey('autoscaling.k8s.io/v1/verticalpodautoscalers', ['prod|eu', 'a,b']);
+        expect(JSON.parse(k)).toEqual(['autoscaling.k8s.io/v1/verticalpodautoscalers', ['prod|eu', 'a,b']]);
+        expect(vpaWantKey('g', ['x'])).toBe(vpaWantKey('g', ['x']));
     });
 });

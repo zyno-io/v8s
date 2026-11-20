@@ -258,6 +258,10 @@ type ViewQuery struct {
 	// on demand while the view is open (docs/protocol.md "Events of one object"). Clusters and Namespaces are then
 	// ignored; Filters, Text and Sort still apply.
 	Involved *ObjectRef `msgpack:"involved,omitempty" json:"involved,omitempty"`
+	// Background marks a side subscription the user is not looking at (the Pods table's VPA status lookup). It does
+	// not keep a watch retrying after a terminal LIST error (Forbidden, NotFound): such a watch is parked as if
+	// nobody held it, and a background subscription does not unpark a parked watch.
+	Background bool `msgpack:"background,omitempty" json:"background,omitempty"`
 }
 
 // MaxObjectEvents is the events of one object an involved view keeps, newest by lastSeen.

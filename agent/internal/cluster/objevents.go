@@ -195,7 +195,7 @@ func (r *runner) discardEvents(key string) {
 
 // acquireEvents references the object's events watch, starting it when needed.
 func (r *runner) acquireEvents(oe *ObjectEvents) (func(), error) {
-	return r.acquireKey(oe.key, r.m.EventsLinger, func() (*watchEntry, error) {
+	return r.acquireKey(oe.key, r.m.EventsLinger, false, func() (*watchEntry, error) {
 		if err := r.makeRoomLocked(); err != nil {
 			return nil, err
 		}

@@ -47,6 +47,7 @@ type watchEntry struct {
 	cancel  context.CancelFunc
 	done    chan struct{} // closed when the current reflector run ends (replaced by each restart, guarded by r.mu)
 	refs    int
+	bgRefs  int          // of refs, those held by background scopes: they do not keep a failing watch retrying (parkIfUnheld)
 	errv    atomic.Value // listErr: the latest list/watch error, cleared by the next success
 	tier0   bool
 	lastUse time.Time
@@ -311,8 +312,9 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			r.everOK.Store(true)
 			r.setPhase(protocol.PhaseReady, "")
 		}
-		w.st.OnVPA = func(any bool) {
-			r.vpaPods.Store(any)
+		w.st.OnVPA = func(bool) {
+			// Read the store, not the argument: edge callbacks run outside its lock and may land out of order.
+			r.vpaPods.Store(w.st.VPAAny())
 			r.m.kick()
 		}
 		w.st.OnActivity = func() {
@@ -377,7 +379,7 @@ func terminalListErr(err error) bool {
 func (r *runner) parkIfUnheld(w *watchEntry) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.watches[w.gvr] != w || w.refs > 0 || w.parked || w.part != nil || r.ctx.Err() != nil {
+	if r.watches[w.gvr] != w || w.refs > w.bgRefs || w.parked || w.part != nil || r.ctx.Err() != nil {
 		return
 	}
 	w.parked = true
@@ -491,7 +493,13 @@ func (r *runner) stopLocked(w *watchEntry) {
 // acquire takes a reference on the watch for gvr, starting it when needed. release drops it; the last
 // release starts the linger timer (the watch then stays warm for Linger, or until evicted).
 func (r *runner) acquire(gvr string) (release func(), err error) {
-	return r.acquireKey(gvr, r.m.Linger, func() (*watchEntry, error) {
+	return r.acquireBg(gvr, false)
+}
+
+// acquireBg is acquire; bg takes a background reference (protocol.ViewQuery.Background), which neither unparks
+// the watch nor keeps it retrying after a terminal LIST error.
+func (r *runner) acquireBg(gvr string, bg bool) (release func(), err error) {
+	return r.acquireKey(gvr, r.m.Linger, bg, func() (*watchEntry, error) {
 		if err := r.makeRoomLocked(); err != nil {
 			return nil, err
 		}
@@ -501,7 +509,7 @@ func (r *runner) acquire(gvr string) (release func(), err error) {
 
 // acquireKey takes a reference on the watch stored under key, calling start (with r.mu held) when there is none.
 // The last release starts a linger timer of linger.
-func (r *runner) acquireKey(key string, linger time.Duration, start func() (*watchEntry, error)) (release func(), err error) {
+func (r *runner) acquireKey(key string, linger time.Duration, bg bool, start func() (*watchEntry, error)) (release func(), err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	gvr := key
@@ -514,7 +522,11 @@ func (r *runner) acquireKey(key string, linger time.Duration, start func() (*wat
 	w.refs++
 	w.gen++
 	w.lastUse = time.Now()
-	r.unparkLocked(w) // a view wants it now: try again at once
+	if bg {
+		w.bgRefs++
+	} else {
+		r.unparkLocked(w) // a view wants it now: try again at once
+	}
 	if w.linger != nil {
 		w.linger.Stop()
 		w.linger = nil
@@ -528,6 +540,9 @@ func (r *runner) acquireKey(key string, linger time.Duration, start func() (*wat
 				return
 			}
 			w.refs--
+			if bg {
+				w.bgRefs--
+			}
 			w.lastUse = time.Now()
 			if w.refs == 0 && !w.tier0 {
 				w.gen++
