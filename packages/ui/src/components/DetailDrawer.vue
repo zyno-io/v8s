@@ -87,7 +87,11 @@ function onTabKey(e: KeyboardEvent) {
     void nextTick(() => document.getElementById(`tab-${list[n]}`)?.focus());
 }
 
-const SOURCE_GROUP: Record<string, string> = { Kustomization: 'kustomize.toolkit.fluxcd.io', HelmRelease: 'helm.toolkit.fluxcd.io' };
+const SOURCE_GROUP: Record<string, string> = {
+    Kustomization: 'kustomize.toolkit.fluxcd.io',
+    HelmRelease: 'helm.toolkit.fluxcd.io',
+    VerticalPodAutoscaler: 'autoscaling.k8s.io'
+};
 function openSource(kindStr: string, name: string, ns: string | undefined) {
     if (!target.value) return;
     const gvr = resolveKind(kinds.value, kindStr, SOURCE_GROUP[kindStr])?.gvr;

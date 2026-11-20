@@ -96,6 +96,7 @@ const PODS: Column[] = [
     { key: 'status', type: 'dict', label: 'Status', width: 120 },
     { key: 'statusTone', type: 'tone', label: 'Tone', width: 40 },
     { key: 'restarts', type: 'int', label: 'Restarts', width: 68 },
+    { key: 'vpa', type: 'dict', label: 'VPA', width: 36 },
     u('cpuUse', 'CPU', 'millicores', { metrics: true }),
     u('cpuReq', 'CPU req', 'millicores', { short: 'req', hidden: true }),
     u('cpuLim', 'CPU lim', 'millicores', { short: 'lim', hidden: true }),
@@ -118,10 +119,10 @@ describe('planColumns: the usage block', () => {
 
     it('collapses the visible unit columns into one block at the first one, in schema order', () => {
         const p = plan();
-        expect(p.cols.map(c => c.key)).toEqual(['name', 'namespace', 'ready', 'status', 'restarts', 'usage', 'node', 'createdAt']);
+        expect(p.cols.map(c => c.key)).toEqual(['name', 'namespace', 'ready', 'status', 'restarts', 'vpa', 'usage', 'node', 'createdAt']);
         const b = p.cols.find(c => c.kind === 'usage')!;
         expect(b.subs!.map(x => x.key)).toEqual(['cpuUse', 'cpuPctReq', 'cpuPctLim', 'memUse', 'memPctReq', 'memPctLim']);
-        expect(b.idx).toBe(10);
+        expect(b.idx).toBe(11);
         expect(b.grow).toBe(false);
         expect(b.sortable).toBe(false);
     });
@@ -199,11 +200,11 @@ describe('planColumns: the usage block', () => {
 
     it('exposes the row indexes for the tooltip and the phone card', () => {
         const p = plan();
-        expect(p.usage).toMatchObject({ cpuUse: 10, cpuReq: 11, cpuLim: 12, cpuPctLim: 14, memUse: 16, memPctLim: 20, node: 22 });
+        expect(p.usage).toMatchObject({ cpuUse: 11, cpuReq: 12, cpuLim: 13, cpuPctLim: 15, memUse: 17, memPctLim: 21, node: 23, vpa: 10 });
         expect(planColumns(cols, { gvr: 'x', showCluster: false }).usage).toBeNull();
     });
 
-    it('gives the name column 217 px (at least 200) at 1440 px with the sidebar pinned (content 1166)', () => {
+    it('gives the name column 169 px (the 36 px VPA column takes 48) at 1440 px with the sidebar pinned (content 1166)', () => {
         const p = plan();
         let fixed = 15 + 24; // checkbox column and row padding
         let n = 0;
@@ -213,7 +214,7 @@ describe('planColumns: the usage block', () => {
         }
         const gaps = 12 * n; // n tracks plus the checkbox column: n gaps
         const name = 1166 - fixed - gaps;
-        expect(name).toBe(217);
+        expect(name).toBe(169);
     });
 });
 
@@ -291,6 +292,64 @@ describe('planColumns: the nodes usage block', () => {
         const u = plan().usage!;
         expect([u.cpuUse, u.cpuPctAlloc, u.cpuAlloc, u.memUse, u.memPctAlloc, u.memAlloc]).toEqual([11, 12, 13, 14, 15, 16]);
         expect(u.cpuPctNode).toBe(-1);
+    });
+});
+
+// The VerticalPodAutoscaler list: no cpuUse/memUse, so no tooltip index; target/lower/upper per resource, all raw or short.
+const VPAS: Column[] = [
+    { key: 'cluster', type: 'dict', label: 'Cluster', width: 110 },
+    { key: 'name', type: 'str', label: 'Name', width: 320 },
+    { key: 'namespace', type: 'dict', label: 'Namespace', width: 120 },
+    { key: 'target', type: 'str', label: 'Target', width: 160 },
+    { key: 'mode', type: 'dict', label: 'Mode', width: 90 },
+    { key: 'status', type: 'dict', label: 'Status', width: 120 },
+    { key: 'statusTone', type: 'tone', label: 'Tone', width: 40 },
+    u('cpuTarget', 'CPU', 'millicores'),
+    u('cpuLower', 'CPU lower', 'millicores', { short: 'low' }),
+    u('cpuUpper', 'CPU upper', 'millicores', { short: 'up' }),
+    u('memTarget', 'MEM', 'MiB'),
+    u('memLower', 'MEM lower', 'MiB', { short: 'low' }),
+    u('memUpper', 'MEM upper', 'MiB', { short: 'up' }),
+    { key: 'createdAt', type: 'time', label: 'Age', width: 56, align: 'right' }
+];
+
+describe('planColumns: the VerticalPodAutoscaler list', () => {
+    const p = planColumns(VPAS, { gvr: 'autoscaling.k8s.io/v1/verticalpodautoscalers', showCluster: false });
+
+    it('draws the six unit columns as one block with short labels, and no usage tooltip or polling', () => {
+        expect(p.cols.map(c => c.key)).toEqual(['name', 'namespace', 'target', 'mode', 'status', 'usage', 'createdAt']);
+        const b = p.cols.find(c => c.kind === 'usage')!;
+        expect(b.subs!.map(x => [x.key, x.text, x.suffix, x.res])).toEqual([
+            ['cpuTarget', 'CPU', 'm', 'cpu'],
+            ['cpuLower', 'low', '', 'cpu'],
+            ['cpuUpper', 'up', '', 'cpu'],
+            ['memTarget', 'MEM', 'Mi', 'mem'],
+            ['memLower', 'low', '', 'mem'],
+            ['memUpper', 'up', '', 'mem']
+        ]);
+        expect(b.subs!.filter(x => x.lead).map(x => x.key)).toEqual(['memTarget']);
+        expect(b.width).toBe(44 * 3 + 48 * 3 + 5 * 6 + (14 - 6));
+        expect(p.usage).toBeNull();
+        expect(p.hasMetrics).toBe(false);
+        expect(p.metricKeys).toEqual([]);
+    });
+
+    it('keeps the status tag on the status column', () => {
+        expect(p.cols.find(c => c.key === 'status')!.kind).toBe('status');
+    });
+});
+
+describe('planColumns: pods vpa column', () => {
+    it('is a vpa cell only on pods', () => {
+        expect(planColumns(PODS, { gvr: 'v1/pods', showCluster: false }).cols.find(c => c.key === 'vpa')).toMatchObject({ kind: 'vpa', width: 36 });
+        expect(planColumns(PODS, { gvr: 'x', showCluster: false }).cols.find(c => c.key === 'vpa')!.kind).toBe('text');
+    });
+
+    it('is dropped and listed disabled when no active cluster has VPA-managed pods', () => {
+        const p = planColumns(PODS, { gvr: 'v1/pods', showCluster: false, vpaOff: true });
+        expect(p.cols.some(c => c.key === 'vpa')).toBe(false);
+        expect(p.all.find(c => c.key === 'vpa')?.note).toBe('no pods managed by VPA');
+        expect(p.cols.some(c => c.key === 'usage')).toBe(true);
     });
 });
 

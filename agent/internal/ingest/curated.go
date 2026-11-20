@@ -119,7 +119,7 @@ func registerPods() {
 	m := &Module{GVR: PodsGVR, Kind: "Pod", Namespaced: true, Short: []string{"po"}, Tier0: true,
 		Cols: []Col{cCluster(), cName(), narrow(cNS(), 120),
 			cInt("ready", "Ready", 64), cInt("containers", "Containers", 84), cDict("status", "Status", 120),
-			cTone(), cInt("restarts", "Restarts", 68),
+			cTone(), cInt("restarts", "Restarts", 68), cDict("vpa", "VPA", 36),
 			// Usage block: the schema order below is the visible order; the UI draws the visible ones as one block.
 			cUse("cpuUse", "CPU", "", UseCPU, "millicores", 44, false),
 			cRes("cpuReq", "CPU req", "req", ResCPUReq, "millicores", 44, true),

@@ -175,6 +175,9 @@ type ClusterState struct {
 	Message        string       `msgpack:"message,omitempty" json:"message,omitempty"`
 	Metrics        MetricsAvail `msgpack:"metrics,omitempty" json:"metrics,omitempty"`               // usage availability; set only while a view polls usage
 	MetricsMessage string       `msgpack:"metricsMessage,omitempty" json:"metricsMessage,omitempty"` // why usage is unavailable
+	// VPA: some pod of the cluster has its requests set by a VerticalPodAutoscaler (the vpaUpdates annotation); the
+	// UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
+	VPA bool `msgpack:"vpa,omitempty" json:"vpa,omitempty"`
 }
 
 type ClusterStates struct {
@@ -255,6 +258,10 @@ type ViewQuery struct {
 	// on demand while the view is open (docs/protocol.md "Events of one object"). Clusters and Namespaces are then
 	// ignored; Filters, Text and Sort still apply.
 	Involved *ObjectRef `msgpack:"involved,omitempty" json:"involved,omitempty"`
+	// Background marks a side subscription the user is not looking at (the Pods table's VPA status lookup). It does
+	// not keep a watch retrying after a terminal LIST error (Forbidden, NotFound): such a watch is parked as if
+	// nobody held it, and a background subscription does not unpark a parked watch.
+	Background bool `msgpack:"background,omitempty" json:"background,omitempty"`
 }
 
 // MaxObjectEvents is the events of one object an involved view keeps, newest by lastSeen.
@@ -336,6 +343,7 @@ var PodColumns = []Column{
 	{Key: "status", Type: ColDict, Label: "Status", Width: 120},                       // kubectl-style status reason: Running, CrashLoopBackOff, Pending, …
 	{Key: "statusTone", Type: ColTone, Label: "Tone", Width: 40},
 	{Key: "restarts", Type: ColInt, Label: "Restarts", Width: 68, Align: "right"},
+	{Key: "vpa", Type: ColDict, Label: "VPA", Width: 36}, // name of the VerticalPodAutoscaler that set the pod's requests (vpaUpdates annotation); "" = none
 	// Usage columns (one dense block in the UI). Values are ints; nil = no data, -1 = n/a (no request/limit/node).
 	{Key: "cpuUse", Type: ColInt, Label: "CPU", Width: 44, Align: "right", Unit: "millicores", Metrics: true},
 	{Key: "cpuReq", Type: ColInt, Label: "CPU req", Short: "req", Width: 44, Align: "right", Unit: "millicores", Hidden: true},

@@ -527,6 +527,11 @@ export interface ClusterState {
   message?: string;
   metrics?: MetricsAvail; // usage availability; set only while a view polls usage
   metricsMessage?: string; // why usage is unavailable
+  /**
+   * VPA: some pod of the cluster has its requests set by a VerticalPodAutoscaler (the vpaUpdates annotation); the
+   * UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
+   */
+  vpa?: boolean;
 }
 export interface ClusterStates {
   states: ClusterState[];
@@ -608,6 +613,12 @@ export interface ViewQuery {
    * ignored; Filters, Text and Sort still apply.
    */
   involved?: ObjectRef;
+  /**
+   * Background marks a side subscription the user is not looking at (the Pods table's VPA status lookup). It does
+   * not keep a watch retrying after a terminal LIST error (Forbidden, NotFound): such a watch is parked as if
+   * nobody held it, and a background subscription does not unpark a parked watch.
+   */
+  background?: boolean;
 }
 /**
  * MaxObjectEvents is the events of one object an involved view keeps, newest by lastSeen.

@@ -16,6 +16,7 @@ import (
 	_ "github.com/zyno-io/v8s/agent/internal/kyverno"
 	_ "github.com/zyno-io/v8s/agent/internal/platform"
 	_ "github.com/zyno-io/v8s/agent/internal/trivy"
+	_ "github.com/zyno-io/v8s/agent/internal/vpa"
 )
 
 func tcp(name, typ string, prio int32) ingest.TableCol {

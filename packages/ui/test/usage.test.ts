@@ -24,8 +24,10 @@ const IDX: UsageIdx = {
     cpuPctAlloc: -1,
     cpuAlloc: -1,
     memPctAlloc: -1,
-    memAlloc: -1
+    memAlloc: -1,
+    vpa: -1
 };
+const VIDX: UsageIdx = { ...IDX, vpa: 15 };
 const row = (v: Partial<Record<keyof UsageIdx, unknown>>, idx: UsageIdx = IDX): Row => {
     const r: unknown[] = Array.from({ length: 15 }, () => null);
     for (const [k, x] of Object.entries(v)) r[idx[k as keyof UsageIdx]] = x;
@@ -222,5 +224,17 @@ describe('usage hints', () => {
         expect(usageTitle(IDX, row({ memUse: 90, memReq: 100, memLim: 400, memPctReq: 900, memPctLim: 225 }))).not.toMatch(reason);
         expect(usageTitle(IDX, row({ memUse: 300, memReq: 100, memPctReq: 3000, memPctLim: -1 }))).not.toMatch(reason);
         expect(usageTitle(IDX, row({ cpuUse: 300, cpuReq: 100, cpuLim: 400, cpuPctReq: 3000, cpuPctLim: 750 }))).not.toMatch(reason);
+    });
+});
+
+describe('VPA', () => {
+    it('adds a line to the usage tooltip and a marker to the phone card when VPA owns the requests', () => {
+        const r = row({ cpuUse: 10, memUse: 20, vpa: 'api' }, VIDX);
+        expect(usageTitle(VIDX, r).split('\n').at(-1)).toBe('Requests managed by VPA api');
+        expect(usageCardLine(VIDX, r)!.text).toBe('cpu 10m · mem 20Mi · VPA');
+        const none = row({ cpuUse: 10, memUse: 20, vpa: '' }, VIDX);
+        expect(usageTitle(VIDX, none)).not.toContain('VPA');
+        expect(usageCardLine(VIDX, none)!.text).toBe('cpu 10m · mem 20Mi');
+        expect(usageTitle(IDX, r)).not.toContain('VPA');
     });
 });

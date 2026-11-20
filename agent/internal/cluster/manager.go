@@ -518,13 +518,24 @@ type Scope struct {
 	clusters []string // empty = every selected cluster
 	held     map[string]func()
 	closed   bool
+	bg       bool          // background scope (protocol.ViewQuery.Background): see runner.acquireBg
 	ev       *ObjectEvents // non-nil: the scope of one object's events (gvr is ingest.ObjectEventsGVR)
 	err      error         // the last acquire error of an events scope (guarded by reconcileMu)
 }
 
 // OpenScope references the kind's watch on every cluster in scope that serves it.
 func (m *Manager) OpenScope(gvr string, clusters []string) *Scope {
-	s := &Scope{m: m, gvr: gvr, clusters: clusters, held: map[string]func(){}}
+	return m.openScope(gvr, clusters, false)
+}
+
+// OpenBackgroundScope is OpenScope for a side subscription (protocol.ViewQuery.Background): its references do not
+// keep a watch retrying after a terminal LIST error, and do not unpark a parked one.
+func (m *Manager) OpenBackgroundScope(gvr string, clusters []string) *Scope {
+	return m.openScope(gvr, clusters, true)
+}
+
+func (m *Manager) openScope(gvr string, clusters []string, bg bool) *Scope {
+	s := &Scope{m: m, gvr: gvr, clusters: clusters, held: map[string]func(){}, bg: bg}
 	m.mu.Lock()
 	m.scopes[s] = struct{}{}
 	m.mu.Unlock()
@@ -620,7 +631,7 @@ func (m *Manager) reconcile(s *Scope) {
 		if _, ok := r.serves(s.gvr); !ok {
 			continue
 		}
-		rel, err := r.acquire(s.gvr)
+		rel, err := r.acquireBg(s.gvr, s.bg)
 		if err != nil {
 			m.log.Debug("watch not started", "cluster", id, "gvr", s.gvr, "err", err.Error())
 			continue

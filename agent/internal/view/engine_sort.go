@@ -212,7 +212,18 @@ func (e *Engine) buildCmp(n *Norm, v *View) cmpFn {
 			})
 		case ingest.SrcCell:
 			idx := c.Idx
-			if c.Type == protocol.ColInt || c.Type == protocol.ColTime {
+			if c.Unit != "" { // a unit cell below zero is missing (encoded nil): last in both directions, as usage cells
+				keys = append(keys, func(a, b *entry) int {
+					na, nb := a.row.Cell(idx).N, b.row.Cell(idx).N
+					if ma, mb := na < 0, nb < 0; ma != mb {
+						if ma {
+							return 1
+						}
+						return -1
+					}
+					return dir(cmp.Compare(na, nb), desc)
+				})
+			} else if c.Type == protocol.ColInt || c.Type == protocol.ColTime {
 				keys = append(keys, func(a, b *entry) int { return dir(cmp.Compare(a.row.Cell(idx).N, b.row.Cell(idx).N), desc) })
 			} else {
 				keys = append(keys, func(a, b *entry) int { return dir(cmpHandle(a.row.Cell(idx).S, b.row.Cell(idx).S), desc) })

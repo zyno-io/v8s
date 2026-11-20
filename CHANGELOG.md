@@ -8,6 +8,7 @@ release notes when the tag has no annotation.
 ### Added
 
 - Vulnerabilities: **Unknown** in the Exposed via column. While a cluster's Services, endpoints, pods or Ingresses are still loading, or cannot be read with your permissions, its images show `?` instead of `-`; they never count as **Not exposed**, the filter offers **Unknown** to find them, and the list re-reads every 10 s a few times until they resolve.
+- **Vertical Pod Autoscaler.** Pods whose requests VPA set (the admission controller's `vpaUpdates` annotation) show a **VPA** tag just before the usage block. The usage tooltip names the VPA, so high usage against the request is clearly VPA's to handle. The tag is coloured by the VPA's status: green **Provided**, amber **LowConfidence** or **NoPodsMatched**, red **ConfigUnsupported**, grey while pending. The column can be sorted. It appears only when a selected cluster has a pod that VPA manages, so clusters without VPA, or with VPA installed but unused, keep the full width. The pod's Overview shows the VPA's recommendation for each container (target, lower, upper, uncapped) next to the current request, with an **Open VPA** button. VerticalPodAutoscalers get a curated list: target, update mode, status, and the target, lower and upper CPU and memory as a usage block. Their detail view shows each container's recommendation. VPA objects are watched only while a VPA view is open; the pod tag comes from the pod itself, with no extra reads.
 
 ### Fixed
 

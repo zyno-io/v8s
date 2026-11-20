@@ -208,6 +208,12 @@ func cInt(key, label string, w int) Col {
 	return Col{Column: protocol.Column{Key: key, Type: protocol.ColInt, Label: label, Width: w, Align: "right"}, Src: SrcCell, Sortable: true, Filterable: true}
 }
 
+// ColUnitInt is a plain integer cell the UI draws in its dense usage block (unit "millicores" | "MiB" | "permille").
+// short is the label inside the block ("" = none). A negative cell is sent as nil (no data), not -1.
+func ColUnitInt(key, label, short, unit string, w int) Col {
+	return Col{Column: protocol.Column{Key: key, Type: protocol.ColInt, Label: label, Short: short, Width: w, Align: "right", Unit: unit},
+		Src: SrcCell, Sortable: true}
+}
 func cTime(key, label string, w int) Col {
 	return Col{Column: protocol.Column{Key: key, Type: protocol.ColTime, Label: label, Width: w, Align: "right"}, Src: SrcCell, Sortable: true}
 }

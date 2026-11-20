@@ -161,3 +161,33 @@ func TestListerWatcherProjectsBeforeReflector(t *testing.T) {
 		t.Fatal("no event")
 	}
 }
+
+func TestVPAName(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"Pod resources updated by api: container 0: cpu request, memory request", "api"},
+		{"Pod resources updated by api-vpa: container 0: cpu request; container 1: memory request", "api-vpa"},
+		{"Pod resources updated by solo", "solo"},
+		{"Pod resources updated by  spaced : container 0: cpu request", "spaced"},
+		{"Pod resources updated by : container 0: cpu request", ""},
+		{"updated by api: container 0", ""},
+		{"", ""},
+	} {
+		if got := VPAName(tc.in); got != tc.want {
+			t.Errorf("VPAName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestProjectVPACell(t *testing.T) {
+	p := mkPod(corev1.PodRunning, 1, ctr("c", true, 2, running))
+	p.Spec.NodeName = "node-1"
+	p.Annotations = map[string]string{"vpaUpdates": "Pod resources updated by api: container 0: cpu request, memory request"}
+	r := Project(p)
+	if r.VPA().Value() != "api" || r.Node().Value() == "" || r.Node().Value() != "node-1" || r.Restarts() != 2 || r.Status().Value() != "Running" {
+		t.Fatalf("vpa %q node %q restarts %d status %q", r.VPA().Value(), r.Node().Value(), r.Restarts(), r.Status().Value())
+	}
+	p.Annotations = nil
+	if r := Project(p); r.VPA().Value() != "" || r.Node().Value() != "node-1" {
+		t.Fatalf("no annotation: vpa %q node %q", r.VPA().Value(), r.Node().Value())
+	}
+}

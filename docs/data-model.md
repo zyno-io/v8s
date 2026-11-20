@@ -65,7 +65,7 @@ Each resource type has a **view spec** (columns, projection, sort keys, actions,
 | Namespace | Curated | P1 | status, labels; create, delete (type-to-confirm) |
 | Node | Curated | P1 | status, roles, version, CPU/mem capacity and allocatable, pods, taints, age; cordon/uncordon (P2), drain (P2), node shell (P2) |
 | Event | Curated | P1 | type, reason, object, message, count, last seen, source; global stream is Warning-only; all events of one object on demand in its Events tab |
-| Pod | Curated | P1 | ready, status reason, restarts, node, IP, age, QoS; logs, exec (P2), delete, evict, debug container (P2) |
+| Pod | Curated | P1 | ready, status reason, restarts, VPA, node, IP, age, QoS; logs, exec (P2), delete, evict, debug container (P2) |
 | Deployment | Curated | P1 | ready/up-to-date/available, images, age; scale, restart, rollback (P2), pause/resume |
 | ReplicaSet | Curated | P1 | desired/current/ready, owner; revision history for rollback |
 | StatefulSet | Curated | P1 | ready, update strategy/partition; scale, restart |
@@ -101,7 +101,8 @@ Each resource type has a **view spec** (columns, projection, sort keys, actions,
 | --- | --- | --- |
 | Gateway, GatewayClass, HTTPRoute, GRPCRoute (`gateway.networking.k8s.io/v1`) | Curated | P3 |
 | cert-manager Certificate, Issuer, ClusterIssuer, CertificateRequest | Generic+ | P3 |
-| VerticalPodAutoscaler, KEDA ScaledObject | Generic+ | P5 |
+| VerticalPodAutoscaler (`autoscaling.k8s.io/v1`) | Curated | P5 |
+| KEDA ScaledObject | Generic+ | P5 |
 | Argo CD Application | Generic+ (curated later via module) | P5 |
 | Cilium CiliumNetworkPolicy, CiliumClusterwideNetworkPolicy | Generic+ | P5 (with Hubble) |
 
@@ -129,6 +130,15 @@ Node columns: `cpuUse` and `memUse` are the node's usage (NodeMetrics), `cpuPctA
 Overview capacity: the synthetic `v8s/v1/capacity` view has one row per cluster. The agent computes it with a throttled full scan of the pod and node stores (at most every 2 s, only while an Overview has it open, and only when a store's change counter or the node usage snapshot moved; about 0.75 ms at 50k pods and 5k nodes). The denominator is the allocatable of **all** nodes, control-plane and cordoned ones included (as `kubectl describe nodes`). Requests and limits are summed over pods that are bound to a node and have not finished (Succeeded and Failed pods and unscheduled pods are skipped); a pod without a limit adds nothing to the limits and is counted in `podsNoCPULim` / `podsNoMemLim`. Usage is the sum of the node metrics that report, and is -1 when none does.
 
 Cells: `null` means no data (no metrics yet, a pod metrics-server does not report such as Pending or Completed, or a sample older than the pod), `-1` means n/a (no request, no limit or no node to divide by). Missing values sort last in both directions.
+
+## Vertical Pod Autoscaler
+
+v8s shows which pods have their requests managed by VPA, and what VPA recommends, without a cross-store join on the pod path:
+
+- **Managed pods.** The VPA admission controller stamps each pod whose requests it set with the `vpaUpdates` annotation (`Pod resources updated by <vpa>: container 0: cpu request, memory request`). The pod projection reads that one annotation and keeps the VPA name in the `vpa` dict cell (interned and shared by the pods of one VPA; the one-IP pod row stays in the 320 B size class). The Pods table shows a `VPA` tag right before the usage block, and the usage tooltip names the VPA. A VPA in `Off` mode sets no requests, so its pods are not tagged; its recommendations are still on the VPA page.
+- **Tag colour.** While the column is on screen the Pods page subscribes to the VPA list (a handful of rows; the agent watches VPAs only while it is open) and colours each tag by its VPA's status and tone: `Provided` green, `LowConfidence` and `NoPodsMatched` amber, `ConfigUnsupported` red, `Pending` (or not loaded yet) grey. The status index is replaced only when a status or tone changes, not on recommendation updates, and the tone is part of the row's memo key, so only rows whose tag changes re-render.
+- **Column only where VPA is used.** The pod store counts its VPA-managed rows (a row flag set at projection, one test per add, update or delete) and reports only the none ↔ some edges; the cluster state carries it as `vpa`. The Pods table shows the column only while a selected cluster has such a pod, so a VPA that is installed but unused (or only in `Off` mode) costs no width. Otherwise the Columns menu lists it disabled with the reason.
+- **Recommendations.** VerticalPodAutoscaler is a curated mode B kind, watched only while a VPA view is open. Columns: target, update mode (`Auto` when unset), status (`Provided`, `LowConfidence`, `NoPodsMatched`, `ConfigUnsupported`, `Pending`, from the status conditions), and the recommendation's target, lower bound and upper bound for CPU (millicores) and memory (MiB), summed over containers and drawn as a usage block (`—` without a recommendation). The detail view lists them per container with the uncapped target. A managed pod's Overview fetches its VPA once with `object.get` and compares each container's request to the recommendation; a request outside the lower to upper range is highlighted.
 
 ## Generic CRD support
 

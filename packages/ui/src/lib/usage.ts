@@ -56,9 +56,11 @@ export function usageTitle(u: UsageIdx, row: Row): string {
     }
     const node = u.node >= 0 && typeof row[u.node] === 'string' ? (row[u.node] as string) : '';
     const n = (i: number) => num(row, i);
+    const vpa = u.vpa >= 0 && typeof row[u.vpa] === 'string' ? (row[u.vpa] as string) : '';
     return [
         line('CPU', cpuText, n(u.cpuUse), n(u.cpuReq), n(u.cpuLim), n(u.cpuPctReq), n(u.cpuPctLim), n(u.cpuPctNode), node),
-        line('MEM', memText, n(u.memUse), n(u.memReq), n(u.memLim), n(u.memPctReq), n(u.memPctLim), n(u.memPctNode), node)
+        line('MEM', memText, n(u.memUse), n(u.memReq), n(u.memLim), n(u.memPctReq), n(u.memPctLim), n(u.memPctNode), node),
+        ...(vpa ? [`Requests managed by VPA ${vpa}`] : [])
     ].join('\n');
 }
 
@@ -71,7 +73,8 @@ export function usageCardLine(u: UsageIdx, row: Row): { text: string; tone: 'war
         u.cpuPctAlloc >= 0
             ? [usageTone('node', num(row, u.cpuPctAlloc)), usageTone('node', num(row, u.memPctAlloc))]
             : [usageTone('lim', num(row, u.cpuPctLim)), usageTone('lim', num(row, u.memPctLim))];
-    return { text: `cpu ${cpu}m · mem ${mem}Mi`, tone: tones.includes('danger') ? 'danger' : tones.includes('warning') ? 'warning' : '' };
+    const vpa = u.vpa >= 0 && row[u.vpa] ? ' · VPA' : '';
+    return { text: `cpu ${cpu}m · mem ${mem}Mi${vpa}`, tone: tones.includes('danger') ? 'danger' : tones.includes('warning') ? 'warning' : '' };
 }
 
 const BARS = 'green below 70 %, amber from 70 %, red from 90 %';

@@ -202,6 +202,33 @@ func TestForbiddenViewHeldWatchKeepsRetrying(t *testing.T) {
 	}
 }
 
+// A background reference (the Pods table's VPA status lookup) must neither unpark a refused watch nor keep it
+// retrying: the user is not looking at that kind.
+func TestForbiddenBackgroundRefDoesNotRetry(t *testing.T) {
+	m, d := newDenyManager(t, time.Hour)
+	waitFor(t, "parked", func() bool { return parked(m) })
+	n := d.calls.Load()
+	rel, err := m.runnerForTest("prod-us").acquireBg(denyGVR, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rel()
+	time.Sleep(300 * time.Millisecond)
+	if !parked(m) || d.calls.Load() != n {
+		t.Fatalf("background ref: parked=%v, calls %d -> %d", parked(m), n, d.calls.Load())
+	}
+	// A view acquiring it alongside still unparks it and keeps it retrying.
+	rel2, err := m.runnerForTest("prod-us").acquire(denyGVR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rel2()
+	waitFor(t, "retries while a view holds it", func() bool { return d.calls.Load() >= n+3 })
+	if parked(m) {
+		t.Fatal("a watch held by a view must not be parked")
+	}
+}
+
 // A 401 is often transient (an exec credential being refreshed) and cluster-wide: it must not park a watch, which
 // would freeze the kind for ForbiddenRetry after the credential recovers.
 func TestUnauthorizedDoesNotPark(t *testing.T) {

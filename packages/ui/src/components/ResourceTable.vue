@@ -9,6 +9,7 @@ import { useRouter } from 'vue-router';
 import type { ColPlan, TablePlan, UsageSub } from '@/lib/columns.ts';
 import type { DrawerTab } from '@/lib/route.ts';
 import type { CellContent, TableDecor } from '@/lib/table-decor.ts';
+import type { VpaIndex, VpaState } from '@/lib/vpa-status.ts';
 
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { actionById } from '@/lib/actions.ts';
@@ -24,6 +25,7 @@ import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
 import { usageCardLine, usageHint, usageTitle } from '@/lib/usage.ts';
 import { isPhone, ROW_H_DESKTOP, ROW_H_PHONE, windowPad } from '@/lib/viewport.ts';
+import { vpaKey } from '@/lib/vpa-status.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { isFiltered, selectionKey, useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -36,6 +38,8 @@ const props = defineProps<{
     namespaced: boolean;
     decor?: TableDecor | null;
     keyActions?: boolean;
+    /** Pods: the status of each VPA, which colours the row's VPA tag (only rows whose tag changes re-render). */
+    vpaIndex?: VpaIndex | null;
 }>();
 const emit = defineEmits<{ resize: [key: string, width: number] }>();
 
@@ -93,9 +97,13 @@ interface Item {
     dc: (CellContent | null)[] | null;
     /** Decor memo key for state outside the row. */
     x: number | string;
+    /** Pods: the status of the row's VPA (undefined: no VPA, or its status is not known yet). */
+    vs: VpaState | undefined;
 }
 
 const tick = shallowRef(0);
+/** Row index of the pods `vpa` column, or -1. */
+const vpaIdx = computed(() => props.plan.cols.find(c => c.kind === 'vpa')?.idx ?? -1);
 let allOld = false;
 /** Captured when the slice is computed; age cells render from it so they only change together with the memo key. */
 let nowMs = Date.now();
@@ -112,6 +120,8 @@ const slice = computed<Item[]>(() => {
     const sel = ui.value.selected;
     const foc = ui.value.focusId;
     const p = props.plan;
+    const vx = props.vpaIndex;
+    const vci = vx && vx.size ? vpaIdx.value : -1;
     nowMs = Date.now();
     let old = true;
     const out: Item[] = [];
@@ -135,6 +145,11 @@ const slice = computed<Item[]>(() => {
             if (decor.cell) dc = p.cols.map(c => decor.cell!(c, row));
             if (decor.rowKey) x = decor.rowKey(row);
         }
+        let vs: VpaState | undefined;
+        if (vci >= 0 && row && row[vci]) {
+            vs = vx!.get(vpaKey(row[p.clusterIdx] as string, row[p.nsIdx] as string, row[vci] as string));
+            if (vs) x = `${x}|${vs.tone}|${vs.status}`;
+        }
         out.push({
             i,
             id,
@@ -144,7 +159,8 @@ const slice = computed<Item[]>(() => {
             foc: id !== 0 && id === foc,
             age,
             dc,
-            x
+            x,
+            vs
         });
     }
     allOld = old;
@@ -882,6 +898,15 @@ function metricText(c: ColPlan, row: Row): string {
                             >
                             <template v-else-if="c.kind === 'ready'"
                                 >{{ it.row[c.idx] }}/{{ containersIdx >= 0 ? it.row[containersIdx] : '' }}</template
+                            >
+                            <template v-else-if="c.kind === 'vpa'"
+                                ><span
+                                    v-if="it.row[c.idx]"
+                                    class="tag"
+                                    :class="it.vs?.tone ?? 'neutral'"
+                                    :title="`Requests set by VerticalPodAutoscaler ${it.row[c.idx]}${it.vs ? ` (${it.vs.status})` : ''}. VPA sizes them from observed usage, so usage above the request is expected. Open the pod to see the recommendation.`"
+                                    >VPA</span
+                                ></template
                             >
                             <template v-else-if="c.kind === 'age'">{{ formatAge(n(it.row[c.idx]), nowMs) }}</template>
                             <template v-else>{{

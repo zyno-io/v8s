@@ -32,6 +32,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/updatecheck"
 	"github.com/zyno-io/v8s/agent/internal/version"
 	"github.com/zyno-io/v8s/agent/internal/view"
+	_ "github.com/zyno-io/v8s/agent/internal/vpa"
 	"github.com/zyno-io/v8s/agent/internal/wire"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 	"helm.sh/helm/v4/pkg/action"

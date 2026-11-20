@@ -10,12 +10,13 @@ import { getPodsAll, kinds } from '@/lib/agent.ts';
 import { phaseColor } from '@/lib/colors.ts';
 import { guessUsage, planColumns } from '@/lib/columns.ts';
 import { formatCount } from '@/lib/format.ts';
-import { kindLabel, labelFromGvr } from '@/lib/kinds.ts';
+import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
 import { keyAction } from '@/lib/row-keys.ts';
 import { decorFor } from '@/lib/table-decor.ts';
 import { isPhone, usePageVisible } from '@/lib/viewport.ts';
+import { useVpaIndex, vpaWantKey } from '@/lib/vpa-status.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { isFiltered, useTableStore } from '@/stores/table.ts';
@@ -50,15 +51,26 @@ const showCluster = computed(() => clusters.activeIds.length > 1);
 const decor = decorFor(props.gvr);
 // Every active cluster without a metrics API: the metrics columns are dropped (the Columns menu lists them disabled).
 const metricsOff = computed(() => clusters.states.length > 0 && clusters.states.every(s => s.metrics === 'absent'));
+// Pods: the VPA column shows only while some active cluster has a pod whose requests a VPA set (installed-but-unused stays hidden).
+const vpaOff = computed(() => props.gvr === 'v1/pods' && !clusters.states.some(s => s.vpa));
 const plan = computed(() =>
     planColumns(handle.columns.value, {
         gvr: props.gvr,
         showCluster: showCluster.value,
         layout: settings.layout(props.gvr),
         decor,
-        metricsOff: metricsOff.value
+        metricsOff: metricsOff.value,
+        vpaOff: vpaOff.value
     })
 );
+// Pods: the VPA list (a handful of rows, watched by the agent only while subscribed) colours the VPA tags by the VPA's status.
+// Subscribed only while the VPA column is on screen.
+const vpaWant = computed(() => {
+    if (props.gvr !== 'v1/pods' || !plan.value.cols.some(c => c.kind === 'vpa')) return '';
+    const g = resolveKind(kinds.value, 'VerticalPodAutoscaler', 'autoscaling.k8s.io')?.gvr;
+    return g ? vpaWantKey(g, clusters.activeIds) : '';
+});
+const vpaIndex = useVpaIndex(vpaWant);
 
 // Usage is polled by the agent only while this page needs it: a metrics column on screen or a sort by one (sorting needs a
 // value for every row, not just the visible ones), and the tab not hidden for 30 s.
@@ -256,6 +268,7 @@ function star() {
                 :title="title"
                 :namespaced="namespaced"
                 :decor="decor"
+                :vpa-index="vpaIndex"
                 key-actions
                 @resize="saveWidth"
             />

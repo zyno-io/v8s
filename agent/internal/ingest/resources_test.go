@@ -202,7 +202,7 @@ func TestPodModuleMatchesProtocolColumns(t *testing.T) {
 			t.Errorf("%s: SrcRes columns need no metrics", c.Key)
 		}
 	}
-	if m.NCells != 5 {
+	if m.NCells != 6 {
 		t.Fatalf("pod cells = %d, the usage columns are not cells", m.NCells)
 	}
 }

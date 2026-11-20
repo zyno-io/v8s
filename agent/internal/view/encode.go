@@ -47,7 +47,11 @@ func EncodeRow(enc *msgpack.Encoder, d Dict, mod *ingest.Module, r *PendRow) err
 			case protocol.ColStr:
 				_ = enc.EncodeString(cell.S.Value())
 			default: // int, time
-				_ = enc.EncodeInt(cell.N)
+				if c.Unit != "" && cell.N < 0 { // a usage-block cell without data (e.g. a VPA with no recommendation)
+					_ = enc.EncodeNil()
+				} else {
+					_ = enc.EncodeInt(cell.N)
+				}
 			}
 		}
 	}

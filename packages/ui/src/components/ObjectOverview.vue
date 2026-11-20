@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import type { ObjectPayload, ObjectRef } from '@v8s/client';
 
-import { computed, ref } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 
 import type { ParsedObject } from '@/lib/object-session.ts';
 
 import ProtectedMark from '@/components/ProtectedMark.vue';
+import VpaRecommendations from '@/components/VpaRecommendations.vue';
+import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { formatAge } from '@/lib/format.ts';
+import { resolveKind } from '@/lib/kinds.ts';
+import { errorText } from '@/lib/mutations.ts';
 import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
+import { isVpaGvr, podRequests, VPA_GVR, vpaNameFromAnnotation, vpaRecommendations } from '@/lib/vpa.ts';
 
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload; parsed: ParsedObject | null }>();
 const emit = defineEmits<{ openSource: [kind: string, name: string, namespace: string | undefined] }>();
@@ -35,6 +40,48 @@ function toggleValue(k: string) {
     if (!next.delete(k)) next.add(k);
     expanded.value = next;
 }
+
+// ---- Vertical Pod Autoscaler ----
+const isVpa = computed(() => isVpaGvr(props.target.gvr));
+const ownRecs = computed(() => (isVpa.value ? vpaRecommendations(props.parsed) : []));
+const vpaUpdates = computed(() =>
+    props.target.gvr === 'v1/pods'
+        ? vpaNameFromAnnotation((meta.value.annotations as Record<string, unknown> | undefined)?.vpaUpdates as string | undefined)
+        : null
+);
+const requests = computed(() => (vpaUpdates.value ? podRequests(props.parsed) : []));
+const vpaObj = shallowRef<Record<string, unknown> | null>(null);
+const vpaMsg = ref('');
+const vpaRecs = computed(() => vpaRecommendations(vpaObj.value));
+// Fetched once per pod open (and again only when the VPA's name changes), not on every pod resourceVersion bump.
+watch(
+    () => (vpaUpdates.value ? `${props.target.cluster}|${props.target.namespace}|${vpaUpdates.value.name}` : ''),
+    async key => {
+        vpaObj.value = null;
+        vpaMsg.value = '';
+        if (!key) return;
+        const name = vpaUpdates.value!.name;
+        const gvr = resolveKind(kinds.value, 'VerticalPodAutoscaler', 'autoscaling.k8s.io')?.gvr ?? VPA_GVR;
+        vpaMsg.value = 'Loading the recommendation…';
+        try {
+            const p = await getAgent().call<ObjectPayload>('object.get', {
+                cluster: props.target.cluster,
+                gvr,
+                namespace: props.target.namespace,
+                name
+            });
+            if (key !== `${props.target.cluster}|${props.target.namespace}|${vpaUpdates.value?.name}`) return;
+            const { load } = await import('js-yaml');
+            const doc = load(p.yaml);
+            vpaObj.value = doc && typeof doc === 'object' ? (doc as Record<string, unknown>) : null;
+            vpaMsg.value = '';
+        } catch (e) {
+            if (key === `${props.target.cluster}|${props.target.namespace}|${vpaUpdates.value?.name}`)
+                vpaMsg.value = `Could not read VPA ${name}: ${errorText(e)}`;
+        }
+    },
+    { immediate: true }
+);
 const isSecret = computed(() => props.target.gvr === 'v1/secrets');
 </script>
 
@@ -93,6 +140,26 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dt class="lbl">Version</dt>
             <dd class="mono">{{ payload.resourceVersion }}</dd>
         </dl>
+
+        <section v-if="isVpa" data-testid="vpa-section">
+            <h3 class="lbl">Recommendations</h3>
+            <VpaRecommendations v-if="ownRecs.length" :recommendations="ownRecs" />
+            <p v-else class="muted none">No recommendation yet</p>
+        </section>
+
+        <section v-if="vpaUpdates" data-testid="vpa-pod">
+            <h3 class="lbl">Vertical Pod Autoscaler</h3>
+            <p class="vpa">
+                Requests set by VPA <b>{{ vpaUpdates.name }}</b>
+                <button class="btn sm" type="button" @click="emit('openSource', 'VerticalPodAutoscaler', vpaUpdates.name, target.namespace)">
+                    Open VPA
+                </button>
+            </p>
+            <p v-if="vpaUpdates.updated" class="muted none">{{ vpaUpdates.updated }}</p>
+            <VpaRecommendations v-if="vpaRecs.length" :recommendations="vpaRecs" :requests="requests" />
+            <p v-else-if="vpaMsg" class="muted none">{{ vpaMsg }}</p>
+            <p v-else-if="vpaObj" class="muted none">No recommendation yet</p>
+        </section>
 
         <section v-if="conditions.length">
             <h3 class="lbl">Conditions</h3>
@@ -330,6 +397,13 @@ h3 {
 }
 .row {
     margin-top: 8px;
+}
+.vpa {
+    margin: 0 0 4px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
 }
 .note {
     font-size: 12px;
