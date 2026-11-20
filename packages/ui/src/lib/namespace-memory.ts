@@ -5,17 +5,7 @@ import { useTableStore } from '@/stores/table.ts';
 
 import type { NamespaceFilters } from './remember.ts';
 
-import {
-    compactFilters,
-    connectionKey,
-    KEY_NAMESPACES,
-    moveEntry,
-    parseEntries,
-    readJson,
-    setKindFilter,
-    touchEntry,
-    writeJson
-} from './remember.ts';
+import { connectionKey, KEY_NAMESPACES, moveEntry, parseEntries, readJson, setKindFilter, touchEntry, upsertEntry, writeJson } from './remember.ts';
 
 let installed = false;
 
@@ -56,11 +46,16 @@ export function installNamespaceMemory(): void {
             currentIds = i;
             if (!k) return;
             if (sameSet && prev && prev !== k) {
-                // Same clusters, new name (a group was created, renamed or deleted, or links changed): keep what is on screen.
-                writeJson(KEY_NAMESPACES, moveEntry(entries(), prev, k, compactFilters(table.namespaceFilters())));
+                // Same clusters, new name: a group was created, renamed or deleted, its members were edited, or links changed. The
+                // filters follow, from storage (every change is already saved there, also by other tabs; a rename already moved them).
+                // A group that still exists (its members were edited) keeps its own entry for when it is connected again.
+                const ns = saved(prev) ?? saved(k);
+                const prevGroupLives = prev.startsWith('g:') && Object.hasOwn(clusters.groupMap, prev.slice(2));
+                writeJson(KEY_NAMESPACES, prevGroupLives ? upsertEntry(entries(), k, ns) : moveEntry(entries(), prev, k, ns));
                 return;
             }
-            table.applyNamespaceFilters(saved(k) ?? {});
+            // A group seen for the first time starts from what was saved for its clusters as a plain set (`i` is that key).
+            table.applyNamespaceFilters(saved(k) ?? (k.startsWith('g:') ? saved(i) : null) ?? {});
             writeJson(KEY_NAMESPACES, touchEntry(entries(), k));
         },
         { immediate: true }

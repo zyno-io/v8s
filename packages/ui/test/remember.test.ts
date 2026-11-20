@@ -9,6 +9,7 @@ import {
     touchEntry,
     parseEntries,
     parseSelection,
+    renameGroupEntries,
     resolveChecked,
     restoreRoute,
     routeToRemember,
@@ -123,5 +124,14 @@ describe('route memory', () => {
         expect(restoreRoute(true, '/', {}, null)).toBeNull();
         expect(restoreRoute(true, '/', {}, '//evil.example')).toBeNull();
         expect(restoreRoute(true, '/', {}, '/')).toBeNull();
+    });
+});
+
+describe('renameGroupEntries', () => {
+    const e = (key: string, ns: Record<string, string[]>) => ({ key, ns });
+    it("moves a renamed group's filters to the new name, and is a no-op without them", () => {
+        const base = [e('a,b', { p: ['1'] }), e('g:duo', { p: ['2'] })];
+        expect(renameGroupEntries(base, 'duo', 'pair')).toEqual([e('g:pair', { p: ['2'] }), e('a,b', { p: ['1'] })]);
+        expect(renameGroupEntries(base, 'other', 'x')).toEqual(base);
     });
 });

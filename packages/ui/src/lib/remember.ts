@@ -118,6 +118,17 @@ export function moveEntry(entries: readonly NamespaceEntry[], from: string, to: 
     );
 }
 
+/** A group was renamed: its saved filters follow it (`g:<from>` → `g:<to>`); no-op when it has none. */
+export function renameGroupEntries(entries: readonly NamespaceEntry[], from: string, to: string): NamespaceEntry[] {
+    const e = entries.find(x => x.key === 'g:' + from);
+    return e ? moveEntry(entries, e.key, 'g:' + to, e.ns) : [...entries];
+}
+
+/** renameGroupEntries on the stored list. */
+export function renameStoredGroup(from: string, to: string): void {
+    writeJson(KEY_NAMESPACES, renameGroupEntries(parseEntries(readJson(KEY_NAMESPACES)), from, to));
+}
+
 export function parseEntries(raw: unknown): NamespaceEntry[] {
     if (!Array.isArray(raw)) return [];
     const out: NamespaceEntry[] = [];
