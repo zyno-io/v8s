@@ -73,7 +73,7 @@ version counters), don't parse large payloads on the main thread. See `docs/perf
 
 Agent data path (`agent/internal/`):
 
-- `ingest` — projecting ListerWatchers: objects are projected to compact rows per page/event *before* caching (protobuf for
+- `ingest` — projecting ListerWatchers: objects are projected to compact rows per page/event _before_ caching (protobuf for
   built-ins, Table mode for generic CRDs). Resource kinds register as `ingest.Module`s (`ingest.Register`).
 - `store` → `view` — handle-addressed row stores with indexes; materialized sorted/filtered views and windows.
 - `problems` — detector engine; detectors register via `problems.Register`. Problems are a synthetic resource type in the
