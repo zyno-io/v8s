@@ -45,7 +45,8 @@ watch(d, async (v, old) => {
             v.type === 'scale' ? (v.current == null ? '' : String(v.current)) : v.type === 'rollback' ? String(Math.max(0, v.current - 1) || '') : '';
         await nextTick();
         if (!el.value?.open) el.value?.showModal();
-        el.value?.querySelector<HTMLElement>('input, button.primary, button.danger')?.focus();
+        const first = v.type === 'confirm' && v.cancelFirst && !v.phrase ? '[data-cancel]' : 'input, button.primary, button.danger';
+        el.value?.querySelector<HTMLElement>(first)?.focus();
     } else {
         if (el.value?.open) el.value.close();
         returnFocus?.focus?.();
@@ -118,7 +119,7 @@ async function run(fromHold = false) {
             </label>
             <p v-if="err" class="err" role="alert">{{ err }}</p>
             <div class="foot">
-                <button class="btn" type="button" @click="close()">Cancel</button>
+                <button class="btn" type="button" data-cancel @click="close()">Cancel</button>
                 <HoldButton
                     v-if="holdMode"
                     :label="d.type === 'confirm' ? d.confirmLabel : d.type === 'scale' ? 'Scale' : 'Roll back'"

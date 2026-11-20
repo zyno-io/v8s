@@ -11,7 +11,7 @@ vi.mock('../src/lib/drawer.ts', () => ({
     }
 }));
 
-import { escapeChain, installGlobalKeys, setListNav, type ListNav } from '../src/lib/keys.ts';
+import { escapeChain, installGlobalKeys, setListNav, setPageKeyHandler, type ListNav } from '../src/lib/keys.ts';
 import { useTableStore } from '../src/stores/table.ts';
 
 // Node has no DOM: the smallest stand-ins the key handler touches.
@@ -77,7 +77,41 @@ beforeEach(() => {
 afterEach(() => {
     uninstall();
     setListNav(null);
+    setPageKeyHandler(null);
     vi.unstubAllGlobals();
+});
+
+describe('inside an open native dialog', () => {
+    it('row keys and Ctrl+D do not reach the page', () => {
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const radio = new FakeEl('INPUT', 'r', 'radio');
+        radio.closest = () => ({}) as never;
+        key('d', radio, { ctrlKey: true });
+        key('o', radio);
+        expect(h).not.toHaveBeenCalled();
+    });
+});
+
+describe('Ctrl+D', () => {
+    it('reaches the page handler from the list, and is consumed when handled', () => {
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const e = key('d', list, { ctrlKey: true });
+        expect(h).toHaveBeenCalledTimes(1);
+        expect(e.preventDefault).toHaveBeenCalled();
+    });
+
+    it('is not consumed when the page declines, and ignores typing, Cmd+D and Shift', () => {
+        const h = vi.fn(() => false);
+        setPageKeyHandler(h);
+        expect(key('d', list, { ctrlKey: true }).preventDefault).not.toHaveBeenCalled();
+        h.mockClear();
+        key('d', filter, { ctrlKey: true });
+        key('d', list, { metaKey: true });
+        key('D', list, { ctrlKey: true, shiftKey: true });
+        expect(h).not.toHaveBeenCalled();
+    });
 });
 
 describe('Enter in the filter', () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccessResult, ObjectRef } from '@v8s/client';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import type { ActionDef } from '@/lib/actions.ts';
 
@@ -21,12 +21,18 @@ const props = defineProps<{
     gvr: string;
     targets: ObjectRef[];
     kindLabel: string;
-    /** `bar` renders buttons; `menu` renders one button that opens a list. */
-    variant: 'bar' | 'menu';
+    /** `bar` renders buttons; `menu` renders one button that opens a list; `key` renders nothing and runs `run`. */
+    variant: 'bar' | 'menu' | 'key';
+    /** variant `key`: the action id to run on mount (after its access check), through the same confirmations as a click. */
+    run?: string;
     currentReplicas?: number;
     currentRevision?: number;
 }>();
-const emit = defineEmits<{ done: [action: string, ok: boolean] }>();
+const emit = defineEmits<{
+    done: [action: string, ok: boolean];
+    /** variant `key`: the request ended without running (declined, denied, or its dialog was cancelled). */
+    end: [];
+}>();
 
 const ui = useUiStore();
 const clusters = useClustersStore();
@@ -44,7 +50,7 @@ const actions = computed(() => {
 // Access: one check per action and distinct (cluster, namespace[, name]); a bulk selection checks at namespace level.
 const results = ref<Map<string, AccessResult[]>>(new Map());
 let seq = 0;
-async function refreshAccess() {
+async function refreshAccess(only?: string) {
     const my = ++seq;
     const single = props.targets.length === 1;
     const seen = new Map<string, ObjectRef>();
@@ -57,7 +63,7 @@ async function refreshAccess() {
     const out = new Map<string, AccessResult[]>();
     try {
         for (const a of actions.value) {
-            if (a.noCheck) continue;
+            if (a.noCheck || (only && a.id !== only)) continue;
             out.set(a.id, await checkAccess(refs.map(r => accessCheckFor(a, r))));
             if (my !== seq) return;
         }
@@ -72,7 +78,7 @@ watch(
     () => {
         clearTimeout(t);
         results.value = new Map();
-        if (props.targets.length) t = setTimeout(refreshAccess, 120);
+        if (props.targets.length && !props.run) t = setTimeout(refreshAccess, 120);
     },
     { immediate: true }
 );
@@ -93,6 +99,22 @@ function tip(a: ActionDef): string {
     return '';
 }
 const viaWrite = (a: ActionDef) => stateOf(a).viaWrite;
+
+// variant `key`: one-shot. Checks access for the one action, then opens its confirmation unless the page moved on meanwhile.
+let alive = true;
+onBeforeUnmount(() => (alive = false));
+onMounted(async () => {
+    if (props.variant !== 'key' || !props.run) return;
+    await refreshAccess(props.run);
+    if (!alive || ui.dialog) return emit('end');
+    const a = actions.value.find(x => x.id === props.run);
+    if (!a) return emit('end');
+    const st = stateOf(a);
+    if (st.disabled) {
+        ui.toast('warning', st.reason);
+        emit('end');
+    } else go(a);
+});
 
 const open = ref(false);
 /** In flight: a direct action (no dialog) must not fire twice from a double click. */
@@ -132,8 +154,12 @@ function go(a: ActionDef) {
     }
     if (a.client === 'portforward') {
         portForwardRequest.value = first;
+        if (props.variant === 'key') emit('end');
         return;
     }
+    // A key-triggered confirm: Cancel is the default button, so a stray Enter never runs it; the end of the request is signalled.
+    const viaKey = props.variant === 'key';
+    const keyExtras = viaKey ? { cancelFirst: true, onCancel: () => emit('end') } : {};
     const phraseFor = (typed: boolean) => (typed ? confirmPhrase(targets.length, first.name ?? '') : undefined);
 
     if (a.id === 'scale') {
@@ -175,6 +201,7 @@ function go(a: ActionDef) {
             note,
             locked: !!note,
             runAs: runsAs,
+            ...keyExtras,
             run: async () => finish(a.id, await runDelete(targets))
         };
         return;
@@ -185,7 +212,8 @@ function go(a: ActionDef) {
     const typed = isBulkOrCross(targets.length, clusterIds.length);
     // On a phone restart and trigger are never a single tap: hold to confirm.
     const hold = isPhone.value && (a.id === 'restart' || a.id === 'trigger');
-    if (typed || note || hold) {
+    // A keyboard shortcut is easy to press by accident (k9s confirms its keys too), so a key-triggered action always asks.
+    if (typed || note || hold || viaKey) {
         ui.dialog = {
             type: 'confirm',
             title: `${a.label.replace('…', '')} ${targets.length === 1 ? first.name : names(targets.length)}?`,
@@ -197,6 +225,7 @@ function go(a: ActionDef) {
             note,
             locked: !!note,
             runAs: runsAs,
+            ...keyExtras,
             run: doIt
         };
         return;
@@ -236,7 +265,7 @@ function pastTense(a: ActionDef): string {
             {{ a.label }}<span v-if="viaWrite(a)" class="tag warning wtag">write</span>
         </button>
     </div>
-    <div v-else class="amenu" @keydown.esc.stop="open && (open = false)">
+    <div v-else-if="variant === 'menu'" class="amenu" @keydown.esc.stop="open && (open = false)">
         <button class="btn sm" type="button" aria-haspopup="menu" :aria-expanded="open" data-testid="actions-menu" @click="open = !open">
             Actions
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">

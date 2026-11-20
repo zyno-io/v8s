@@ -91,6 +91,8 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
         }
         if (e.key === 'Escape') {
             if (ui.dialog || ui.paletteOpen || ui.createOpen) return; // those own Esc
+            // So do native <dialog> modals the store does not track (port-forward, drain, Helm): Esc closes only them.
+            if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return;
             // Esc inside the YAML editor only leaves the editor; it must never close the drawer over unsaved edits.
             if (e.target instanceof HTMLElement && e.target.closest('.cm-editor')) {
                 e.target.blur();
@@ -114,6 +116,27 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
                     void nextTick(() => listNav?.focusList(true));
                 }
             }
+            return;
+        }
+        // Native <dialog> modals the store does not track (port-forward, ...) own the keyboard while open.
+        if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return;
+        if (
+            e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey &&
+            !e.shiftKey &&
+            !e.defaultPrevented &&
+            e.key === 'd' &&
+            !isEditable(e.target) &&
+            !ui.commandBarOpen &&
+            !ui.shortcutsOpen &&
+            !ui.paletteOpen &&
+            !ui.createOpen &&
+            !ui.dialog &&
+            !clusters.popoverOpen
+        ) {
+            // Ctrl+D is k9s' Delete; the page decides (and the browser must not bookmark either way while a list is on screen).
+            if (pageHandler?.(e)) e.preventDefault();
             return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;

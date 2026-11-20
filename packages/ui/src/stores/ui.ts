@@ -30,6 +30,8 @@ export interface ConfirmDialog {
     run: () => Promise<void> | void;
     /** Called when the dialog is dismissed without running (Cancel, Esc, backdrop, replaced). */
     onCancel?: () => void;
+    /** Cancel gets the initial focus instead of the confirm button (key-triggered confirms; a typed phrase still focuses its input). */
+    cancelFirst?: boolean;
 }
 
 /** Extras every dialog kind can carry (protected-cluster / bulk confirmation). */
