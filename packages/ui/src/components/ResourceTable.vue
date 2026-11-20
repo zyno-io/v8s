@@ -108,6 +108,9 @@ let allOld = false;
 /** Captured when the slice is computed; age cells render from it so they only change together with the memo key. */
 let nowMs = Date.now();
 
+/** The focused row is rendered: the table drops its own focus ring (app.scss `.scroller.rowfocus`). */
+const focusInView = computed(() => slice.value.some(it => it.foc));
+
 const slice = computed<Item[]>(() => {
     void tick.value;
     const decor = props.decor;
@@ -784,7 +787,7 @@ function metricText(c: ColPlan, row: Row): string {
     <div
         ref="scroller"
         class="scroller"
-        :class="{ phone: isPhone }"
+        :class="{ phone: isPhone, rowfocus: focusInView }"
         :style="{ '--row-h': rowH + 'px', '--cols': plan.grid, '--minw': plan.minWidth + 'px' }"
         role="table"
         :aria-rowcount="handle.total.value + 1"

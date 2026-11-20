@@ -184,6 +184,9 @@ const groupLabel = (key: string): string => {
     return key;
 };
 
+/** The focused row is rendered: the list drops its own focus ring (app.scss `.scroller.rowfocus`). */
+const focusInView = computed(() => slice.value.some(it => it.foc));
+
 const slice = computed<Item[]>(() => {
     void tick.value;
     void h.version.value;
@@ -750,7 +753,7 @@ defineExpose({ scroller });
     <div
         ref="scroller"
         class="scroller"
-        :class="{ phone: isPhone }"
+        :class="{ phone: isPhone, rowfocus: focusInView }"
         :style="{ '--row-h': rowH + 'px', '--cols': GRID, '--minw': '900px' }"
         role="treegrid"
         aria-label="Problems"
