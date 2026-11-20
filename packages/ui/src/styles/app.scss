@@ -362,9 +362,11 @@ h1 {
     contain: strict;
     position: relative;
     outline-offset: -2px;
-    // A focused row draws its own ring: the whole-table ring on top of it would be a double outline.
-    &:has(.row.focus, .pcard.focus):focus,
-    &:has(.row.focus, .pcard.focus):focus-visible {
+    // A focused row draws its own ring: the whole-table ring on top of it would be a double outline. The table sets
+    // `rowfocus` while its focused row is rendered; a `:has(.row.focus)` here made Chrome re-check the scroller's style
+    // on every row inserted or removed, i.e. on every scroll frame.
+    &.rowfocus:focus,
+    &.rowfocus:focus-visible {
         outline: none;
     }
 }
