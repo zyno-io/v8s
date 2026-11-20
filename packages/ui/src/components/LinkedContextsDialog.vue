@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
+import type { SelectOption } from '@/lib/smart-select.ts';
+
+import SmartSelect from '@/components/SmartSelect.vue';
 import { linkAllPatch, pairOptions } from '@/lib/link-ops.ts';
 import { suggestLinks } from '@/lib/link-suggest.ts';
 import { errorText } from '@/lib/mutations.ts';
@@ -26,6 +29,12 @@ const current = computed(() => Object.entries(settings.links).sort((a, b) => nam
 const suggestions = computed(() => suggestLinks(candidates.value, settings.links, dismissedLinks(settings.doc)));
 const readOptions = computed(() => pairOptions(candidates.value, settings.links, write.value));
 const writeOptions = computed(() => pairOptions(candidates.value, settings.links, read.value));
+const choose = (list: readonly { id: string; name: string }[]): SelectOption<string>[] => [
+    { value: '', label: 'Choose…' },
+    ...list.map(o => ({ value: o.id, label: o.name }))
+];
+const readChoices = computed(() => choose(readOptions.value));
+const writeChoices = computed(() => choose(writeOptions.value));
 // A pick can become invalid after another link (the option disappears but the value stays): only valid picks link.
 const pairValid = computed(() => readOptions.value.some(o => o.id === read.value) && writeOptions.value.some(o => o.id === write.value));
 
@@ -159,18 +168,12 @@ function setAutoSwitch(e: Event) {
                 <form class="manual" @submit.prevent="linkManual">
                     <label class="sel"
                         ><span class="muted small">Read context</span>
-                        <select v-model="read" data-testid="lc-read">
-                            <option value="">Choose…</option>
-                            <option v-for="o in readOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
-                        </select></label
-                    >
+                        <SmartSelect v-model="read" :options="readChoices" block aria-label="Read context" data-testid="lc-read"
+                    /></label>
                     <label class="sel"
                         ><span class="muted small">Write context</span>
-                        <select v-model="write" data-testid="lc-write">
-                            <option value="">Choose…</option>
-                            <option v-for="o in writeOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
-                        </select></label
-                    >
+                        <SmartSelect v-model="write" :options="writeChoices" block aria-label="Write context" data-testid="lc-write"
+                    /></label>
                     <button class="btn sm" type="submit" :disabled="!pairValid" data-testid="lc-link">Link</button>
                 </form>
             </section>
@@ -275,16 +278,6 @@ p {
     flex: 1 1 150px;
     min-width: 0;
 }
-select {
-    font-family: inherit;
-    font-size: 12px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    background: var(--surface);
-    color: var(--text);
-    min-width: 0;
-}
 .auto {
     display: flex;
     align-items: center;
@@ -303,9 +296,6 @@ select {
 @media (pointer: coarse) {
     .r {
         min-height: 44px;
-    }
-    select {
-        height: 40px;
     }
 }
 </style>

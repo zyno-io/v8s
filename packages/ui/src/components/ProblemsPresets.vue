@@ -3,9 +3,11 @@ import type { ProblemClassInfo } from '@v8s/client';
 
 import { computed, ref } from 'vue';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { errorText } from '@/lib/mutations.ts';
 import { applyPresetPatch, currentClassSet, deletePresetPatch, presetDiff, presetsOf, savePresetPatch } from '@/lib/problems.ts';
 import { groupList } from '@/lib/settings.ts';
+import { listOptions } from '@/lib/smart-select.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
@@ -20,6 +22,7 @@ const btn = ref<HTMLButtonElement | null>(null);
 
 const presets = computed(() => Object.entries(presetsOf(settings.doc)).sort((a, b) => a[0].localeCompare(b[0])));
 const groups = computed(() => groupList(settings.groups).map(([g]) => g));
+const groupOptions = computed(() => listOptions(groups.value));
 const target = computed(() => pick.value || groups.value[0] || '');
 
 async function run(p: Record<string, unknown>, done: string) {
@@ -71,9 +74,14 @@ function close() {
                     <template v-if="groups.length">
                         <label class="lbl" for="preset-group">Save current classes for</label>
                         <div class="save">
-                            <select id="preset-group" v-model="pick" class="btn">
-                                <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
-                            </select>
+                            <SmartSelect
+                                id="preset-group"
+                                block
+                                :model-value="target"
+                                :options="groupOptions"
+                                aria-label="Cluster group"
+                                @update:model-value="pick = $event"
+                            />
                             <button class="btn primary" type="button" @click="save">Save</button>
                         </div>
                     </template>
@@ -131,8 +139,5 @@ function close() {
 .save {
     display: flex;
     gap: 8px;
-}
-.save select {
-    flex-grow: 1;
 }
 </style>

@@ -3,9 +3,11 @@ import type { ObjectRef, ShellHandle } from '@v8s/client';
 
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import { errorText, isCancelled } from '@/lib/mutations.ts';
 import { connectBlocker, containerChoice, DEBUG_IMAGE_KEY, DEFAULT_DEBUG_IMAGE, debugParams, execParams, looksLikeNoShell } from '@/lib/shell.ts';
+import { listOptions } from '@/lib/smart-select.ts';
 import { isPhone } from '@/lib/viewport.ts';
 import { withWriteConfirm } from '@/lib/write-confirm.ts';
 
@@ -18,6 +20,7 @@ type Kind = 'exec' | 'debug';
 const choice = computed(() => containerChoice(props.parsed));
 const blocker = computed(() => connectBlocker(props.parsed));
 const container = ref(choice.value.initial);
+const containerOptions = computed(() => listOptions(choice.value.names));
 
 function loadImage(): string {
     try {
@@ -133,16 +136,14 @@ function offerDebug() {
         <div class="sp-bar">
             <label class="sp-f">
                 <span class="muted">Container</span>
-                <select
+                <SmartSelect
                     v-model="container"
-                    class="field"
+                    :options="containerOptions"
                     data-testid="shell-container"
                     :disabled="connecting"
                     aria-label="Container"
                     @keydown.enter.prevent="start('exec')"
-                >
-                    <option v-for="c in choice.names" :key="c" :value="c">{{ c }}</option>
-                </select>
+                />
             </label>
             <button
                 type="button"

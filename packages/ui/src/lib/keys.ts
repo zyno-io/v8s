@@ -41,7 +41,8 @@ function isEditable(t: EventTarget | null): boolean {
     if (!(t instanceof HTMLElement)) return false;
     if (t.isContentEditable) return true;
     const tag = t.tagName;
-    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    // SmartSelect's trigger stands in for a native <select>, which the page shortcuts always left alone.
+    if (tag === 'TEXTAREA' || tag === 'SELECT' || t.hasAttribute('data-select')) return true;
     if (tag === 'INPUT') {
         const type = (t as HTMLInputElement).type;
         return !(type === 'checkbox' || type === 'radio' || type === 'button');

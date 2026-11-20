@@ -4,6 +4,7 @@ import type { FlowStreamHandle, ObjectRef } from '@v8s/client';
 import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import {
     emptyFilter,
@@ -128,6 +129,16 @@ const statusText = computed(() => {
 });
 const toneClass = computed(() => (openError.value || state.value === 'error' ? 'danger' : state.value === 'live' ? 'success' : ''));
 const filterActive = computed(() => filterKey(applied.value) !== '{}');
+const VERDICT_OPTIONS = [
+    { value: '', label: 'All verdicts' },
+    ...VERDICTS.map(v => ({ value: v as string, label: v.charAt(0) + v.slice(1).toLowerCase() }))
+];
+const DIRECTION_OPTIONS = [
+    { value: '', label: 'Both directions' },
+    { value: 'INGRESS', label: 'Ingress' },
+    { value: 'EGRESS', label: 'Egress' }
+];
+const PROTOCOL_OPTIONS = [{ value: '', label: 'All protocols' }, ...PROTOCOLS.map(p => ({ value: p as string, label: p.toUpperCase() }))];
 </script>
 
 <template>
@@ -135,25 +146,36 @@ const filterActive = computed(() => filterKey(applied.value) !== '{}');
         <div class="bar" role="toolbar" aria-label="Flow filters">
             <label class="sel">
                 <span class="sr-only">Verdict</span>
-                <select v-model="filter.verdict" aria-label="Verdict" data-testid="flows-verdict">
-                    <option value="">All verdicts</option>
-                    <option v-for="v in VERDICTS" :key="v" :value="v">{{ v.charAt(0) + v.slice(1).toLowerCase() }}</option>
-                </select>
+                <SmartSelect
+                    v-model="filter.verdict"
+                    :options="VERDICT_OPTIONS"
+                    size="sm"
+                    max-width="170px"
+                    aria-label="Verdict"
+                    data-testid="flows-verdict"
+                />
             </label>
             <label class="sel">
                 <span class="sr-only">Direction</span>
-                <select v-model="filter.direction" aria-label="Direction" data-testid="flows-direction">
-                    <option value="">Both directions</option>
-                    <option value="INGRESS">Ingress</option>
-                    <option value="EGRESS">Egress</option>
-                </select>
+                <SmartSelect
+                    v-model="filter.direction"
+                    :options="DIRECTION_OPTIONS"
+                    size="sm"
+                    max-width="170px"
+                    aria-label="Direction"
+                    data-testid="flows-direction"
+                />
             </label>
             <label class="sel">
                 <span class="sr-only">Protocol</span>
-                <select v-model="filter.protocol" aria-label="Protocol" data-testid="flows-protocol">
-                    <option value="">All protocols</option>
-                    <option v-for="p in PROTOCOLS" :key="p" :value="p">{{ p.toUpperCase() }}</option>
-                </select>
+                <SmartSelect
+                    v-model="filter.protocol"
+                    :options="PROTOCOL_OPTIONS"
+                    size="sm"
+                    max-width="170px"
+                    aria-label="Protocol"
+                    data-testid="flows-protocol"
+                />
             </label>
             <div v-if="rel.dropReason" class="field fld">
                 <input v-model="filter.dropReason" type="search" placeholder="Drop reason" aria-label="Drop reason" data-testid="flows-reason" />
@@ -217,16 +239,6 @@ const filterActive = computed(() => filterKey(applied.value) !== '{}');
 .grow {
     flex: 1;
 }
-.sel select {
-    height: 26px;
-    border: 1px solid var(--bstrong);
-    border-radius: 5px;
-    background: var(--surface);
-    color: var(--text);
-    font-size: 12px;
-    padding: 0 6px;
-    max-width: 170px;
-}
 .fld {
     height: 26px;
     border-radius: 5px;
@@ -270,7 +282,6 @@ const filterActive = computed(() => filterKey(applied.value) !== '{}');
 }
 @media (pointer: coarse) {
     .btn.sm,
-    .sel select,
     .fld {
         min-height: 44px;
     }

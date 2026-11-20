@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 
 import HoldButton from '@/components/HoldButton.vue';
 import JobProgress from '@/components/JobProgress.vue';
+import SmartSelect from '@/components/SmartSelect.vue';
 import { checkAccess } from '@/lib/access.ts';
 import { newRequestId } from '@/lib/actions.ts';
 import { getAgent } from '@/lib/agent.ts';
@@ -13,6 +14,7 @@ import { openObject } from '@/lib/drawer.ts';
 import { isPending, latestRevisionOptions } from '@/lib/helm.ts';
 import { cancelJob, isActive, startJob } from '@/lib/jobs.ts';
 import { callMutating, errorText, runAs } from '@/lib/mutations.ts';
+import { listOptions, type SelectOption } from '@/lib/smart-select.ts';
 import { isPhone } from '@/lib/viewport.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -29,6 +31,13 @@ const ui = useUiStore();
 const el = ref<HTMLDialogElement | null>(null);
 
 const targets = computed(() => latestRevisionOptions(props.release.history).filter(o => o.revision !== props.release.revision));
+const targetOptions = computed(() => targets.value.map(o => ({ value: o.revision, label: o.label })));
+const CASCADE_OPTIONS = listOptions(['background', 'foreground', 'orphan'] as const);
+const FLUX_ACTION_OPTIONS: SelectOption<FluxAction>[] = [
+    { value: 'flux.reconcile', label: 'Reconcile' },
+    { value: 'flux.force', label: 'Force' },
+    { value: 'flux.reset', label: 'Reset failures' }
+];
 const revision = ref<number>(props.revision ?? targets.value[0]?.revision ?? 0);
 const wait = ref(props.action !== 'uninstall');
 const timeout = ref(300);
@@ -148,7 +157,7 @@ async function cancel() {
 onMounted(async () => {
     await nextTick();
     el.value?.showModal();
-    el.value?.querySelector<HTMLElement>('select, input, button.primary, button.danger')?.focus();
+    el.value?.querySelector<HTMLElement>('[data-select], input, button.primary, button.danger')?.focus();
     try {
         const [a] = await checkAccess([
             { cluster: props.target.cluster, verb: props.action === 'uninstall' ? 'delete' : 'create', gvr: 'v1/secrets', namespace: ns.value }
@@ -183,11 +192,7 @@ onMounted(async () => {
 
                 <label v-if="action === 'rollback'" class="fld"
                     >Roll back to revision
-                    <span class="field"
-                        ><select v-model.number="revision" aria-label="Revision" data-testid="helm-revision">
-                            <option v-for="o in targets" :key="o.revision" :value="o.revision">{{ o.label }}</option>
-                        </select></span
-                    >
+                    <SmartSelect v-model="revision" :options="targetOptions" block aria-label="Revision" data-testid="helm-revision" />
                 </label>
                 <label v-if="action === 'retry' && isPending(release.status)" class="chk"
                     ><input v-model="markFailed" type="checkbox" /> Mark the pending revision failed first
@@ -200,13 +205,7 @@ onMounted(async () => {
                     <label class="chk"><input v-model="keepHistory" type="checkbox" /> Keep history</label>
                     <label class="fld"
                         >Delete propagation
-                        <span class="field"
-                            ><select v-model="cascade" aria-label="Cascade">
-                                <option value="background">background</option>
-                                <option value="foreground">foreground</option>
-                                <option value="orphan">orphan</option>
-                            </select></span
-                        >
+                        <SmartSelect v-model="cascade" :options="CASCADE_OPTIONS" block aria-label="Cascade" />
                     </label>
                 </template>
                 <label class="chk"><input v-model="wait" type="checkbox" /> Wait until ready</label>
@@ -282,13 +281,7 @@ onMounted(async () => {
                 </div>
                 <label v-if="action !== 'uninstall' && flux" class="fld"
                     >Flux action
-                    <span class="field"
-                        ><select v-model="fluxAction" aria-label="Flux action">
-                            <option value="flux.reconcile">Reconcile</option>
-                            <option value="flux.force">Force</option>
-                            <option value="flux.reset">Reset failures</option>
-                        </select></span
-                    >
+                    <SmartSelect v-model="fluxAction" :options="FLUX_ACTION_OPTIONS" block aria-label="Flux action" />
                 </label>
                 <p v-if="err" class="err" role="alert">{{ err }}</p>
                 <div class="foot">

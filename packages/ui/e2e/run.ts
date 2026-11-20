@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
@@ -46,6 +46,20 @@ async function connectIfAsked(page: Page) {
     if (!asked) return;
     for (const box of await dialog.locator('.crow input[type=checkbox]').all()) if (!(await box.isChecked())) await box.check();
     await dialog.getByRole('button', { name: 'Connect' }).click();
+}
+
+/** Opens a SmartSelect (the trigger carries the test id) and clicks the option with this exact text. */
+async function pick(trigger: Locator, name: string) {
+    await trigger.click();
+    await trigger.page().getByRole('option', { name, exact: true }).click();
+}
+
+/** The option texts of a SmartSelect; closes it again. */
+async function optionTexts(trigger: Locator): Promise<string[]> {
+    await trigger.click();
+    const texts = await trigger.page().getByRole('option').allTextContents();
+    await trigger.page().keyboard.press('Escape');
+    return texts.map(t => t.trim());
 }
 
 async function toast(page: Page, text: RegExp) {
@@ -251,7 +265,7 @@ async function main() {
         await step('create a ConfigMap', async () => {
             await page.getByTestId('create').click();
             const dlg = page.getByRole('dialog', { name: 'Create' });
-            await dlg.getByTestId('create-type').selectOption('v1/configmaps');
+            await pick(dlg.getByTestId('create-type'), 'ConfigMap');
             await dlg.locator('.cm-content').waitFor();
             const text = (await dlg.locator('.cm-content').innerText()).replace(/name: my-config/, 'name: e2e-config');
             await dlg.locator('.cm-content').click();
@@ -261,6 +275,47 @@ async function main() {
             await dlg.getByTestId('dry-ok').waitFor();
             await dlg.getByTestId('create-submit').click();
             await toast(page, /Created e2e-config/);
+        });
+
+        await step('smart select: keyboard, search, Esc stays inside a dialog, list stays on screen', async () => {
+            await page
+                .getByTestId('drawer-close')
+                .click({ timeout: 2000 })
+                .catch(() => {});
+            await page.getByTestId('create').click();
+            const dlg = page.getByRole('dialog', { name: 'Create' });
+            const type = dlg.getByTestId('create-type');
+            await type.focus();
+            await page.keyboard.press('ArrowDown');
+            const search = page.getByRole('combobox', { name: /search/i });
+            await search.waitFor({ timeout: 5000 });
+            assert.ok(await search.evaluate(el => el === document.activeElement), 'the search field has focus');
+            // The list is a top-layer popover inside the modal dialog, fully inside the viewport.
+            const box = await page.getByRole('listbox').boundingBox();
+            const vp = page.viewportSize()!;
+            assert.ok(
+                box && box.x >= 0 && box.y >= 0 && box.x + box.width <= vp.width && box.y + box.height <= vp.height,
+                'listbox is in the viewport'
+            );
+            const hit = await page.getByRole('listbox').evaluate(el => {
+                const r = el.getBoundingClientRect();
+                const top = document.elementFromPoint(r.x + r.width / 2, r.y + 10);
+                return !!top && el.contains(top);
+            });
+            assert.ok(hit, 'the list is not covered by the dialog');
+            await page.keyboard.type('sec');
+            assert.deepEqual(await page.getByRole('option').allTextContents(), ['Secret']);
+            await page.keyboard.press('Escape');
+            await page.getByRole('listbox').waitFor({ state: 'detached' });
+            assert.ok(await dlg.isVisible(), 'Esc closed the list, not the dialog');
+            assert.ok(await type.evaluate(el => el === document.activeElement), 'focus returns to the trigger');
+            await page.keyboard.press('Enter');
+            await page.keyboard.type('dep');
+            await page.keyboard.press('ArrowDown');
+            await page.keyboard.press('Enter');
+            assert.match((await type.textContent()) ?? '', /Deployment/);
+            await page.keyboard.press('Escape');
+            await dlg.waitFor({ state: 'hidden' });
         });
 
         await step('star a kind from the table header', async () => {
@@ -868,18 +923,9 @@ async function main() {
         });
 
         await step('problems: group by class inserts header rows into the same list', async () => {
-            await page
-                .getByTestId('group-by')
-                .selectOption('class')
-                .catch(async () => {
-                    await page.getByTestId('group-by').click();
-                    await page.getByRole('option', { name: /class/i }).click();
-                });
+            await pick(page.getByTestId('group-by'), 'Group: class');
             await page.getByTestId('problems-group').first().waitFor({ timeout: 15000 });
-            await page
-                .getByTestId('group-by')
-                .selectOption('none')
-                .catch(() => {});
+            await pick(page.getByTestId('group-by'), 'No grouping');
         });
 
         await step('problems: expand a crashloop rollup and open logs from its evidence', async () => {
@@ -995,7 +1041,7 @@ async function main() {
             await page.getByTestId('create').click();
             const dlg = page.getByRole('dialog', { name: 'Create' });
             await dlg.waitFor();
-            const cluster = await dlg.getByTestId('create-cluster').inputValue();
+            const cluster = (await dlg.getByTestId('create-cluster').getAttribute('data-value')) ?? '';
             await dlg.locator('.cm-content').waitFor();
             await dlg.locator('.cm-content').click();
             await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
@@ -1040,11 +1086,11 @@ async function main() {
             await sel.getByRole('button', { name: /^Linked contexts…/ }).click();
             const dlg = page.getByRole('dialog', { name: 'Linked contexts' });
             await dlg.waitFor();
-            const options = await dlg.getByTestId('lc-read').locator('option:not([value=""])').allTextContents();
+            const options = (await optionTexts(dlg.getByTestId('lc-read'))).filter(t => t !== 'Choose…');
             assert.ok(options.length >= 2, 'at least two contexts to pair');
             const [r, w] = options;
-            await dlg.getByTestId('lc-read').selectOption({ label: r });
-            await dlg.getByTestId('lc-write').selectOption({ label: w });
+            await pick(dlg.getByTestId('lc-read'), r);
+            await pick(dlg.getByTestId('lc-write'), w);
             await dlg.getByTestId('lc-link').click();
             const item = dlg.getByTestId('lc-current').locator('li', { hasText: r });
             await item.waitFor({ timeout: 10000 });

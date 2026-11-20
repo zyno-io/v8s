@@ -4,6 +4,7 @@ import type { HubbleServiceMap } from '@v8s/client';
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent, getNamespacesView } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatCount } from '@/lib/format.ts';
@@ -11,6 +12,7 @@ import { errorText } from '@/lib/mutations.ts';
 import { clusterNamespaces, DEFAULT_MAP_WINDOW, MAP_WINDOWS, workloadRef } from '@/lib/network.ts';
 import { drawerQuery, gvrPath } from '@/lib/route.ts';
 import { classifyEdge, edgeKey, edgeLabel, edgeWord, isOpenable, nodeEdges, nodeLabel, sortEdges, summarize } from '@/lib/servicemap.ts';
+import { listOptions } from '@/lib/smart-select.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
 
@@ -105,6 +107,9 @@ function openFlows() {
     const r = wref.value;
     if (r) void router.push({ path: gvrPath(r.gvr), query: drawerQuery(r, 'flows') });
 }
+const clusterOptions = computed(() => picks.value.map(p => ({ value: p.id, label: p.name })));
+const namespaceOptions = computed(() => listOptions(namespaces.value));
+const windowOptions = MAP_WINDOWS.map(w => ({ value: w.sec, label: `Last ${w.label}` }));
 const windowLabel = computed(() => MAP_WINDOWS.find(w => w.sec === windowSec.value)?.label ?? `${windowSec.value} s`);
 </script>
 
@@ -122,21 +127,15 @@ const windowLabel = computed(() => MAP_WINDOWS.find(w => w.sec === windowSec.val
             <span class="grow"></span>
             <label class="sel">
                 <span class="sr-only">Cluster</span>
-                <select v-model="cluster" class="field" aria-label="Cluster" data-testid="map-cluster">
-                    <option v-for="p in picks" :key="p.id" :value="p.id">{{ p.name }}</option>
-                </select>
+                <SmartSelect v-model="cluster" :options="clusterOptions" aria-label="Cluster" data-testid="map-cluster" />
             </label>
             <label class="sel">
                 <span class="sr-only">Namespace</span>
-                <select v-model="namespace" class="field" aria-label="Namespace" data-testid="map-namespace">
-                    <option v-for="n in namespaces" :key="n" :value="n">{{ n }}</option>
-                </select>
+                <SmartSelect v-model="namespace" :options="namespaceOptions" aria-label="Namespace" data-testid="map-namespace" />
             </label>
             <label class="sel">
                 <span class="sr-only">Window</span>
-                <select v-model.number="windowSec" class="field" aria-label="Window" data-testid="map-window">
-                    <option v-for="w in MAP_WINDOWS" :key="w.sec" :value="w.sec">Last {{ w.label }}</option>
-                </select>
+                <SmartSelect v-model="windowSec" :options="windowOptions" aria-label="Window" data-testid="map-window" />
             </label>
             <button type="button" class="btn sm" :disabled="loading || !namespace" data-testid="map-refresh" @click="load">
                 {{ loading ? 'Refreshing…' : 'Refresh' }}

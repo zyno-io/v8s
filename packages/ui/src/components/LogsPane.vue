@@ -3,6 +3,7 @@ import type { LogStreamHandle, ObjectRef } from '@v8s/client';
 
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
+import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import {
     containersOf,
@@ -31,6 +32,10 @@ const ui = useUiStore();
 const isPod = computed(() => logTargetKind(props.target.gvr) === 'pod');
 const containers = computed(() => containersOf(props.parsed));
 const container = ref('');
+const containerOptions = computed(() =>
+    containers.value.map(c => ({ value: c.name, label: `${c.name}${c.init ? ' (init)' : ''}${c.ephemeral ? ' (debug)' : ''}` }))
+);
+const TAIL_CHOICES = TAIL_OPTIONS.map(n => ({ value: n as number, label: `Last ${n.toLocaleString('en-US')}` }));
 const previous = ref(false);
 const tail = ref<number>(DEFAULT_TAIL);
 const follow = ref(true);
@@ -215,11 +220,14 @@ const waiting = computed(() => isPod.value && !props.parsed && !handle.value && 
         <div class="bar" role="toolbar" aria-label="Log controls">
             <label v-if="isPod && containers.length" class="sel">
                 <span class="sr-only">Container</span>
-                <select v-model="container" data-testid="logs-container" aria-label="Container">
-                    <option v-for="c in containers" :key="c.name" :value="c.name">
-                        {{ c.name }}{{ c.init ? ' (init)' : '' }}{{ c.ephemeral ? ' (debug)' : '' }}
-                    </option>
-                </select>
+                <SmartSelect
+                    v-model="container"
+                    :options="containerOptions"
+                    size="sm"
+                    max-width="200px"
+                    aria-label="Container"
+                    data-testid="logs-container"
+                />
             </label>
             <span v-else-if="!isPod" class="muted all">All pods and containers, merged</span>
 
@@ -242,9 +250,7 @@ const waiting = computed(() => isPod.value && !props.parsed && !handle.value && 
 
             <label class="sel">
                 <span class="sr-only">Tail lines</span>
-                <select v-model.number="tail" aria-label="Tail lines">
-                    <option v-for="n in TAIL_OPTIONS" :key="n" :value="n">Last {{ n.toLocaleString('en-US') }}</option>
-                </select>
+                <SmartSelect v-model="tail" :options="TAIL_CHOICES" size="sm" aria-label="Tail lines" />
             </label>
 
             <div class="field find">
@@ -320,16 +326,6 @@ const waiting = computed(() => isPod.value && !props.parsed && !handle.value && 
 .all {
     font-size: 12px;
 }
-.sel select {
-    height: 26px;
-    border: 1px solid var(--bstrong);
-    border-radius: 5px;
-    background: var(--surface);
-    color: var(--text);
-    font-size: 12px;
-    padding: 0 6px;
-    max-width: 200px;
-}
 .tog[aria-pressed='true'] {
     border-color: var(--focus);
     background: var(--accent-soft);
@@ -363,7 +359,6 @@ const waiting = computed(() => isPod.value && !props.parsed && !handle.value && 
 }
 @media (pointer: coarse) {
     .btn.sm,
-    .sel select,
     .find {
         min-height: 44px;
     }
