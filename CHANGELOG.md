@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.6.1 — 2026-11-20
+
 ### Changed
 
 - **Can't reach the agent** is now a red alert banner instead of an amber warning: the app cannot load or change anything until the connection is back.
