@@ -216,7 +216,7 @@ const facts = computed(() => [
             <div class="row">
                 <b class="ttl" :title="target.name">{{ target.name }}</b>
                 <span class="tag">{{ kindName }}</span>
-                <span v-if="clusters.activeIds.length > 1" class="tag"
+                <span v-if="clusters.activeIds.length > 1" class="tag" :class="clusters.tagTone(props.target.cluster)"
                     ><span class="dot" :style="{ background: clusterColor(props.target.cluster) }"></span>{{ clusterName }}</span
                 >
                 <span v-if="tag" class="tag" :class="tag.tone" data-testid="policy-mode">{{ tag.text }}</span>

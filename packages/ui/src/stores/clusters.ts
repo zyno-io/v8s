@@ -72,6 +72,8 @@ export const useClustersStore = defineStore('clusters', () => {
         return m;
     });
     const displayName = (id: string): string => displayById.value.get(id) ?? id;
+    /** Cluster tags of an elevated cluster wear the warning tone, like its status chip. Their dot stays the cluster's identity hue. */
+    const tagTone = (id: string): string => (isElevated(id) ? 'warning' : '');
 
     /** Runs the cluster as its linked write context (`on`) or back as its read context; its data reloads. */
     async function setElevated(id: string, on: boolean) {
@@ -180,6 +182,7 @@ export const useClustersStore = defineStore('clusters', () => {
         elevatedKey,
         elevatedCount,
         displayName,
+        tagTone,
         setElevated,
         refreshList,
         takeFocusTarget,

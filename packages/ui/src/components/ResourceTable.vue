@@ -901,7 +901,7 @@ function metricText(c: ColPlan, row: Row): string {
                                 ></template
                             >
                             <template v-else-if="c.kind === 'cluster'"
-                                ><span class="tag"
+                                ><span class="tag" :class="clusters.tagTone(s(it.row[c.idx]))"
                                     ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span
                                     >{{ clusters.displayName(s(it.row[c.idx])) }}<ProtectedMark :cluster="s(it.row[c.idx])" /></span
                             ></template>

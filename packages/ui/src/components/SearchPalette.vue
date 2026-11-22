@@ -283,7 +283,7 @@ const multi = computed(() => clusters.activeIds.length > 1);
                     @mousedown.prevent="it.run()"
                     @mousemove="sel = i"
                 >
-                    <span v-if="it.cluster && multi" class="tag"
+                    <span v-if="it.cluster && multi" class="tag" :class="clusters.tagTone(it.cluster)"
                         ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ clusters.displayName(it.cluster)
                         }}<ProtectedMark :cluster="it.cluster"
                     /></span>

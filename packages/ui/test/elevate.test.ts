@@ -88,3 +88,13 @@ describe('displayName', () => {
         expect(c.displayName('other')).toBe('other');
     });
 });
+
+describe('cluster tag tone', () => {
+    it('is the warning tone only while elevated', () => {
+        const c = useClustersStore();
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0 }];
+        expect(c.tagTone('prod')).toBe('');
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
+        expect(c.tagTone('prod')).toBe('warning');
+    });
+});

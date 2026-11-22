@@ -397,7 +397,7 @@ function onScan() {
                                 </span>
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].reports) }}</span>
                                 <span class="c ctags" role="cell">
-                                    <span v-for="id in view[vi.index].clusters.slice(0, 2)" :key="id" class="tag"
+                                    <span v-for="id in view[vi.index].clusters.slice(0, 2)" :key="id" class="tag" :class="clusters.tagTone(id)"
                                         ><span class="dot" :style="{ background: clusterColor(id) }"></span>{{ nameOf(id) }}</span
                                     >
                                     <span v-if="view[vi.index].clusters.length > 2" class="muted">+{{ view[vi.index].clusters.length - 2 }}</span>

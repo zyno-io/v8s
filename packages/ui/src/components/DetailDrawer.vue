@@ -180,7 +180,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
         ></div>
         <header>
             <div class="meta">
-                <span class="tag"
+                <span class="tag" :class="clusters.tagTone(target.cluster)"
                     ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>

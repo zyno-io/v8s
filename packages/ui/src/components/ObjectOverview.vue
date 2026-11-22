@@ -112,7 +112,7 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dd><span v-if="status" class="tag" :class="status.tone">{{ status.text }}</span><span v-else class="muted">—</span></dd>
             <dt class="lbl">Cluster</dt>
             <dd>
-                <span class="tag"
+                <span class="tag" :class="clusters.tagTone(target.cluster)"
                     ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>

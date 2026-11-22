@@ -148,7 +148,7 @@ const sums = computed(() => {
                                     }}<span v-if="it.container" class="muted"> · {{ it.container }}</span></span
                                 >
                                 <span class="meta">
-                                    <span v-if="clusters.activeIds.length > 1" class="tag"
+                                    <span v-if="clusters.activeIds.length > 1" class="tag" :class="clusters.tagTone(it.cluster)"
                                         ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ nameOf(it.cluster) }}</span
                                     >
                                     <span v-if="it.ref.namespace" class="muted small">{{ it.ref.namespace }}</span>

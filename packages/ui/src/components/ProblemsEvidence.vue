@@ -39,7 +39,7 @@ const age = (t?: number) => (t ? formatAge(t, now) : '—');
     <section class="ev" :class="{ phone }" aria-label="Problem evidence" data-testid="problem-evidence">
         <header class="evh">
             <span class="tag" :class="severityTone(row.severity)">{{ row.severity }}</span>
-            <span class="tag"
+            <span class="tag" :class="clusters.tagTone(row.cluster)"
                 ><span class="dot" :style="{ background: clusterColor(row.cluster) }"></span>{{ clusters.displayName(row.cluster) }}</span
             >
             <span class="mono muted">{{ row.class }}</span>

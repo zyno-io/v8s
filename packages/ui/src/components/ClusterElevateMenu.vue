@@ -4,9 +4,11 @@ import { computed, nextTick, ref } from 'vue';
 import { elevateItem } from '@/lib/elevate.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 
-// The small arrow beside a cluster's status: one menu item, Elevate to its linked write context or Revert. The menu is teleported to
-// <body> with fixed positioning (like CheckMenu) so a toolbar's overflow does not clip it.
+// A cluster's context menu: one item, Elevate to its linked write context or Revert. The trigger is the whole default slot (a status
+// chip) plus a small arrow; without a link the slot renders as a plain element. Attributes (class, title, data-testid) land on the
+// trigger. The menu is teleported to <body> with fixed positioning (like CheckMenu) so a toolbar's overflow does not clip it.
 
+defineOptions({ inheritAttrs: false });
 const props = defineProps<{ id: string }>();
 const clusters = useClustersStore();
 
@@ -42,18 +44,28 @@ function run() {
 </script>
 
 <template>
-    <span v-if="item" class="cem" @keydown.esc.stop="open && close()">
+    <span v-if="!item" v-bind="$attrs"><slot /></span>
+    <span v-else class="cem" @keydown.esc.stop="open && close()">
         <button
+            v-bind="$attrs"
             ref="btnEl"
             class="cem-btn"
             type="button"
             aria-haspopup="menu"
             :aria-expanded="open"
-            :aria-label="`Context of ${name}`"
-            :data-testid="`elevate-menu-${id}`"
+            :data-elevate-menu="id"
             @click.stop="toggleMenu"
         >
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <slot /><svg
+                class="cem-arrow"
+                width="10"
+                height="10"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+            >
                 <path d="M4 6l4 4 4-4" />
             </svg>
         </button>
@@ -79,36 +91,28 @@ function run() {
 <style scoped>
 .cem {
     display: inline-flex;
-    margin-left: 2px;
 }
+/* The trigger keeps the look of whatever it wraps (a .tag chip): only the button chrome is reset. */
 .cem-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: inherit;
-    opacity: 0.7;
+    font-family: inherit;
     cursor: pointer;
 }
 .cem-btn:hover,
 .cem-btn[aria-expanded='true'] {
-    opacity: 1;
-    background: var(--hover);
+    box-shadow: 0 0 0 1px var(--bstrong);
 }
 .cem-btn:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 1px;
 }
+.cem-arrow {
+    margin-left: 4px;
+    opacity: 0.75;
+    flex: none;
+}
 @media (pointer: coarse) {
     .cem-btn {
-        width: 44px;
-        height: 44px;
-        margin: -14px 0;
+        min-height: 44px;
     }
 }
 .cem-back {
