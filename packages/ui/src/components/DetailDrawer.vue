@@ -10,7 +10,6 @@ import ActionBar from '@/components/ActionBar.vue';
 import ObjectOverview from '@/components/ObjectOverview.vue';
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { kinds } from '@/lib/agent.ts';
-import { clusterColor } from '@/lib/colors.ts';
 import { closeDrawer, openObject } from '@/lib/drawer.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
@@ -180,8 +179,8 @@ const TAB_LABEL: Record<DrawerTab, string> = {
         ></div>
         <header>
             <div class="meta">
-                <span class="tag"
-                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
+                <span class="tag" :class="clusters.tagTone(target.cluster)"
+                    ><span class="dot" :style="{ background: clusters.dotColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>
                 <span class="muted small">{{ kindName }}<template v-if="target.namespace"> · {{ target.namespace }}</template></span>

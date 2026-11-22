@@ -14,7 +14,6 @@ import ProblemsDetailSheet from '@/components/ProblemsDetailSheet.vue';
 import ProblemsEvidence from '@/components/ProblemsEvidence.vue';
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
-import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatAge, OLD_AGE_MS } from '@/lib/format.ts';
 import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
@@ -835,8 +834,9 @@ defineExpose({ scroller });
                     <template v-if="it.r">
                         <span class="c" role="cell"><span class="tag" :class="severityTone(it.r.severity)">{{ it.r.severity }}</span></span>
                         <span class="c clus" role="cell">
-                            <span v-for="c in it.clusters.slice(0, it.clusters.length > 2 ? 1 : 2)" :key="c" class="tag"
-                                ><span class="dot" :style="{ background: clusterColor(c) }"></span>{{ nameOf(c) }}<ProtectedMark :cluster="c" /></span
+                            <span v-for="c in it.clusters.slice(0, it.clusters.length > 2 ? 1 : 2)" :key="c" class="tag" :class="clusters.tagTone(c)"
+                                ><span class="dot" :style="{ background: clusters.dotColor(c) }"></span>{{ nameOf(c)
+                                }}<ProtectedMark :cluster="c" /></span
                             ><span v-if="it.clusters.length > 2" class="tag">+{{ it.clusters.length - 1 }}</span>
                         </span>
                         <span class="c mono muted" role="cell">{{ it.r.class }}</span>
@@ -956,7 +956,7 @@ defineExpose({ scroller });
                         </div>
                         <div class="c ptitle">{{ it.r.title }}</div>
                         <div class="sub">
-                            <span class="dot" :style="{ background: clusterColor(it.r.cluster) }"></span>{{ nameOf(it.r.cluster)
+                            <span class="dot" :style="{ background: clusters.dotColor(it.r.cluster) }"></span>{{ nameOf(it.r.cluster)
                             }}<ProtectedMark :cluster="it.r.cluster" /><span>·</span>{{ it.age }}<span>·</span
                             ><span class="mono cls">{{ it.r.class }}</span>
                         </div>

@@ -7,7 +7,6 @@ import type { Violation } from '@/lib/policy.ts';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { ask } from '@/lib/ask.ts';
-import { clusterColor } from '@/lib/colors.ts';
 import { openCreateWith } from '@/lib/create-prefill.ts';
 import { labelFromGvr } from '@/lib/kinds.ts';
 import { callMutating, errorText, isCancelled, pool } from '@/lib/mutations.ts';
@@ -216,8 +215,8 @@ const facts = computed(() => [
             <div class="row">
                 <b class="ttl" :title="target.name">{{ target.name }}</b>
                 <span class="tag">{{ kindName }}</span>
-                <span v-if="clusters.activeIds.length > 1" class="tag"
-                    ><span class="dot" :style="{ background: clusterColor(props.target.cluster) }"></span>{{ clusterName }}</span
+                <span v-if="clusters.activeIds.length > 1" class="tag" :class="clusters.tagTone(props.target.cluster)"
+                    ><span class="dot" :style="{ background: clusters.dotColor(props.target.cluster) }"></span>{{ clusterName }}</span
                 >
                 <span v-if="tag" class="tag" :class="tag.tone" data-testid="policy-mode">{{ tag.text }}</span>
                 <span v-if="legacy" class="tag" :title="LEGACY_HINT" data-testid="legacy-badge">Read-only</span>

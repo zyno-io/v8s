@@ -14,7 +14,6 @@ import type { VpaIndex, VpaState } from '@/lib/vpa-status.ts';
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { actionById } from '@/lib/actions.ts';
 import { getAgent, kinds } from '@/lib/agent.ts';
-import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
@@ -901,8 +900,8 @@ function metricText(c: ColPlan, row: Row): string {
                                 ></template
                             >
                             <template v-else-if="c.kind === 'cluster'"
-                                ><span class="tag"
-                                    ><span class="dot" :style="{ background: clusterColor(s(it.row[c.idx])) }"></span
+                                ><span class="tag" :class="clusters.tagTone(s(it.row[c.idx]))"
+                                    ><span class="dot" :style="{ background: clusters.dotColor(s(it.row[c.idx])) }"></span
                                     >{{ clusters.displayName(s(it.row[c.idx])) }}<ProtectedMark :cluster="s(it.row[c.idx])" /></span
                             ></template>
                             <template v-else-if="c.kind === 'status' || c.kind === 'tone'"
@@ -959,7 +958,7 @@ function metricText(c: ColPlan, row: Row): string {
                         </div>
                         <div class="sub">
                             <template v-if="showCluster"
-                                ><span class="dot" :style="{ background: clusterColor(s(it.row[plan.clusterIdx])) }"></span
+                                ><span class="dot" :style="{ background: clusters.dotColor(s(it.row[plan.clusterIdx])) }"></span
                                 >{{ clusters.displayName(s(it.row[plan.clusterIdx])) }}<ProtectedMark :cluster="s(it.row[plan.clusterIdx])" /><span
                                     >·</span
                                 ></template
