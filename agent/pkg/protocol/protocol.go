@@ -178,6 +178,9 @@ type ClusterState struct {
 	// VPA: some pod of the cluster has its requests set by a VerticalPodAutoscaler (the vpaUpdates annotation); the
 	// UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
 	VPA bool `msgpack:"vpa,omitempty" json:"vpa,omitempty"`
+	// Kinds is the cluster's discovery generation: it increases whenever the set of discovered resources changes
+	// (a CRD was installed or removed, an aggregated API came or went). The UI re-reads kinds.list when it changes.
+	Kinds uint64 `msgpack:"kinds,omitempty" json:"kinds,omitempty"`
 }
 
 type ClusterStates struct {

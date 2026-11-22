@@ -23,6 +23,11 @@ const (
 	DefaultLinger         = 5 * time.Minute
 	DefaultBudget         = 96
 	DefaultDiscoveryEvery = 5 * time.Minute
+	// DefaultDiscoveryFallbackEvery is the discovery period while the CRD invalidation watch is unusable.
+	DefaultDiscoveryFallbackEvery = 60 * time.Second
+	// DefaultDiscoveryFollowUp is the extra refresh after CRD/APIService activity: the API server publishes a new
+	// CRD in discovery slightly after the CRD object exists.
+	DefaultDiscoveryFollowUp = 5 * time.Second
 	// DefaultForbiddenRetry is how long an unreferenced (baseline) watch whose LIST was refused (Forbidden or
 	// NotFound) stays parked before it is tried again.
 	DefaultForbiddenRetry = 5 * time.Minute
@@ -35,24 +40,27 @@ const DefaultEventsLinger = 30 * time.Second
 // ErrBudget is returned when a cluster is at its watch budget and nothing lingering can be evicted.
 var ErrBudget = errors.New("watch budget exhausted")
 
+const crdGVR = "apiextensions.k8s.io/v1/customresourcedefinitions"
+
 // invalidationKinds are watched (Table mode, metadata only) to refresh discovery when they change.
 var invalidationKinds = []string{
-	"apiextensions.k8s.io/v1/customresourcedefinitions",
+	crdGVR,
 	"apiregistration.k8s.io/v1/apiservices",
 }
 
 type watchEntry struct {
-	gvr     string
-	st      *store.Store
-	cancel  context.CancelFunc
-	done    chan struct{} // closed when the current reflector run ends (replaced by each restart, guarded by r.mu)
-	refs    int
-	bgRefs  int          // of refs, those held by background scopes: they do not keep a failing watch retrying (parkIfUnheld)
-	errv    atomic.Value // listErr: the latest list/watch error, cleared by the next success
-	tier0   bool
-	lastUse time.Time
-	linger  *time.Timer
-	gen     uint64 // bumped on every acquire and linger arm: a timer that fired for an older gen is stale
+	gvr       string
+	st        *store.Store
+	cancel    context.CancelFunc
+	done      chan struct{} // closed when the current reflector run ends (replaced by each restart, guarded by r.mu)
+	invSynced atomic.Bool   // an invalidation watch finished its first list
+	refs      int
+	bgRefs    int          // of refs, those held by background scopes: they do not keep a failing watch retrying (parkIfUnheld)
+	errv      atomic.Value // listErr: the latest list/watch error, cleared by the next success
+	tier0     bool
+	lastUse   time.Time
+	linger    *time.Timer
+	gen       uint64 // bumped on every acquire and linger arm: a timer that fired for an older gen is stale
 	// part is set for an object-events watch (docs/protocol.md "Events of one object"): its rows live in the
 	// runner's shared oev store, st stays nil, and synced closes after the first list.
 	part   *store.Part
@@ -103,6 +111,7 @@ type runner struct {
 
 	disc     atomic.Pointer[discState]
 	discKick chan struct{}
+	discGen  atomic.Uint64 // bumped when the discovered resource set changes (protocol.ClusterState.Kinds)
 
 	pe     *problems.Engine // the cluster's problems engine (nil: problems are not enabled)
 	gcOnce sync.Once
@@ -121,7 +130,7 @@ func (r *runner) state() protocol.ClusterState {
 	msg, _ := r.message.Load().(string)
 	ma, mm := r.usage.avail()
 	return protocol.ClusterState{ID: r.id, Phase: r.phase.Load().(protocol.ClusterPhase), Synced: int(r.synced.Load()), Message: msg,
-		Metrics: ma, MetricsMessage: mm, VPA: r.vpaPods.Load()}
+		Metrics: ma, MetricsMessage: mm, VPA: r.vpaPods.Load(), Kinds: r.discGen.Load()}
 }
 
 func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
@@ -151,10 +160,57 @@ func (r *runner) scheduleAckGC(d time.Duration) {
 
 // ---- discovery ---------------------------------------------------------------------------
 
+// discSig is a cheap FNV-1a signature of the discovered resource set (list order is already sorted).
+func discSig(res []disco.Resource) uint64 {
+	h := uint64(14695981039346656037)
+	add := func(s string) {
+		for i := 0; i < len(s); i++ {
+			h = (h ^ uint64(s[i])) * 1099511628211
+		}
+		h = (h ^ 0xff) * 1099511628211
+	}
+	for i := range res {
+		x := &res[i]
+		if x.Placeholder() {
+			continue
+		}
+		add(x.GVR())
+		add(x.Kind)
+		var b byte
+		if x.Namespaced {
+			b |= 1
+		}
+		if x.Listable() {
+			b |= 2
+		}
+		if x.Stale {
+			b |= 4
+		}
+		h = (h ^ uint64(b)) * 1099511628211
+	}
+	return h
+}
+
+// discoveryPeriod is the periodic refresh interval. Without a usable CRD invalidation watch (a read context that
+// cannot list/watch CRDs, as namespace-scoped ones often cannot) nothing signals new CRDs, so poll faster;
+// discovery is only two aggregated GETs.
+func (r *runner) discoveryPeriod() time.Duration {
+	r.mu.Lock()
+	w := r.watches[crdGVR]
+	usable := w != nil && !w.parked && w.invSynced.Load() && w.lastErr() == nil
+	r.mu.Unlock()
+	if usable || r.m.DiscoveryFallbackEvery <= 0 {
+		return r.m.DiscoveryEvery
+	}
+	return min(r.m.DiscoveryEvery, r.m.DiscoveryFallbackEvery)
+}
+
 func (r *runner) discoverLoop() {
 	defer r.wg.Done()
+	var sig uint64
+	var haveSig, followUp bool
 	for {
-		wait := r.m.DiscoveryEvery
+		wait := r.discoveryPeriod()
 		res, err := r.be.Discover(r.ctx)
 		if r.ctx.Err() != nil {
 			return
@@ -170,6 +226,10 @@ func (r *runner) discoverLoop() {
 				}
 			}
 			r.disc.Store(d)
+			if ns := discSig(res); !haveSig || ns != sig {
+				sig, haveSig = ns, true
+				r.discGen.Add(1)
+			}
 			if r.pe != nil {
 				grs := make(map[string]bool, len(res))
 				for i := range res {
@@ -183,6 +243,10 @@ func (r *runner) discoverLoop() {
 			r.m.reconcileAll()
 			r.usage.kickNow()
 		}
+		if followUp {
+			wait = min(wait, r.m.DiscoveryFollowUp)
+			followUp = false
+		}
 		t := time.NewTimer(wait)
 		select {
 		case <-r.ctx.Done():
@@ -191,7 +255,8 @@ func (r *runner) discoverLoop() {
 		case <-t.C:
 		case <-r.discKick:
 			t.Stop()
-			select { // debounce bursts of CRD changes
+			followUp = true // discovery can lag the CRD object: look once more shortly
+			select {        // debounce bursts of CRD changes
 			case <-time.After(time.Second):
 			case <-r.ctx.Done():
 				return
@@ -329,7 +394,12 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	for _, ik := range invalidationKinds {
 		if gvr == ik {
 			var synced atomic.Bool
-			w.st.OnReplace = func(int) { synced.Store(true) }
+			w.st.OnReplace = func(int) {
+				w.invSynced.Store(true)
+				if synced.Swap(true) { // a relist (after a 410 or a reconnect) may carry CRDs added meanwhile
+					r.invalidate()
+				}
+			}
 			w.st.OnActivity = func() {
 				if synced.Load() {
 					r.invalidate()
@@ -355,6 +425,7 @@ func (r *runner) runLocked(w *watchEntry) {
 	w.cancel = cancel
 	w.cur.Store(&wctx)
 	w.parked = false
+	w.invSynced.Store(false) // every run lists again (discoveryPeriod polls faster until it has)
 	done := make(chan struct{})
 	w.done = done
 	refl := cache.NewReflectorWithOptions(w.lw, &ingest.Row{}, w.st, cache.ReflectorOptions{Name: w.gvr + "/" + r.id, TypeDescription: w.gvr})

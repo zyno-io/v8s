@@ -103,9 +103,10 @@ async function boot() {
     }
 }
 
-// A cluster finishing discovery changes the union of kinds; re-read `kinds.list` when the set of phases changes.
+// A cluster finishing discovery, or discovery noticing a new or removed CRD (state.kinds), changes the union of kinds;
+// re-read `kinds.list` when a phase or a discovery generation changes.
 watch(
-    () => clusters.states.map(s => s.id + s.phase).join(),
+    () => clusters.states.map(s => s.id + s.phase + ':' + (s.kinds ?? 0)).join(),
     () => {
         refreshKinds();
         void integrations.refreshHubble();

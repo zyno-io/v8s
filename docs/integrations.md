@@ -17,7 +17,7 @@ An integration is **detected** per cluster from discovery, never assumed:
 | Kubescape | `spdx.softwarecomposition.kubescape.io` (aggregated APIService) or `kubescape.io` |
 | Hubble | a `hubble-relay` Service in any namespace (default `kube-system`), probed lazily |
 
-Discovery runs on connect and on a 5-minute timer (plus immediately when a `CustomResourceDefinition` or `APIService` watch event arrives, if the user can watch them). An integration's sidebar section, problem classes, and watches exist only while it is detected in at least one selected cluster.
+Discovery runs on connect and on a 5-minute timer, plus shortly after a `CustomResourceDefinition` or `APIService` watch event (again 5 seconds later, since discovery lags the CRD object). If the user cannot watch CRDs, the timer is 60 seconds instead. An integration's sidebar section, problem classes, and watches exist only while it is detected in at least one selected cluster.
 
 Each integration is a **module** in the agent (watch specs, row projections, detectors, actions) and in the UI (columns, detail tabs, views). Modules register with the core; the core has no integration-specific code. This is also the extension point for third-party integrations later (Argo CD, cert-manager, Gatekeeper, KEDA, Istio).
 

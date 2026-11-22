@@ -41,6 +41,10 @@ type Manager struct {
 	EventsLinger   time.Duration // the linger of object-events watches
 	Budget         int
 	DiscoveryEvery time.Duration
+	// DiscoveryFallbackEvery is the refresh period while the CRD watch is unusable; DiscoveryFollowUp the extra
+	// refresh after CRD/APIService activity.
+	DiscoveryFallbackEvery time.Duration
+	DiscoveryFollowUp      time.Duration
 	// ForbiddenRetry is how long an unreferenced watch whose LIST was refused (Forbidden, NotFound)
 	// stays stopped before it is retried (default DefaultForbiddenRetry).
 	ForbiddenRetry time.Duration
@@ -77,7 +81,8 @@ func NewManager(ctx context.Context, src Source, eng *view.Engine, log *slog.Log
 	}
 	return &Manager{src: src, eng: eng, log: log, runners: map[string]*runner{}, listeners: map[chan struct{}]struct{}{},
 		ctx: ctx, selected: []string{}, scopes: map[*Scope]struct{}{},
-		Linger: DefaultLinger, EventsLinger: DefaultEventsLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery, ForbiddenRetry: DefaultForbiddenRetry,
+		Linger: DefaultLinger, EventsLinger: DefaultEventsLinger, Budget: DefaultBudget, DiscoveryEvery: DefaultDiscoveryEvery,
+		DiscoveryFallbackEvery: DefaultDiscoveryFallbackEvery, DiscoveryFollowUp: DefaultDiscoveryFollowUp, ForbiddenRetry: DefaultForbiddenRetry,
 		UsageInterval: DefaultUsageInterval, UsageBigInterval: DefaultUsageBigInterval, UsageKeep: DefaultUsageKeep,
 		UsageMinGap: DefaultUsageMinGap, UsageMaxBackoff: DefaultUsageMaxBackoff}
 }
