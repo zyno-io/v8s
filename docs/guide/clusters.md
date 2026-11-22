@@ -28,6 +28,8 @@ Open the cluster selector in the top bar (or type `:ctx`).
 1. Tick the clusters you want, or click a group chip to select that group. Shift-click a chip to add it to the current ticks.
 2. Press **Connect**.
 
+The ticked clusters are listed under **Selected** below the list, whatever you have searched for or scrolled to. Click one there to untick it.
+
 Ticking boxes connects nothing until you press Connect. A mistaken "select all" on 40 clusters costs nothing. On launch, v8s shows the selection you last connected to pre-ticked with a **Connect** button; it does not reconnect until you press it. Large selections connect in batches, so a stampede of exec plugins and API requests does not happen.
 
 Deselecting a cluster stops its watches after a short grace period (ten seconds, so an accidental click is free) and frees the memory the agent held for it. Selecting it again is a cold start, which is cheap.

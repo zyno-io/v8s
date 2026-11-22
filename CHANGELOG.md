@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Changed
+
+- The Namespace menu and the cluster selector show what you have picked under **Selected**, below the list, so the picks stay in view while you search or scroll. Click one there to remove it.
+
 ## 0.7.0 — 2026-11-22
 
 ### Added

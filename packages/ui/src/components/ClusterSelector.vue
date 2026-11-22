@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import LinkedContextsDialog from '@/components/LinkedContextsDialog.vue';
 import LockIcon from '@/components/LockIcon.vue';
 import ProtectedMark from '@/components/ProtectedMark.vue';
+import SelectedChips from '@/components/SelectedChips.vue';
 import { phaseColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { suggestLinks } from '@/lib/link-suggest.ts';
@@ -50,6 +51,8 @@ function pickGroup(ids: string[], e: MouseEvent) {
     if (e.shiftKey) clusters.setChecked([...clusters.checked, ...ids]);
     else clusters.setChecked(ids);
 }
+
+const picked = computed(() => [...clusters.checked].map(id => ({ key: id, label: clusters.byId.get(id)?.name ?? id })));
 
 const note = computed(() => {
     const n = clusters.checked.size;
@@ -269,6 +272,7 @@ const suggestions = computed(() =>
                 </li>
                 <li v-if="!visible.length" class="empty muted">No matching contexts</li>
             </ul>
+            <SelectedChips class="sel" :items="picked" label="Selected" @remove="clusters.toggle" />
             <div v-if="suggestions.length" class="suggest" role="note">
                 <span class="grow"
                     >{{ suggestions.length }} context {{ suggestions.length === 1 ? 'pair looks' : 'pairs look' }} like read/write pairs.</span
@@ -472,6 +476,9 @@ const suggestions = computed(() =>
     height: 26px;
     border-radius: 5px;
     width: 160px;
+}
+.panel > .sel {
+    padding: 8px 12px 10px;
 }
 .suggest {
     margin: 4px 12px 6px;
