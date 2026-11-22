@@ -775,17 +775,6 @@ select.input {
   font-size: 10px;
 }
 
-/* Shown only in the listed release states (data-when="none error"); the state
-   is set on <html data-release> by src/scripts/release.ts. Before it lands
-   (or without JS) only "pending" content shows. */
-:root:not([data-release]) [data-when]:not([data-when~='pending']),
-:root[data-release='none'] [data-when]:not([data-when~='none']),
-:root[data-release='release'] [data-when]:not([data-when~='release']),
-:root[data-release='candidate'] [data-when]:not([data-when~='candidate']),
-:root[data-release='error'] [data-when]:not([data-when~='error']) {
-  display: none !important;
-}
-
 .btn--xl {
   height: 52px;
   padding: 0 22px;
@@ -795,8 +784,4 @@ select.input {
 }
 
 
-/* The hero's release line: the dot follows the release lookup (src/scripts/release.ts). */
-:root[data-release='error'] .dot[data-dl-dot],
-:root[data-release='none'] .dot[data-dl-dot] {
-  background: var(--dot-warn);
-}
+

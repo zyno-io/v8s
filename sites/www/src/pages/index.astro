@@ -14,11 +14,13 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import Shot from '../components/Shot.astro';
 import Demo from '../components/demo/Demo.astro';
-import { site, doc, platforms, cliBuilds } from '../data/site';
+import { site, doc, platforms, cliBuilds, releasePage, assetUrl, platformFile, cliFile } from '../data/site';
 import { softwareApplication, webSite } from '../data/seo';
 import { release } from '../data/release';
 
 const VERSION = release.version;
+const notesUrl = releasePage(VERSION);
+const sumsUrl = assetUrl(VERSION, 'checksums.txt');
 
 const problemFamilies = [
   { family: 'Pods', classes: ['pod.crashloop', 'pod.image-pull', 'pod.oomkilled', 'pod.pending', 'pod.config-error'] },
@@ -73,12 +75,12 @@ const keys = [
           </p>
         </div>
         <div class="dl" aria-label="Download v8s">
-          <a href={site.latest} class="btn btn--primary btn--xl dl__primary" data-dl-primary>
+          <a href="#download" class="btn btn--primary btn--xl dl__primary" data-dl-primary>
             <i class="fa-solid fa-arrow-down" data-dl-icon aria-hidden="true"></i><span data-dl-label>Download v8s</span>
           </a>
           <p class="dl__alt fine" data-dl-alt hidden></p>
           <p class="dl__meta">
-            <span class="dot" data-dl-dot aria-hidden="true"></span><span data-dl-status-text>v{VERSION} · {release.label}</span>
+            <span class="dot" aria-hidden="true"></span><span>v{VERSION} · {release.label}</span>
             <span class="dl__sep" aria-hidden="true">·</span><span>MIT</span>
           </p>
           <ul class="dl__ways">
@@ -399,7 +401,7 @@ v8s serve</code></pre>
             </p>
             <pre class="snippet"><code>helm install v8s \
   {site.chart} \
-  --version <span data-dl-ver>{VERSION}</span> \
+  --version {VERSION} \
   -n v8s --create-namespace \
   -f my-values.yaml</code></pre>
             <a href={doc.hosted} class="more">Hosted mode<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
@@ -444,12 +446,12 @@ v8s serve</code></pre>
           <div class="stack">
             <h2 id="download-title" class="h-section">Download v8s</h2>
             <p class="lede">
-              <span data-dl-status-text>v{VERSION} · {release.label}</span>. Signed on macOS and Windows; checksums and build provenance for every file.
+              <span>v{VERSION} · {release.label}</span>. Signed on macOS and Windows; checksums and build provenance for every file.
             </p>
           </div>
           <div class="sh__aside">
-            <a href={site.latest} class="more" data-dl-notes>Release notes<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-            <a href={site.latest} class="more" data-dl-sums>checksums.txt<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a href={notesUrl} class="more">Release notes<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a href={sumsUrl} class="more" download>checksums.txt<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
           </div>
         </div>
 
@@ -463,10 +465,10 @@ v8s serve</code></pre>
                     <i class={`fa-brands ${p.icon} dls__icon`} aria-hidden="true" />
                     <span class="dls__name">
                       <b>{p.name}</b>
-                      <span class="fine" data-dl-file>{p.file}</span>
+                      <span class="fine">{platformFile(VERSION, p)}</span>
                     </span>
                     <span class="dls__trust fine">{p.trust}</span>
-                    <a class="btn dls__btn" href={site.latest} data-dl-link aria-label={`Download v8s for ${p.name}`}>
+                    <a class="btn dls__btn" href={assetUrl(VERSION, platformFile(VERSION, p))} download data-dl-link aria-label={`Download v8s for ${p.name}`}>
                       <i class="fa-solid fa-arrow-down" aria-hidden="true" />Download
                     </a>
                   </li>
@@ -483,9 +485,9 @@ v8s serve</code></pre>
                     <i class="fa-solid fa-terminal dls__icon" aria-hidden="true" />
                     <span class="dls__name">
                       <b>{c.label}</b>
-                      <span class="fine" data-dl-file>{c.suffix.endsWith('.zip') ? 'zip archive' : 'tar.gz archive'}</span>
+                      <span class="fine">{cliFile(VERSION, c)}</span>
                     </span>
-                    <a class="btn dls__btn" href={site.latest} data-dl-link aria-label={`Download the v8s CLI for ${c.label}`}>
+                    <a class="btn dls__btn" href={assetUrl(VERSION, cliFile(VERSION, c))} download aria-label={`Download the v8s CLI for ${c.label}`}>
                       <i class="fa-solid fa-arrow-down" aria-hidden="true" />Download
                     </a>
                   </li>
@@ -495,7 +497,7 @@ v8s serve</code></pre>
             <h3 class="dls__hd dls__hd--sp">Container and chart</h3>
             <pre class="snippet"><code>docker run --rm -p 7931:7931 \
   -v $PWD/config.yaml:/etc/v8s/config.yaml:ro \
-  {site.image}:<span data-dl-ver>{VERSION}</span></code></pre>
+  {site.image}:{VERSION}</code></pre>
             <p class="fine dls__note"><code>linux/amd64</code> and <code>linux/arm64</code>. Build from source: Go 1.27 and Node 26, see the <a href={site.repo}>README</a>.</p>
           </div>
         </div>
@@ -506,7 +508,7 @@ v8s serve</code></pre>
 </BaseLayout>
 
 <script>
-  import '../scripts/release';
+  import '../scripts/download';
 </script>
 
 <style>

@@ -52,13 +52,16 @@ When the app's UI changes, update the demo to match (compare against fresh scree
 
 ## Downloads and release state
 
-`src/scripts/release.ts` reads `https://api.github.com/repos/zyno-io/v8s/releases?per_page=10` in the browser (cached
-10 minutes per tab), ignores drafts and prefers the newest published non-prerelease. Assets are matched by suffix
-(`-mac-arm64.dmg`, `-mac-x64.dmg`, `-win-x64.exe`, `-linux-x86_64.AppImage`, `-linux-amd64.deb`, `-linux-x86_64.rpm`,
-`_<os>_<arch>.tar.gz|zip`, `checksums.txt`). The visitor's OS is detected from the user agent; the Mac's CPU from
-`navigator.userAgentData` where the browser offers it (Safari doesn't, so Apple silicon is featured with an Intel link
-beside it). The HTML ships with every link pointing at the latest GitHub release, so it works without JS. Platform
-names and signing notes live in `src/data/site.ts`.
+The version, date and every download link are fixed at build time: `src/data/release.ts` reads the newest released
+section of the repo's `CHANGELOG.md` (`## X.Y.Z — YYYY-MM-DD`), and `src/data/site.ts` turns it into GitHub release asset
+URLs (`v8s-<version>-<suffix>` for desktop builds, `v8s_<version>_<suffix>` for CLI archives, `checksums.txt`). Nothing
+is fetched in the browser. Production is published from the release tag (see Deploy), so the links always name assets
+that exist.
+
+`src/scripts/download.ts` only features the visitor's build: it detects the OS from the user agent and the Mac's CPU
+from `navigator.userAgentData` where the browser offers it (Safari doesn't, so Apple silicon is featured with an Intel
+link beside it), points the hero button at that row's link, and lists the sibling builds. Without JS the hero button
+leads to the download list. Platform names and signing notes live in `src/data/site.ts`.
 
 ## Search and social previews
 

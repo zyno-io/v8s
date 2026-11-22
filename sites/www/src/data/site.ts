@@ -47,11 +47,14 @@ export const doc = {
 } as const;
 
 /**
- * GitHub Releases, read in the browser by src/scripts/release.ts. Drafts are
- * ignored; the newest published non-prerelease wins, else the newest
- * prerelease. With no JS or an API failure every link keeps its fallback href.
+ * Release links, fixed at build time for the version in src/data/release.ts (the newest CHANGELOG section). The
+ * site is published from the release tag, so these always name assets that exist; nothing is looked up in the browser.
  */
-export const releaseApi = 'https://api.github.com/repos/zyno-io/v8s/releases?per_page=10';
+export const releasePage = (version: string) => `${repo}/releases/tag/v${version}`;
+export const assetUrl = (version: string, name: string) => `${repo}/releases/download/v${version}/${name}`;
+/** Desktop builds are `v8s-<version>-<suffix>`; CLI archives are `v8s_<version>_<suffix>` (release.yml). */
+export const platformFile = (version: string, p: Platform) => `v8s-${version}-${p.suffix}`;
+export const cliFile = (version: string, c: { suffix: string }) => `v8s_${version}_${c.suffix}`;
 
 export type PlatformId = 'mac-arm64' | 'mac-x64' | 'win-x64' | 'linux-appimage' | 'linux-deb' | 'linux-rpm';
 
@@ -65,7 +68,7 @@ export interface Platform {
   detail: string;
   /** Release asset name suffix (`v8s-<version>-<suffix>`). */
   suffix: string;
-  /** Shown in place of the file name until a release resolves. */
+  /** The kind of file, for the alternate-build links ("Package (.deb)"). */
   file: string;
   /** How this build is signed (CHANGELOG 0.1.0, release.yml). */
   trust: string;
