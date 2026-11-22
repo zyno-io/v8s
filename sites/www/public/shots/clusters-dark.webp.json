@@ -1,0 +1,4 @@
+{
+  "prompt": "Sourced, not generated: v8s UI captured in demo mode (v8s agent --fake clusters=3,pods=50000,churn=0,lograte=200) from github.com/zyno-io/v8s at commit 895eb04, the Choose clusters selector dialog with group chips, prod-us and prod-eu protected, dark, 1440x900 @2x. Synthetic clusters; no real data.",
+  "createdAt": "2026-11-18T03:49:42.800Z"
+}

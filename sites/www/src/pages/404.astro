@@ -1,0 +1,41 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { site } from '../data/site';
+---
+
+<BaseLayout title="Page not found · v8s" noindex>
+  <SiteHeader />
+  <main id="main" class="nf desk-grid desk-glow">
+    <div class="wrap nf__in">
+      <h1 class="display--md">404: <code class="nf__code">NotFound</code></h1>
+      <p class="lede">No object by that name in this namespace. Try the home page, the docs, or the code on GitHub.</p>
+      <div class="btn-row">
+        <a href="/" class="btn btn--primary btn--lg">v8s home</a>
+        <a href={site.docs} class="btn btn--lg">Docs</a>
+        <a href={site.repo} class="btn btn--lg btn--ghost"><i class="fa-brands fa-github" aria-hidden="true"></i>GitHub</a>
+      </div>
+    </div>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<style>
+  .nf__in {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+    padding-top: 120px;
+    padding-bottom: 140px;
+  }
+  .nf__code {
+    font-size: 0.8em;
+    padding: 0 0.2em;
+    background: none;
+  }
+  .nf__in .lede {
+    max-width: 60ch;
+  }
+</style>

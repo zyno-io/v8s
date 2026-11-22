@@ -1,0 +1,304 @@
+---
+/**
+ * SiteHeader: sticky, blurred top bar (the Review Desk's translucent surface).
+ * Desktop: brand · nav · `:` hint · GitHub · theme · Download. Below 900px the
+ * nav folds into a CSS-only menu: a visually hidden checkbox is the real,
+ * focusable control. The `:` hint runs the hero demo's command bar
+ * (data-demo-cmd, handled by the demo script), as `:` does anywhere on the page.
+ */
+import BrandMark from './BrandMark.astro';
+import { site, doc } from '../data/site';
+
+interface Props {
+  /** The page hosts the interactive demo, so the `:` button opens its command bar. */
+  demo?: boolean;
+}
+const { demo = false } = Astro.props;
+
+const links = [
+  { label: 'Why it’s fast', href: '/#fast' },
+  { label: 'Features', href: '/#clusters' },
+  { label: 'Run it', href: '/#run' },
+  { label: 'Docs', href: site.docs },
+];
+---
+
+<header class="site-header">
+  <div class="hdr wrap">
+    <a href="/" class="hdr__brand" aria-label="v8s home"><BrandMark /></a>
+    <nav class="hdr__nav" aria-label="Primary">
+      {links.map((l) => <a href={l.href} class="hdr__link">{l.label}</a>)}
+    </nav>
+    <div class="hdr__spacer"></div>
+    {
+      demo ? (
+        <button type="button" class="hdr__cmd" data-demo-cmd=":" aria-label="Open the demo's command bar"><kbd>:</kbd><span>command</span></button>
+      ) : (
+        <a class="hdr__cmd" href="/#demo" aria-label="Try the demo"><kbd>:</kbd><span>demo</span></a>
+      )
+    }
+    <a href={site.repo} class="btn btn--ghost hdr__gh"><i class="fa-brands fa-github" aria-hidden="true"></i><span class="hdr__gh-label">GitHub</span></a>
+    <button type="button" class="hdr__icon" data-theme-toggle aria-label="Switch theme">
+      <i class="fa-solid fa-moon hdr__moon" aria-hidden="true"></i>
+      <i class="fa-solid fa-sun hdr__sun" aria-hidden="true"></i>
+    </button>
+    <a href="/#download" class="btn btn--primary hdr__cta"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Download</a>
+
+    <input type="checkbox" id="nav-toggle" class="hdr__cb" aria-controls="mobile-nav" />
+    <label for="nav-toggle" class="hdr__burger">
+      <i class="fa-solid fa-bars hdr__open" aria-hidden="true"></i>
+      <i class="fa-solid fa-xmark hdr__close" aria-hidden="true"></i>
+      <span class="sr-only">Menu</span>
+    </label>
+    <nav class="hdr__mobile" id="mobile-nav" aria-label="Mobile">
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+      <a href={doc.start}>Getting started</a>
+      <a href={site.repo}><i class="fa-brands fa-github" aria-hidden="true"></i>&nbsp;GitHub</a>
+      <a href="/#download" class="btn btn--primary btn--lg">Download</a>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid transparent;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    backdrop-filter: saturate(1.4) blur(12px);
+    transition: border-color 160ms ease;
+  }
+  .site-header:global(.is-stuck) {
+    border-bottom-color: var(--border);
+  }
+  .hdr {
+    position: relative;
+    height: var(--header-h);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hdr__brand {
+    text-decoration: none;
+    margin-right: 20px;
+    border-radius: var(--radius);
+  }
+  .hdr__nav {
+    display: flex;
+    gap: 2px;
+  }
+  .hdr__link {
+    padding: 7px 11px;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .hdr__link:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .hdr__spacer {
+    flex: 1;
+  }
+  .hdr__gh {
+    color: var(--text-2);
+  }
+  .hdr__cmd {
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px 0 6px;
+    margin-right: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-3);
+    font: 500 12px/1 var(--font-sans);
+    cursor: pointer;
+  }
+  .hdr__cmd:hover {
+    border-color: var(--border-strong);
+    color: var(--text-2);
+  }
+  .hdr__cmd kbd {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .hdr__gh i {
+    font-size: 16px;
+  }
+  .hdr__icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .hdr__icon:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .hdr__cta {
+    margin-left: 6px;
+  }
+  /* Theme icon shows the theme you'd switch to. */
+  .hdr__sun {
+    display: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .hdr__sun {
+      display: block;
+    }
+    :global(:root:not([data-theme='light'])) .hdr__moon {
+      display: none;
+    }
+  }
+  :global(:root[data-theme='dark']) .hdr__sun {
+    display: block;
+  }
+  :global(:root[data-theme='dark']) .hdr__moon {
+    display: none;
+  }
+
+  .hdr__cb {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .hdr__cb,
+  .hdr__burger,
+  .hdr__mobile {
+    display: none;
+  }
+  .hdr__close {
+    display: none;
+  }
+  .hdr__cb:checked + .hdr__burger .hdr__open {
+    display: none;
+  }
+  .hdr__cb:checked + .hdr__burger .hdr__close {
+    display: block;
+  }
+  .hdr__cb:focus-visible + .hdr__burger {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 900px) {
+    .hdr__cb {
+      display: block;
+    }
+    .hdr__nav,
+    .hdr__gh-label,
+    .hdr__cmd {
+    text-decoration: none;
+      display: none;
+    }
+    .hdr__gh {
+      width: 44px;
+      padding: 0;
+    }
+    .hdr__icon {
+      width: 44px;
+      height: 44px;
+    }
+    .hdr__burger {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius);
+      color: var(--text-2);
+      font-size: 17px;
+      cursor: pointer;
+    }
+    .hdr__cb:checked ~ .hdr__mobile {
+      display: flex;
+    }
+    .hdr__mobile {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px var(--gutter) 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+    }
+    .hdr__mobile > a:not(.btn) {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 12px;
+      border-radius: var(--radius);
+      color: var(--text-2);
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .hdr__mobile > a:not(.btn):hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+    .hdr__mobile > .btn {
+      margin-top: 8px;
+    }
+  }
+  @media (max-width: 560px) {
+    .hdr__cta {
+      display: none;
+    }
+    .hdr__brand {
+      margin-right: 0;
+    }
+  }
+</style>
+
+<script>
+  /* Close the mobile menu after following a link (in-page anchors otherwise
+     land under the open panel) and on Escape. Seam under the bar once content
+     scrolls beneath it. */
+  const cb = document.querySelector<HTMLInputElement>('#nav-toggle');
+  if (cb) {
+    document.querySelectorAll('#mobile-nav a').forEach((a) => a.addEventListener('click', () => (cb.checked = false)));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && cb.checked) {
+        cb.checked = false;
+        cb.focus();
+      }
+    });
+  }
+  const hdr = document.querySelector('.site-header');
+  if (hdr) {
+    let ticking = false;
+    const sync = () => {
+      hdr.classList.toggle('is-stuck', window.scrollY > 8);
+      ticking = false;
+    };
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(sync);
+      },
+      { passive: true },
+    );
+    sync();
+  }
+</script>

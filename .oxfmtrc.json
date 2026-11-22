@@ -22,6 +22,7 @@
         "dist/**",
         "docs/*.md",
         "packages/client/src/protocol.gen.ts",
+        "sites/www/**",
         "spikes/**",
         "test/e2e/fixtures/**"
     ],

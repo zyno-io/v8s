@@ -1,0 +1,54 @@
+---
+/**
+ * Shot: one real app screenshot in both themes (public/shots/<name>-<theme>.webp,
+ * captured from the app in demo mode by scripts/capture-shots.ts). The page's theme decides which one shows, so the
+ * picture always matches the page, including a theme pinned with the header toggle.
+ * A display:none <img loading="lazy"> is never fetched, so lazy shots cost one
+ * download each.
+ */
+interface Props {
+  name: string;
+  alt: string;
+  width?: number;
+  height?: number;
+  /** Suffix for an alternate crop, e.g. "narrow". */
+  variant?: string;
+  eager?: boolean;
+  class?: string;
+}
+const { name, alt, width = 2880, height = 1800, variant, eager = false, class: cls } = Astro.props;
+const src = (t: string) => `/shots/${name}-${t}${variant ? `-${variant}` : ''}.webp`;
+const loading = eager ? 'eager' : 'lazy';
+---
+
+<span class:list={['shot', cls]}>
+  <img class="shot__img shot__img--light" src={src('light')} {alt} {width} {height} {loading} decoding="async" fetchpriority={eager ? 'high' : undefined} />
+  <img class="shot__img shot__img--dark" src={src('dark')} {alt} {width} {height} {loading} decoding="async" />
+</span>
+
+<style>
+  .shot {
+    display: block;
+  }
+  .shot__img {
+    width: 100%;
+    height: auto;
+  }
+  .shot__img--dark {
+    display: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .shot__img--light {
+      display: none;
+    }
+    :global(:root:not([data-theme='light'])) .shot__img--dark {
+      display: block;
+    }
+  }
+  :global(:root[data-theme='dark']) .shot__img--light {
+    display: none;
+  }
+  :global(:root[data-theme='dark']) .shot__img--dark {
+    display: block;
+  }
+</style>

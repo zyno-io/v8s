@@ -1,0 +1,11 @@
+{
+  "name": "v8s-www-deploy",
+  "private": true,
+  "description": "Pins the ZynoHosting CLI and its whole dependency tree for .github/workflows/www.yml (npm ci --ignore-scripts).",
+  "dependencies": {
+    "@zyno-io/zynohosting": "0.7.0"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  }
+}

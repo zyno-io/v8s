@@ -1,0 +1,1608 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-17T23:48:40+00:00",
+  "title": "Design System: v8s",
+  "extensions": {
+    "inheritsFrom": {
+      "system": "PixelCI \"The Review Desk\"",
+      "document": "pixelci/DESIGN.md",
+      "sibling": "siple-web/DESIGN.md",
+      "differences": [
+        "accent family (v8s indigo; white text on the dark accent too)",
+        "--dot-* cluster connection dots",
+        "marketing type scale and layout tokens",
+        "live replica of the app in the hero, Run chips, header command button",
+        "collections as hairline-divided rows inside one card",
+        "column-header caps only over the list they head",
+        "no eyebrow labels"
+      ]
+    },
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Desk Grey",
+        "canonical": "#f6f7f9",
+        "oklch": "oklch(97.6% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606162",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Card White",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Inset Grey",
+        "canonical": "#f3f4f6",
+        "oklch": "oklch(96.7% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "surface-3": {
+        "role": "neutral",
+        "displayName": "Screenshot Mat",
+        "canonical": "#eceef2",
+        "oklch": "oklch(94.9% 0.006 264.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "surface-hover": {
+        "role": "neutral",
+        "displayName": "Row Hover",
+        "canonical": "#f7f8fa",
+        "oklch": "oklch(97.9% 0.003 264.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606162",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e3e5ea",
+        "oklch": "oklch(92.2% 0.007 268.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414244",
+          "#606165",
+          "#808287",
+          "#a3a5a9",
+          "#c8c9cc",
+          "#edeef0"
+        ]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Control Outline",
+        "canonical": "#cfd3db",
+        "oklch": "oklch(86.6% 0.012 264.5)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242528",
+          "#404246",
+          "#5e6167",
+          "#7f828a",
+          "#a2a5ab",
+          "#c7c9ce",
+          "#edeef2"
+        ]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#15171c",
+        "oklch": "oklch(20.5% 0.010 268.2)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404246",
+          "#5f6166",
+          "#808289",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "text-2": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#4f5562",
+        "oklch": "oklch(44.9% 0.023 265.8)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8290",
+          "#a0a5b1",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "text-3": {
+        "role": "neutral",
+        "displayName": "Meta Grey",
+        "canonical": "#646a78",
+        "oklch": "oklch(52.4% 0.023 267.1)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8291",
+          "#a0a5b1",
+          "#c5c9d3",
+          "#ebeef5"
+        ]
+      },
+      "placeholder": {
+        "role": "neutral",
+        "displayName": "Placeholder Grey",
+        "canonical": "#6f7583",
+        "oklch": "oklch(56.2% 0.023 267.1)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616c",
+          "#7c8290",
+          "#a0a5b1",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "v8s Indigo",
+        "canonical": "#4f46e5",
+        "oklch": "oklch(51.1% 0.230 277.0)",
+        "tonalRamp": [
+          "#070723",
+          "#1b1b55",
+          "#33338c",
+          "#4c4cc9",
+          "#6768ff",
+          "#8a96ff",
+          "#b2c0ff",
+          "#dee9ff"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Indigo Deep",
+        "canonical": "#4338ca",
+        "oklch": "oklch(45.7% 0.215 277.0)",
+        "tonalRamp": [
+          "#070721",
+          "#1c1d51",
+          "#333588",
+          "#4d4fc2",
+          "#686bfd",
+          "#8c97ff",
+          "#b4c1ff",
+          "#dfeaff"
+        ]
+      },
+      "accent-text": {
+        "role": "primary",
+        "displayName": "On Indigo",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "accent-soft": {
+        "role": "primary",
+        "displayName": "Indigo Wash",
+        "canonical": "rgba(79, 70, 229, 0.1)",
+        "oklch": "oklch(51.1% 0.230 277.0)",
+        "tonalRamp": [
+          "#070723",
+          "#1b1b55",
+          "#33338c",
+          "#4c4cc9",
+          "#6768ff",
+          "#8a96ff",
+          "#b2c0ff",
+          "#dee9ff"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Indigo",
+        "canonical": "#6366f1",
+        "oklch": "oklch(58.5% 0.204 277.1)",
+        "tonalRamp": [
+          "#070820",
+          "#1c1d4f",
+          "#343684",
+          "#4d50bd",
+          "#696ef7",
+          "#8d98ff",
+          "#b5c1ff",
+          "#e0eaff"
+        ]
+      },
+      "link": {
+        "role": "primary",
+        "displayName": "Link Indigo",
+        "canonical": "#3d37c9",
+        "oklch": "oklch(45.0% 0.216 275.2)",
+        "tonalRamp": [
+          "#060721",
+          "#1a1d52",
+          "#303588",
+          "#4950c3",
+          "#636dfe",
+          "#8898ff",
+          "#b1c2ff",
+          "#ddeaff"
+        ]
+      },
+      "danger": {
+        "role": "secondary",
+        "displayName": "Rejected Red",
+        "canonical": "#c4320a",
+        "oklch": "oklch(54.1% 0.188 34.2)",
+        "tonalRamp": [
+          "#1b0301",
+          "#451105",
+          "#74220f",
+          "#a7351a",
+          "#db4b2a",
+          "#f47e63",
+          "#ffae97",
+          "#ffdccc"
+        ]
+      },
+      "danger-strong": {
+        "role": "secondary",
+        "displayName": "Rejected Red Strong",
+        "canonical": "#b42318",
+        "oklch": "oklch(50.0% 0.182 29.5)",
+        "tonalRamp": [
+          "#1a0302",
+          "#44110b",
+          "#73221a",
+          "#a53529",
+          "#d94b3c",
+          "#f27e6e",
+          "#ffae9f",
+          "#ffdcd1"
+        ]
+      },
+      "danger-soft": {
+        "role": "secondary",
+        "displayName": "Rejected Red Soft",
+        "canonical": "#fef1ee",
+        "oklch": "oklch(96.8% 0.015 33.1)",
+        "tonalRamp": [
+          "#0d0b0a",
+          "#282423",
+          "#47403f",
+          "#685f5d",
+          "#8b7f7d",
+          "#aca3a0",
+          "#cfc7c5",
+          "#f2edec"
+        ]
+      },
+      "danger-border": {
+        "role": "secondary",
+        "displayName": "Rejected Red Border",
+        "canonical": "#fbd0c5",
+        "oklch": "oklch(89.2% 0.051 34.7)",
+        "tonalRamp": [
+          "#100908",
+          "#2f211e",
+          "#523c37",
+          "#775951",
+          "#9e786e",
+          "#bd9d94",
+          "#dcc3bc",
+          "#fceae5"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber",
+        "canonical": "#a15c07",
+        "oklch": "oklch(54.3% 0.123 61.8)",
+        "tonalRamp": [
+          "#140801",
+          "#371e05",
+          "#5f370e",
+          "#895219",
+          "#b56f29",
+          "#d19763",
+          "#edbf98",
+          "#ffe8cc"
+        ]
+      },
+      "warning-soft": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber Soft",
+        "canonical": "#fef6e7",
+        "oklch": "oklch(97.5% 0.022 83.3)",
+        "tonalRamp": [
+          "#0c0b09",
+          "#272520",
+          "#45413a",
+          "#666156",
+          "#898174",
+          "#aaa499",
+          "#cdc9c0",
+          "#f1eee8"
+        ]
+      },
+      "warning-border": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber Border",
+        "canonical": "#f8dfaa",
+        "oklch": "oklch(91.2% 0.074 85.6)",
+        "tonalRamp": [
+          "#0f0b04",
+          "#2c2412",
+          "#4d4024",
+          "#715f38",
+          "#967f4e",
+          "#b6a37b",
+          "#d6c8a9",
+          "#f8eed8"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Approved Green",
+        "canonical": "#067647",
+        "oklch": "oklch(49.9% 0.117 157.1)",
+        "tonalRamp": [
+          "#020f06",
+          "#0b2c1b",
+          "#184d32",
+          "#28714b",
+          "#3a9766",
+          "#71b78e",
+          "#a3d8b7",
+          "#d5f9e2"
+        ]
+      },
+      "success-soft": {
+        "role": "secondary",
+        "displayName": "Approved Green Soft",
+        "canonical": "#ecfaf3",
+        "oklch": "oklch(97.3% 0.017 164.7)",
+        "tonalRamp": [
+          "#0a0c0b",
+          "#222624",
+          "#3d4440",
+          "#5a645f",
+          "#798680",
+          "#9ea8a3",
+          "#c3cbc7",
+          "#eaf0ed"
+        ]
+      },
+      "success-border": {
+        "role": "secondary",
+        "displayName": "Approved Green Border",
+        "canonical": "#b7e9d0",
+        "oklch": "oklch(89.2% 0.062 163.2)",
+        "tonalRamp": [
+          "#060d09",
+          "#182921",
+          "#2e493c",
+          "#466b59",
+          "#608e78",
+          "#89af9c",
+          "#b4d1c2",
+          "#e0f4ea"
+        ]
+      },
+      "info": {
+        "role": "secondary",
+        "displayName": "No Changes Blue",
+        "canonical": "#1e5bd6",
+        "oklch": "oklch(51.1% 0.199 262.2)",
+        "tonalRamp": [
+          "#020a20",
+          "#0b224f",
+          "#1a3d84",
+          "#295abc",
+          "#3c7af6",
+          "#6da2ff",
+          "#9ec9ff",
+          "#d1efff"
+        ]
+      },
+      "info-soft": {
+        "role": "secondary",
+        "displayName": "No Changes Blue Soft",
+        "canonical": "#eef4ff",
+        "oklch": "oklch(96.6% 0.016 262.8)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d6169",
+          "#7d838c",
+          "#a1a5ad",
+          "#c6c9d0",
+          "#eceef3"
+        ]
+      },
+      "info-border": {
+        "role": "secondary",
+        "displayName": "No Changes Blue Border",
+        "canonical": "#c7d7fe",
+        "oklch": "oklch(88.0% 0.057 267.6)",
+        "tonalRamp": [
+          "#090b11",
+          "#202531",
+          "#3a4255",
+          "#56617c",
+          "#7482a5",
+          "#99a5c2",
+          "#bfc9e0",
+          "#e7eeff"
+        ]
+      },
+      "release": {
+        "role": "secondary",
+        "displayName": "Release Violet",
+        "canonical": "#6927da",
+        "oklch": "oklch(48.7% 0.243 290.9)",
+        "tonalRamp": [
+          "#0c0522",
+          "#281554",
+          "#46298b",
+          "#673ec7",
+          "#8957ff",
+          "#a889ff",
+          "#cab7ff",
+          "#eee3ff"
+        ]
+      },
+      "release-soft": {
+        "role": "secondary",
+        "displayName": "Release Violet Soft",
+        "canonical": "#f5f1ff",
+        "oklch": "oklch(96.5% 0.019 299.1)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#252429",
+          "#434148",
+          "#625f69",
+          "#84808c",
+          "#a6a3ad",
+          "#cac8d0",
+          "#efedf3"
+        ]
+      },
+      "release-border": {
+        "role": "secondary",
+        "displayName": "Release Violet Border",
+        "canonical": "#ddd1fb",
+        "oklch": "oklch(88.4% 0.059 298.3)",
+        "tonalRamp": [
+          "#0c0a11",
+          "#262230",
+          "#443e53",
+          "#645c79",
+          "#867ba1",
+          "#a89fbf",
+          "#ccc5de",
+          "#f0ebfd"
+        ]
+      },
+      "neutral": {
+        "role": "secondary",
+        "displayName": "Draft Grey",
+        "canonical": "#545b69",
+        "oklch": "oklch(47.0% 0.024 264.3)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#22252a",
+          "#3e424a",
+          "#5b616d",
+          "#7b8291",
+          "#9fa5b2",
+          "#c4c9d3",
+          "#ebeff6"
+        ]
+      },
+      "neutral-soft": {
+        "role": "secondary",
+        "displayName": "Draft Grey Soft",
+        "canonical": "#f1f2f5",
+        "oklch": "oklch(96.1% 0.004 271.4)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9cb",
+          "#eeeef0"
+        ]
+      },
+      "neutral-border": {
+        "role": "secondary",
+        "displayName": "Draft Grey Border",
+        "canonical": "#dcdfe5",
+        "oklch": "oklch(90.3% 0.009 264.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808288",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "dot-ok": {
+        "role": "tertiary",
+        "displayName": "Connected Green",
+        "canonical": "#22a05a",
+        "oklch": "oklch(62.3% 0.149 153.1)",
+        "tonalRamp": [
+          "#000f04",
+          "#022e15",
+          "#065029",
+          "#0c743e",
+          "#1c9b56",
+          "#65bb81",
+          "#9bdbae",
+          "#d0fbdb"
+        ]
+      },
+      "dot-warn": {
+        "role": "tertiary",
+        "displayName": "Connecting Amber",
+        "canonical": "#e0a100",
+        "oklch": "oklch(75.0% 0.155 80.4)",
+        "tonalRamp": [
+          "#130900",
+          "#362000",
+          "#5c3a00",
+          "#865600",
+          "#b17500",
+          "#cd9c3e",
+          "#e9c381",
+          "#ffebbe"
+        ]
+      },
+      "dot-err": {
+        "role": "tertiary",
+        "displayName": "Error Red",
+        "canonical": "#dc3b30",
+        "oklch": "oklch(59.4% 0.199 28.6)",
+        "tonalRamp": [
+          "#1c0202",
+          "#470d09",
+          "#771c16",
+          "#ab2d24",
+          "#e04136",
+          "#f9796a",
+          "#ffaa9c",
+          "#ffdacf"
+        ]
+      },
+      "dot-idle": {
+        "role": "tertiary",
+        "displayName": "Disconnected Grey",
+        "canonical": "#a3adb9",
+        "oklch": "oklch(74.4% 0.021 252.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222529",
+          "#3d4349",
+          "#5b626b",
+          "#7a838f",
+          "#9ea6af",
+          "#c4cad1",
+          "#eaeff4"
+        ]
+      },
+      "bg-dark": {
+        "role": "neutral",
+        "displayName": "Desk Grey (dark)",
+        "canonical": "#0c0d10",
+        "oklch": "oklch(15.9% 0.007 271.0)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818286",
+          "#a4a5a8",
+          "#c8c9cc",
+          "#eeeef0"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Card White (dark)",
+        "canonical": "#131418",
+        "oklch": "oklch(19.2% 0.008 274.5)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#414245",
+          "#606165",
+          "#818287",
+          "#a4a5a9",
+          "#c8c9cc",
+          "#eeeef1"
+        ]
+      },
+      "surface-2-dark": {
+        "role": "neutral",
+        "displayName": "Inset Grey (dark)",
+        "canonical": "#191b20",
+        "oklch": "oklch(22.2% 0.010 268.2)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404246",
+          "#5f6166",
+          "#808289",
+          "#a3a5aa",
+          "#c7c9cd",
+          "#edeef1"
+        ]
+      },
+      "surface-3-dark": {
+        "role": "neutral",
+        "displayName": "Screenshot Mat (dark)",
+        "canonical": "#20232a",
+        "oklch": "oklch(25.6% 0.014 267.0)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404247",
+          "#5e6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "surface-hover-dark": {
+        "role": "neutral",
+        "displayName": "Row Hover (dark)",
+        "canonical": "#171920",
+        "oklch": "oklch(21.4% 0.014 272.6)",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#242528",
+          "#404247",
+          "#5f6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "border-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "#24272e",
+        "oklch": "oklch(27.3% 0.014 267.1)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404247",
+          "#5e6168",
+          "#7f828b",
+          "#a2a5ac",
+          "#c7c9cf",
+          "#edeef2"
+        ]
+      },
+      "border-strong-dark": {
+        "role": "neutral",
+        "displayName": "Control Outline (dark)",
+        "canonical": "#333741",
+        "oklch": "oklch(33.7% 0.018 268.1)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d616a",
+          "#7e828e",
+          "#a1a5af",
+          "#c6c9d1",
+          "#eceef4"
+        ]
+      },
+      "text-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark)",
+        "canonical": "#ececf0",
+        "oklch": "oklch(94.4% 0.005 286.3)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828285",
+          "#a5a5a8",
+          "#c9c9cb",
+          "#eeeef0"
+        ]
+      },
+      "text-2-dark": {
+        "role": "neutral",
+        "displayName": "Secondary Ink (dark)",
+        "canonical": "#aeb2bd",
+        "oklch": "oklch(76.4% 0.016 269.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242529",
+          "#404248",
+          "#5e6169",
+          "#7e828c",
+          "#a2a5ad",
+          "#c6c9d0",
+          "#edeef3"
+        ]
+      },
+      "text-3-dark": {
+        "role": "neutral",
+        "displayName": "Meta Grey (dark)",
+        "canonical": "#8b909c",
+        "oklch": "oklch(65.3% 0.019 267.7)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5d616a",
+          "#7d828e",
+          "#a1a5af",
+          "#c6c9d1",
+          "#eceef4"
+        ]
+      },
+      "placeholder-dark": {
+        "role": "neutral",
+        "displayName": "Placeholder Grey (dark)",
+        "canonical": "#7a7f8c",
+        "oklch": "oklch(59.7% 0.021 268.9)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#23252a",
+          "#3f4249",
+          "#5d616b",
+          "#7d828f",
+          "#a1a5b0",
+          "#c6c9d2",
+          "#eceef4"
+        ]
+      },
+      "accent-dark": {
+        "role": "primary",
+        "displayName": "v8s Indigo (dark)",
+        "canonical": "#5b52f0",
+        "oklch": "oklch(54.6% 0.228 278.2)",
+        "tonalRamp": [
+          "#070722",
+          "#1d1b54",
+          "#35328c",
+          "#4f4bc8",
+          "#6b67ff",
+          "#8d95ff",
+          "#b5bfff",
+          "#dfe9ff"
+        ]
+      },
+      "accent-hover-dark": {
+        "role": "primary",
+        "displayName": "Indigo Deep (dark)",
+        "canonical": "#6d65f5",
+        "oklch": "oklch(59.4% 0.209 280.4)",
+        "tonalRamp": [
+          "#080720",
+          "#1f1c50",
+          "#383485",
+          "#534ebe",
+          "#716af8",
+          "#9396ff",
+          "#babfff",
+          "#e3e9ff"
+        ]
+      },
+      "accent-text-dark": {
+        "role": "primary",
+        "displayName": "On Indigo (dark)",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "accent-soft-dark": {
+        "role": "primary",
+        "displayName": "Indigo Wash (dark)",
+        "canonical": "rgba(124, 116, 255, 0.14)",
+        "oklch": "oklch(63.7% 0.200 281.7)",
+        "tonalRamp": [
+          "#09071f",
+          "#201c4e",
+          "#3a3482",
+          "#564eba",
+          "#746bf3",
+          "#9696ff",
+          "#bcbfff",
+          "#e5e9ff"
+        ]
+      },
+      "focus-dark": {
+        "role": "primary",
+        "displayName": "Focus Indigo (dark)",
+        "canonical": "#8b85ff",
+        "oklch": "oklch(67.8% 0.175 282.9)",
+        "tonalRamp": [
+          "#09081d",
+          "#211e49",
+          "#3b377a",
+          "#5852af",
+          "#776fe5",
+          "#9998fa",
+          "#bfc1ff",
+          "#e7e9ff"
+        ]
+      },
+      "link-dark": {
+        "role": "primary",
+        "displayName": "Link Indigo (dark)",
+        "canonical": "#a7a2ff",
+        "oklch": "oklch(75.3% 0.132 285.2)",
+        "tonalRamp": [
+          "#0a0918",
+          "#232040",
+          "#3e3a6c",
+          "#5c579c",
+          "#7c75cd",
+          "#9e9be5",
+          "#c3c2fc",
+          "#eaeaff"
+        ]
+      },
+      "danger-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red (dark)",
+        "canonical": "#ff8a73",
+        "oklch": "oklch(75.7% 0.147 32.3)",
+        "tonalRamp": [
+          "#180503",
+          "#3f1710",
+          "#6a2c20",
+          "#9a4332",
+          "#ca5c47",
+          "#e58876",
+          "#feb4a5",
+          "#ffe0d5"
+        ]
+      },
+      "danger-strong-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red Strong (dark)",
+        "canonical": "#ff9c88",
+        "oklch": "oklch(79.0% 0.123 32.2)",
+        "tonalRamp": [
+          "#160604",
+          "#3b1a14",
+          "#653127",
+          "#92493b",
+          "#c06452",
+          "#db8e7e",
+          "#f6b8ab",
+          "#ffe3d9"
+        ]
+      },
+      "danger-soft-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red Soft (dark)",
+        "canonical": "rgba(240, 68, 56, 0.12)",
+        "oklch": "oklch(63.7% 0.210 28.5)",
+        "tonalRamp": [
+          "#1c0201",
+          "#480a07",
+          "#791812",
+          "#ae271f",
+          "#e43a30",
+          "#fd7666",
+          "#ffa899",
+          "#ffd9cd"
+        ]
+      },
+      "danger-border-dark": {
+        "role": "secondary",
+        "displayName": "Rejected Red Border (dark)",
+        "canonical": "rgba(240, 68, 56, 0.32)",
+        "oklch": "oklch(63.7% 0.210 28.5)",
+        "tonalRamp": [
+          "#1c0201",
+          "#480a07",
+          "#791812",
+          "#ae271f",
+          "#e43a30",
+          "#fd7666",
+          "#ffa899",
+          "#ffd9cd"
+        ]
+      },
+      "warning-dark": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber (dark)",
+        "canonical": "#f8c55c",
+        "oklch": "oklch(84.9% 0.135 83.1)",
+        "tonalRamp": [
+          "#120900",
+          "#332200",
+          "#583d00",
+          "#7f5a00",
+          "#a87900",
+          "#c69f50",
+          "#e3c58b",
+          "#ffecc4"
+        ]
+      },
+      "warning-soft-dark": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber Soft (dark)",
+        "canonical": "rgba(247, 144, 9, 0.12)",
+        "oklch": "oklch(74.7% 0.170 62.1)",
+        "tonalRamp": [
+          "#170600",
+          "#3e1a00",
+          "#683100",
+          "#974900",
+          "#c66500",
+          "#e19040",
+          "#faba82",
+          "#ffe5be"
+        ]
+      },
+      "warning-border-dark": {
+        "role": "secondary",
+        "displayName": "Needs Review Amber Border (dark)",
+        "canonical": "rgba(247, 144, 9, 0.3)",
+        "oklch": "oklch(74.7% 0.170 62.1)",
+        "tonalRamp": [
+          "#170600",
+          "#3e1a00",
+          "#683100",
+          "#974900",
+          "#c66500",
+          "#e19040",
+          "#faba82",
+          "#ffe5be"
+        ]
+      },
+      "success-dark": {
+        "role": "secondary",
+        "displayName": "Approved Green (dark)",
+        "canonical": "#5ad49a",
+        "oklch": "oklch(78.5% 0.139 159.9)",
+        "tonalRamp": [
+          "#000f06",
+          "#002e1a",
+          "#005031",
+          "#00744a",
+          "#039b65",
+          "#60ba8d",
+          "#98dbb6",
+          "#cefbe1"
+        ]
+      },
+      "success-soft-dark": {
+        "role": "secondary",
+        "displayName": "Approved Green Soft (dark)",
+        "canonical": "rgba(23, 178, 106, 0.12)",
+        "oklch": "oklch(67.3% 0.160 155.6)",
+        "tonalRamp": [
+          "#001005",
+          "#002f15",
+          "#005129",
+          "#00763f",
+          "#009d57",
+          "#59bc82",
+          "#95dcae",
+          "#ccfddc"
+        ]
+      },
+      "success-border-dark": {
+        "role": "secondary",
+        "displayName": "Approved Green Border (dark)",
+        "canonical": "rgba(23, 178, 106, 0.3)",
+        "oklch": "oklch(67.3% 0.160 155.6)",
+        "tonalRamp": [
+          "#001005",
+          "#002f15",
+          "#005129",
+          "#00763f",
+          "#009d57",
+          "#59bc82",
+          "#95dcae",
+          "#ccfddc"
+        ]
+      },
+      "info-dark": {
+        "role": "secondary",
+        "displayName": "No Changes Blue (dark)",
+        "canonical": "#8db4ff",
+        "oklch": "oklch(77.1% 0.116 262.9)",
+        "tonalRamp": [
+          "#050b17",
+          "#17243e",
+          "#2d4169",
+          "#446097",
+          "#5d81c7",
+          "#86a5e0",
+          "#b1caf8",
+          "#deefff"
+        ]
+      },
+      "info-soft-dark": {
+        "role": "secondary",
+        "displayName": "No Changes Blue Soft (dark)",
+        "canonical": "rgba(46, 144, 250, 0.12)",
+        "oklch": "oklch(65.2% 0.181 253.9)",
+        "tonalRamp": [
+          "#000b1d",
+          "#02254a",
+          "#07427c",
+          "#0f61b2",
+          "#1d82e9",
+          "#60a8fd",
+          "#97cdff",
+          "#ccf2ff"
+        ]
+      },
+      "info-border-dark": {
+        "role": "secondary",
+        "displayName": "No Changes Blue Border (dark)",
+        "canonical": "rgba(46, 144, 250, 0.3)",
+        "oklch": "oklch(65.2% 0.181 253.9)",
+        "tonalRamp": [
+          "#000b1d",
+          "#02254a",
+          "#07427c",
+          "#0f61b2",
+          "#1d82e9",
+          "#60a8fd",
+          "#97cdff",
+          "#ccf2ff"
+        ]
+      },
+      "release-dark": {
+        "role": "secondary",
+        "displayName": "Release Violet (dark)",
+        "canonical": "#c2a8ff",
+        "oklch": "oklch(78.6% 0.124 297.2)",
+        "tonalRamp": [
+          "#0d0816",
+          "#281f3c",
+          "#473866",
+          "#685394",
+          "#8b71c2",
+          "#ac98dc",
+          "#cebff5",
+          "#f2e8ff"
+        ]
+      },
+      "release-soft-dark": {
+        "role": "secondary",
+        "displayName": "Release Violet Soft (dark)",
+        "canonical": "rgba(122, 90, 248, 0.15)",
+        "oklch": "oklch(58.9% 0.224 286.6)",
+        "tonalRamp": [
+          "#0b0621",
+          "#241951",
+          "#402f88",
+          "#5f46c2",
+          "#7f61fd",
+          "#9f90ff",
+          "#c3bbff",
+          "#e9e6ff"
+        ]
+      },
+      "release-border-dark": {
+        "role": "secondary",
+        "displayName": "Release Violet Border (dark)",
+        "canonical": "rgba(122, 90, 248, 0.36)",
+        "oklch": "oklch(58.9% 0.224 286.6)",
+        "tonalRamp": [
+          "#0b0621",
+          "#241951",
+          "#402f88",
+          "#5f46c2",
+          "#7f61fd",
+          "#9f90ff",
+          "#c3bbff",
+          "#e9e6ff"
+        ]
+      },
+      "neutral-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey (dark)",
+        "canonical": "#b3b8c3",
+        "oklch": "oklch(78.2% 0.017 266.3)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3f4248",
+          "#5e6169",
+          "#7e828c",
+          "#a1a5ae",
+          "#c6c9d0",
+          "#eceef3"
+        ]
+      },
+      "neutral-soft-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey Soft (dark)",
+        "canonical": "rgba(148, 155, 170, 0.1)",
+        "oklch": "oklch(68.9% 0.023 265.7)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616d",
+          "#7c8291",
+          "#9fa5b1",
+          "#c5c9d3",
+          "#ebeef5"
+        ]
+      },
+      "neutral-border-dark": {
+        "role": "secondary",
+        "displayName": "Draft Grey Border (dark)",
+        "canonical": "rgba(148, 155, 170, 0.24)",
+        "oklch": "oklch(68.9% 0.023 265.7)",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3e424a",
+          "#5c616d",
+          "#7c8291",
+          "#9fa5b1",
+          "#c5c9d3",
+          "#ebeef5"
+        ]
+      },
+      "dot-ok-dark": {
+        "role": "tertiary",
+        "displayName": "Connected Green (dark)",
+        "canonical": "#3dd68c",
+        "oklch": "oklch(77.9% 0.165 157.3)",
+        "tonalRamp": [
+          "#001005",
+          "#002f16",
+          "#00522a",
+          "#007740",
+          "#009e59",
+          "#51be84",
+          "#90ddaf",
+          "#c9fddc"
+        ]
+      },
+      "dot-warn-dark": {
+        "role": "tertiary",
+        "displayName": "Connecting Amber (dark)",
+        "canonical": "#f2c14e",
+        "oklch": "oklch(83.4% 0.141 85.4)",
+        "tonalRamp": [
+          "#120a00",
+          "#332200",
+          "#573d00",
+          "#7f5a00",
+          "#a87a00",
+          "#c59f4a",
+          "#e2c688",
+          "#ffecc2"
+        ]
+      },
+      "dot-err-dark": {
+        "role": "tertiary",
+        "displayName": "Error Red (dark)",
+        "canonical": "#ff6b5e",
+        "oklch": "oklch(70.9% 0.183 27.7)",
+        "tonalRamp": [
+          "#1b0302",
+          "#44100d",
+          "#73221c",
+          "#a6342d",
+          "#d94a40",
+          "#f37e71",
+          "#ffada1",
+          "#ffdcd3"
+        ]
+      },
+      "dot-idle-dark": {
+        "role": "tertiary",
+        "displayName": "Disconnected Grey (dark)",
+        "canonical": "#5e6a77",
+        "oklch": "oklch(51.9% 0.025 250.4)",
+        "tonalRamp": [
+          "#090b0e",
+          "#21262a",
+          "#3c434a",
+          "#59626d",
+          "#778491",
+          "#9ca6b2",
+          "#c2cad3",
+          "#e9eff5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The hero H1 only; the 404 uses a smaller fluid variant."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "One per section; a plain sentence."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sub-blocks beside a section (trust, phone) and the Zyno band."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "Headings inside a collection card."
+      },
+      "lede": {
+        "displayName": "Lede",
+        "purpose": "The paragraph under a headline, Secondary Ink; 17px at 600px and below."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Row text, list items, footer links."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Notes, hints, file names, Meta Grey."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons, nav links, more links."
+      },
+      "tag": {
+        "displayName": "Tag",
+        "purpose": "Status tag words."
+      },
+      "column-header": {
+        "displayName": "Column header",
+        "purpose": "Uppercase header of the table, list, or group directly beneath; never a kicker."
+      },
+      "command": {
+        "displayName": "Command",
+        "purpose": "The v8s command in a Run chip."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Snippets, the diff, class chips, file names, key caps (11 to 13px)."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 1px 2px rgba(16, 24, 40, 0.05)",
+        "dark": "0 1px 2px rgba(0, 0, 0, 0.4)",
+        "purpose": "Resting: collection cards, buttons, Run chips, replica fields and table card."
+      },
+      {
+        "name": "shadow-md",
+        "value": "0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04)",
+        "dark": "0 6px 16px -4px rgba(0, 0, 0, 0.5)",
+        "purpose": "Attached: hero download card, mobile menu, Zyno band, replica toast."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 24px 48px -12px rgba(16, 24, 40, 0.18)",
+        "dark": "0 24px 56px -12px rgba(0, 0, 0, 0.7)",
+        "purpose": "Floating: the replica and its overlays, screenshot frames, the diff figure."
+      },
+      {
+        "name": "indigo-halo",
+        "value": "0 0 0 3px var(--accent-soft)",
+        "purpose": "Hovered Run chip, focused field, open button, open command bar."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control",
+        "value": "120ms ease",
+        "purpose": "Background, border and text colour on buttons, chips, links."
+      },
+      {
+        "name": "header-rule",
+        "value": "160ms ease",
+        "purpose": "Header hairline appears once the page scrolls."
+      },
+      {
+        "name": "cta-nudge",
+        "value": "translate 160ms ease",
+        "purpose": "The Zyno button arrow moves 3px on hover."
+      },
+      {
+        "name": "command-type-in",
+        "value": "60ms per character, run after 900ms",
+        "purpose": "The replica types `po pay` once on first view; a still under reduced motion."
+      },
+      {
+        "name": "toast",
+        "value": "opacity 150ms",
+        "purpose": "Replica toast; none under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "two-col",
+        "value": "1000px"
+      },
+      {
+        "name": "header-burger",
+        "value": "900px"
+      },
+      {
+        "name": "section-pad",
+        "value": "820px"
+      },
+      {
+        "name": "replica-phone",
+        "value": "760px (container query)"
+      },
+      {
+        "name": "rows-stack",
+        "value": "640px"
+      },
+      {
+        "name": "gutter",
+        "value": "600px"
+      },
+      {
+        "name": "phone",
+        "value": "560px"
+      }
+    ],
+    "knownGaps": [
+      "**Indigo as emphasis.** The hero H1's \"No lag.\" is set in `accent` (`link` in dark). That is indigo used as a highlight colour, outside action, selection, and focus.",
+      "**Dot that ignores state.** The hero release line's dot is always `dot-ok` green, including when the GitHub check fails and the text says \"Couldn't reach GitHub just now\".",
+      "**Two indigo fills in the first viewport.** The header Download and the hero download are both filled at 1440x900.",
+      "**Weight 650 is not loaded.** Headings, the replica's title, and the Zyno heading ask for 650; only static 400 to 700 ship, so they render at 700.",
+      "**Literal colours in the Zyno band.** `#0c0d10`, `#ececf0`, `#fff`, `#aeb2bd`, `#15171c`, `#eceef2`, and Zyno's `#2855d4` are literals, not tokens.",
+      "**Carried but unused primitives.** `site.css` came over from the sales site with things this page does not use: `.card` and its variants, `feature-icon`, the comparison table and its stacked form, form fields, `grid-2/3/4`, `section-head`, scroll `reveal`, `notice`, the `info`, `release`, and `accent` tag tones, the `data-when` release gates, and `--cmdbar-h`. Their presence is not evidence of a v8s pattern.",
+      "**Off-scale values.** Radii of 10px (xl button), 36px (phone frame), 4px (key caps, inline code, the replica's tags), and 2px (Zyno square) sit beside the three radius tokens; mono runs at 10, 11, 11.5, 12, 12.5, and 13px.",
+      "**Local code-chip overrides.** The download ways, download headings, and 404 code each undo the global inline-code chip locally."
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The indigo action: header Download, hero download (xl), the 404's home button.",
+      "html": "<a class=\"ds-btn ds-btn--primary\" href=\"#\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z\"/></svg>Download</a> <a class=\"ds-btn ds-btn--primary ds-btn--xl\" href=\"#\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z\"/></svg>Download for macOS</a>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm);font:500 14px/1 var(--font-sans);text-decoration:none;white-space:nowrap;cursor:pointer;transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease}.ds-btn:hover{background:var(--surface-2)}.ds-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-btn--primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}.ds-btn--primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}.ds-btn--xl{height:52px;padding:0 22px;font-size:17px;font-weight:600;border-radius:10px}"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Card White with Control Outline; download rows (32px), Docs on the 404 (large).",
+      "html": "<a class=\"ds-btn\" href=\"#\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z\"/></svg>Download</a> <a class=\"ds-btn ds-btn--lg\" href=\"#\">Docs</a>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm);font:500 14px/1 var(--font-sans);text-decoration:none;white-space:nowrap;cursor:pointer;transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease}.ds-btn:hover{background:var(--surface-2)}.ds-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-btn--lg{height:46px;padding:0 20px;font-size:16px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent, Secondary Ink; GitHub in the header and on the 404.",
+      "html": "<a class=\"ds-btn ds-btn--ghost\" href=\"#\">GitHub</a>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm);font:500 14px/1 var(--font-sans);text-decoration:none;white-space:nowrap;cursor:pointer;transition:background-color 120ms ease,border-color 120ms ease,color 120ms ease}.ds-btn:hover{background:var(--surface-2)}.ds-btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-btn--ghost{background:transparent;border-color:transparent;box-shadow:none;color:var(--text-2)}.ds-btn--ghost:hover{background:transparent;color:var(--text)}"
+    },
+    {
+      "name": "Run Chip",
+      "kind": "custom",
+      "refersTo": "try-chip",
+      "description": "A real v8s command that runs in the hero replica; sits in a section's heading row.",
+      "html": "<button type=\"button\" class=\"ds-try\">:pb<span class=\"ds-try__run\"><svg width=\"9\" height=\"10\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z\"/></svg>Open Problems</span></button>",
+      "css": ".ds-try{display:inline-flex;align-items:center;gap:10px;height:32px;padding:0 6px 0 12px;border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-sm);color:var(--text);font:500 13px/1 var(--font-mono);cursor:pointer;transition:border-color 120ms ease,box-shadow 120ms ease}.ds-try:hover{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}.ds-try:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-try__run{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--link);font:500 12px/1 var(--font-sans)}"
+    },
+    {
+      "name": "Command Button",
+      "kind": "button",
+      "refersTo": "command-button",
+      "description": "Header control that opens the replica's command bar, as `:` does anywhere.",
+      "html": "<button type=\"button\" class=\"ds-cmd\"><kbd class=\"ds-kbd\">:</kbd><span>command</span></button>",
+      "css": ".ds-cmd{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 10px 0 6px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text-3);font:500 12px/1 var(--font-sans);cursor:pointer}.ds-cmd:hover{border-color:var(--border-strong);color:var(--text-2)}.ds-cmd:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-kbd{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;background:var(--surface-2);color:var(--text-2);font:500 12px/1 var(--font-mono)}"
+    },
+    {
+      "name": "Status Tags and Connection Dot",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Tag triplets carrying a word; a connection dot always beside a word.",
+      "html": "<span class=\"ds-tag\">prod-us</span> <span class=\"ds-tag ds-tag--success\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z\"/></svg>Dry run passed</span> <span class=\"ds-tag ds-tag--warning\">Enforce</span> <span class=\"ds-tag ds-tag--danger\">critical</span> <span class=\"ds-conn\"><span class=\"ds-dot\"></span>prod-eu connected</span>",
+      "css": ".ds-tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:1px solid var(--neutral-border);border-radius:var(--radius-sm);background:var(--neutral-soft);color:var(--neutral);font:500 12px/1 var(--font-sans);white-space:nowrap}.ds-tag--success{border-color:var(--success-border);background:var(--success-soft);color:var(--success)}.ds-tag--warning{border-color:var(--warning-border);background:var(--warning-soft);color:var(--warning)}.ds-tag--danger{border-color:var(--danger-border);background:var(--danger-soft);color:var(--danger)}.ds-conn{display:inline-flex;align-items:center;gap:8px;font:400 13px/1 var(--font-sans);color:var(--text-2)}.ds-dot{width:7px;height:7px;border-radius:50%;background:var(--dot-ok)}"
+    },
+    {
+      "name": "Collection Rows",
+      "kind": "card",
+      "refersTo": "row-card",
+      "description": "One hairline card of dense rows: problem families with mono class chips.",
+      "html": "<div class=\"ds-rows\"><div class=\"ds-row\"><span class=\"ds-row__name\">Pods</span><span class=\"ds-row__chips\"><code>pod.crashloop</code><code>pod.image-pull</code><code>pod.oomkilled</code></span></div><div class=\"ds-row\"><span class=\"ds-row__name\">Nodes and storage</span><span class=\"ds-row__chips\"><code>node.not-ready</code><code>pvc.pending</code></span></div></div>",
+      "css": ".ds-rows{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden;font-family:var(--font-sans)}.ds-row{display:grid;grid-template-columns:160px minmax(0,1fr);align-items:center;gap:16px;min-height:44px;padding:6px 18px}.ds-row+.ds-row{border-top:1px solid var(--border)}.ds-row__name{font-size:14px;font-weight:600;color:var(--text)}.ds-row__chips{display:flex;flex-wrap:wrap;gap:6px}.ds-row__chips code{padding:3px 7px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text-2);font:12px/1.4 var(--font-mono)}"
+    },
+    {
+      "name": "Download Card",
+      "kind": "card",
+      "refersTo": "download-card",
+      "description": "The hero's one raised site card: xl primary naming the build, release line with a dot, way pills.",
+      "html": "<div class=\"ds-dl\"><a class=\"ds-dl__btn\" href=\"#\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z\"/></svg>Download for macOS</a><p class=\"ds-dl__meta\"><span class=\"ds-dot\"></span>v0.1.0 · Nov 17, 2026 · MIT</p><ul class=\"ds-dl__ways\"><li><a href=\"#\">Windows</a></li><li><a href=\"#\">Linux</a></li><li><a href=\"#\"><code>v8s serve</code></a></li></ul></div>",
+      "css": ".ds-dl{display:flex;flex-direction:column;gap:12px;width:320px;padding:20px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-md);font-family:var(--font-sans)}.ds-dl__btn{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:10px;background:var(--accent);color:var(--accent-text);font-size:17px;font-weight:600;text-decoration:none;transition:background-color 120ms ease}.ds-dl__btn:hover{background:var(--accent-hover)}.ds-dl__btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-dl__meta{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--text-2);font-variant-numeric:tabular-nums}.ds-dot{width:7px;height:7px;border-radius:50%;background:var(--dot-ok)}.ds-dl__ways{list-style:none;margin:4px 0 0;padding:12px 0 0;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px}.ds-dl__ways a{display:inline-flex;align-items:center;height:26px;padding:0 8px;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-2);font-size:12px;font-weight:500;text-decoration:none}.ds-dl__ways a:hover{border-color:var(--border-strong);color:var(--text)}.ds-dl__ways code{font:11.5px var(--font-mono)}"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Header nav links in plain words, plus a more link as used in section asides.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">Why it’s fast</a><a href=\"#\">Features</a><a href=\"#\">Run it</a><a href=\"#\">Docs</a></nav> <a class=\"ds-more\" href=\"#\">Every class and its default<svg width=\"11\" height=\"11\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z\"/></svg></a>",
+      "css": ".ds-nav{display:inline-flex;gap:2px;font-family:var(--font-sans)}.ds-nav a{padding:7px 11px;border-radius:var(--radius-sm);color:var(--text-2);font-size:14px;font-weight:500;text-decoration:none;transition:background-color 120ms ease,color 120ms ease}.ds-nav a:hover{background:var(--surface-2);color:var(--text)}.ds-nav a:focus-visible,.ds-more:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-more{display:inline-flex;align-items:center;gap:8px;color:var(--link);font:500 14px/1.4 var(--font-sans);text-decoration:none}.ds-more:hover{text-decoration:underline}"
+    },
+    {
+      "name": "Replica Command Bar",
+      "kind": "input",
+      "refersTo": "demo-command-bar",
+      "description": "The app's `:` bar inside the hero replica: focus border, indigo halo, mono input, completions.",
+      "html": "<div class=\"ds-cmdbar\"><div class=\"ds-cmdbar__row\"><span class=\"ds-cmdbar__pfx\">:</span><input class=\"ds-cmdbar__in\" value=\"po pay\" aria-label=\"Command\"></div><div class=\"ds-cmdbar__list\"><div class=\"ds-cmdbar__opt\">po payments<span>namespace</span></div></div></div>",
+      "css": ".ds-cmdbar{width:420px;background:var(--surface);border:1px solid var(--focus);border-radius:var(--radius);box-shadow:var(--shadow-lg),0 0 0 3px var(--accent-soft);overflow:hidden;font:13px/1.4 var(--font-sans);color:var(--text)}.ds-cmdbar__row{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px}.ds-cmdbar__pfx{font:700 14px var(--font-mono);color:var(--accent)}.ds-cmdbar__in{flex:1;border:0;outline:0;background:transparent;font:13px var(--font-mono);color:var(--text)}.ds-cmdbar__list{padding:4px;border-top:1px solid var(--border)}.ds-cmdbar__opt{display:flex;align-items:center;height:30px;padding:0 8px;border-radius:var(--radius-sm);background:var(--accent-soft);font-family:var(--font-mono)}.ds-cmdbar__opt span{margin-left:auto;font:12px var(--font-sans);color:var(--text-3)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Review Desk, driven from the command bar",
+    "overview": "The v8s site is the PixelCI design system (\"The Review Desk\") carried over value for value, with v8s's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names that `siple-web` uses, so the sites read as one family. The marketing layer (display scale, generous sections, the faint desk grid and glow in the hero) is the PixelCI sales site's. v8s changes three things. The accent family is the app's indigo. The app's cluster connection dots (`--dot-*`) join as the live-state device. And the page is operated the way the app is: a working replica of the v8s interface sits in the hero, every feature section carries the real command that opens it as a Run chip, and `:` anywhere opens the replica's command bar.\n\nThe desk is quiet, dense, and utilitarian. A cool grey page; white cards with 1px hairlines and barely visible resting shadows; one indigo; status as small tags with a word in them. Collections are packed as rows inside one card rather than spread across airy feature cards. The only imagery is the app itself: the live replica, and real demo-mode screenshots in light and dark pairs. Nothing is illustrated, and no number is invented; performance figures appear only as labelled design budgets.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`; `html[data-theme]` pins the reader's choice from the header toggle. Components never branch on theme, with two exceptions: screenshot pairs show one of their two images, and indigo text (the Run chip label) uses Link Indigo, which is already themed.",
+    "keyCharacteristics": [
+      "PixelCI's Review Desk tokens unchanged, except the accent family (indigo) and the added `--dot-*` connection dots.",
+      "One indigo for action, selection, and focus. In dark it is a brighter indigo that still carries white text.",
+      "Status is a tag triplet with a word in it. Live connection state is a small round dot, always beside a word.",
+      "Inter for people's words; monospace for machine text: commands, problem class names, file names, config.",
+      "The page is driven by commands: a Run chip per demo-able section, a `:` command button in the header, and the hero replica answering them.",
+      "Collections are one hairline card with divided rows or columns, at the app's density.",
+      "No eyebrow labels. A heading stands alone; small caps appear only as the header of the list they sit on."
+    ],
+    "rules": [
+      {
+        "name": "The One Indigo Rule",
+        "body": "Indigo means \"this is the action, this is chosen, or this has focus\". The header Download is the persistent primary; inside the page body only the hero download fills indigo. Section actions are Run chips, whose indigo is a wash, not a fill. Indigo never carries status, and it is not an emphasis colour for prose or headings.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tag Triplet Rule",
+        "body": "A status tone is applied as soft fill, matching border, and tone text together, and every tag holds a word.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dot Beside a Word Rule",
+        "body": "A connection dot is a 7px circle (6px in the replica) that always sits next to text naming the same thing: a cluster, \"Streaming\", a version line. Its colour must agree with that text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Machine Text Rule",
+        "body": "Anything a machine reads or a person types is monospace: v8s commands, problem class names, CLI invocations, image and chart references, asset file names. Everything a person wrote is Inter, including version numbers and dates, which use tabular numerals.",
+        "section": "typography"
+      },
+      {
+        "name": "The Caps Are Column Headers Rule",
+        "body": "Uppercase 11px text exists only as the header of the table, list, or group directly beneath it, as the app draws its table headers. It never sits above a section heading as a label.",
+        "section": "typography"
+      },
+      {
+        "name": "The Rows Not Cards Rule",
+        "body": "A set of like things is one card with hairline-divided rows or columns at the app's density, not a grid of separate airy cards.",
+        "section": "layout"
+      },
+      {
+        "name": "The App Gets the Width Rule",
+        "body": "The replica and screenshots span their column; no chrome or side rail takes horizontal space from a picture of the app.",
+        "section": "layout"
+      },
+      {
+        "name": "The Window Floats Rule",
+        "body": "Only a picture of the app lifts to the floating shadow. The download card is the one site card raised to attached, because it is the page's one destination. Hover changes border, fill, or halo, never elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every colour from the custom properties in `tokens.css`, keeping PixelCI's names and values for everything except the accent family and the dots.",
+      "**Do** keep indigo to action, selection, and focus; the section-level action is a Run chip, not a filled button (The One Indigo Rule).",
+      "**Do** give every section with a real, demo-able v8s command a Run chip in its heading row, and put \"more\" links there otherwise.",
+      "**Do** show status as a tag triplet with a word in it, and connection state as a dot beside a word whose meaning it matches (The Dot Beside a Word Rule).",
+      "**Do** pack collections as hairline-divided rows or columns inside one card (The Rows Not Cards Rule).",
+      "**Do** set commands, class names, CLI lines, and file names in monospace, and everything else in Inter (The Machine Text Rule).",
+      "**Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.",
+      "**Do** nest radii 12px, 8px, 5px from container to control to inner piece.",
+      "**Do** keep motion to 120ms colour changes, the header hairline (160ms), and the replica's one-time typed command; under reduced motion the command bar is a still."
+    ],
+    "donts": [
+      "**Don't** use another product's accent; v8s is indigo.",
+      "**Don't** use indigo for status, emphasis, or decoration, or a status tone for a general-purpose button.",
+      "**Don't** put a Run chip on a command v8s doesn't have.",
+      "**Don't** put an eyebrow, kicker, or command label above a heading; uppercase caps only head the list beneath them (The Caps Are Column Headers Rule).",
+      "**Don't** spread a collection across separate feature cards with icons.",
+      "**Don't** lift site cards past the resting shadow, except the hero download card; floating shadows belong to pictures of the app (The Window Floats Rule).",
+      "**Don't** use the desk grid and glow anywhere but the hero and the 404.",
+      "**Don't** hard-code a colour, radius, or shadow where a token exists.",
+      "**Don't** copy the known gaps below into new work."
+    ]
+  }
+}

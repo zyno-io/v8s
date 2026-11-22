@@ -7,6 +7,11 @@ name: Release
 on:
   push:
     branches: [main]
+    # Site-only commits don't rebuild the app (www.yml deploys them). Path filters are not evaluated for tag pushes,
+    # so every v* tag still builds and publishes a release.
+    paths-ignore:
+      - 'sites/www/**'
+      - '.github/workflows/www.yml'
     tags: ['v*']
   workflow_dispatch:
 

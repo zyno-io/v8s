@@ -1,0 +1,1193 @@
+---
+/**
+ * v8s home. The page is driven the way the app is: each feature section names
+ * the real v8s command that opens it, and its "Run" chip runs that command in
+ * the interactive demo at the top (synthetic clusters, everything client side).
+ * Press `:` anywhere to open the demo's command bar.
+ *
+ * Product claims come only from the v8s repo (README, CHANGELOG through 0.3.0, docs/).
+ * Performance figures are the design budgets from docs/performance.md and are
+ * labelled as budgets, never as measurements.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import Shot from '../components/Shot.astro';
+import Demo from '../components/demo/Demo.astro';
+import { site, doc, platforms, cliBuilds, releasePage, assetUrl, platformFile, cliFile } from '../data/site';
+import { softwareApplication, webSite } from '../data/seo';
+import { release } from '../data/release';
+
+const VERSION = release.version;
+const notesUrl = releasePage(VERSION);
+const sumsUrl = assetUrl(VERSION, 'checksums.txt');
+
+const problemFamilies = [
+  { family: 'Pods', classes: ['pod.crashloop', 'pod.image-pull', 'pod.oomkilled', 'pod.pending', 'pod.config-error'] },
+  { family: 'Workloads and jobs', classes: ['workload.unavailable', 'workload.rollout-stuck', 'job.failed', 'cronjob.last-failed'] },
+  { family: 'Nodes and storage', classes: ['node.not-ready', 'node.pressure', 'pvc.pending', 'pv.failed'] },
+  { family: 'Networking', classes: ['ingress.no-backend', 'service.no-endpoints', 'gateway.route-unaccepted', 'cert.expiring'] },
+  { family: 'Platform', classes: ['apiservice.unavailable', 'webhook.failing', 'cluster.unreachable'] },
+  { family: 'Flux and Helm', classes: ['flux.not-ready', 'flux.source-failed', 'flux.dependency-blocked', 'helm.failed'] },
+  { family: 'Policy and security', classes: ['policy.fail', 'policy.admission-denied', 'vuln.critical', 'secret.exposed'] },
+  { family: 'Network flows', classes: ['network.policy-drops', 'network.l7-errors', 'network.dns-errors'] },
+];
+
+const integrations = [
+  { name: 'Kyverno', what: 'CEL policies with an Audit and Enforce switch, policy reports, exception templates. Classic policies read-only.', tone: 'warning', word: 'Enforce' },
+  { name: 'Trivy Operator', what: 'Vulnerabilities by image across clusters, with an Exposed via column (Ingress, LoadBalancer, NodePort, Service), CVE tables, a per-workload Security tab, rescan.', tone: 'danger', word: 'critical' },
+  { name: 'Kubescape', what: 'Configuration and RBAC findings beside the workload they belong to, scan now.', tone: 'warning', word: 'high' },
+  { name: 'Hubble', what: 'Flows with relay-side filters, drops, a service map and network problem classes, over your own credential.', tone: 'danger', word: 'DROPPED' },
+];
+
+const keys = [
+  { k: [':'], what: 'Command bar' },
+  { k: ['/'], what: 'Filter' },
+  { k: ['j', 'k'], what: 'Move' },
+  { k: ['↵'], what: 'Open' },
+  { k: ['l'], what: 'Logs' },
+  { k: ['s'], what: 'Shell' },
+  { k: ['e'], what: 'Edit YAML' },
+  { k: ['d'], what: 'Describe' },
+  { k: ['y'], what: 'YAML' },
+  { k: ['⇧J'], what: 'Jump to owner' },
+  { k: ['c'], what: 'Copy name' },
+  { k: ['Ctrl', 'D'], what: 'Delete, after a confirm' },
+  { k: ['['], what: 'Sidebar' },
+];
+---
+
+<BaseLayout
+  title="v8s · Visual k8s, a fast multi-cluster Kubernetes manager"
+  schema={[webSite, softwareApplication]}
+>
+  <SiteHeader demo />
+  <main id="main">
+    <!-- Hero: the pitch and the download, then the app itself. -->
+    <section class="hero desk-grid desk-glow" aria-labelledby="hero-title">
+      <div class="wrap hero__top">
+        <div class="hero__copy">
+          <h1 id="hero-title" class="display">Every cluster.<br />Every row. <span class="hero__em">No lag.</span></h1>
+          <p class="lede hero__lede">
+            v8s, short for <em>Visual k8s</em>, is a multi-cluster Kubernetes manager for your desktop, your browser and your phone. A Go agent keeps
+            your clusters in memory and sends the UI only the rows on screen, so tens of thousands of objects across
+            several clusters stay smooth.
+          </p>
+        </div>
+        <div class="dl" aria-label="Download v8s">
+          <a href="#download" class="btn btn--primary btn--xl dl__primary" data-dl-primary>
+            <i class="fa-solid fa-arrow-down" data-dl-icon aria-hidden="true"></i><span data-dl-label>Download v8s</span>
+          </a>
+          <p class="dl__alt fine" data-dl-alt hidden></p>
+          <p class="dl__meta">
+            <span class="dot" aria-hidden="true"></span><span>v{VERSION} · {release.label}</span>
+            <span class="dl__sep" aria-hidden="true">·</span><span>MIT</span>
+          </p>
+          <ul class="dl__ways">
+            <li><a href="#download"><i class="fa-brands fa-apple" aria-hidden="true"></i>macOS</a></li>
+            <li><a href="#download"><i class="fa-brands fa-windows" aria-hidden="true"></i>Windows</a></li>
+            <li><a href="#download"><i class="fa-brands fa-linux" aria-hidden="true"></i>Linux</a></li>
+            <li><a href="#run"><code>v8s serve</code></a></li>
+            <li><a href="#run">Helm chart</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="wrap hero__demo">
+        <Demo />
+        <p class="hero__hint fine">
+          A working replica of the v8s interface, running in this page on synthetic clusters. Click into it, or press <kbd>:</kbd> and try
+          <code>:pb</code>, <code>:ip 10.20.</code> or <code>:deploy shop</code>, and click a <b>%L</b> header in Pods.
+        </p>
+      </div>
+    </section>
+
+    <!-- Why it is fast: the mechanism, then the budgets. -->
+    <section id="fast" class="section section--rule" aria-labelledby="fast-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="fast-title" class="h-section">Fast because it sends less.</h2>
+            <p class="lede">
+              Most Kubernetes UIs stream whole objects to the browser and sort them there. v8s keeps a compact
+              projection of each resource in a Go agent, sorts and filters it there, and sends the UI just the window
+              you are looking at.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <button type="button" class="try" data-demo-cmd=":po">:po<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Scroll 50k pods</span></button>
+            <a class="more" href={doc.performance}>Why it’s fast<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+
+        <ol class="pipe" aria-label="How a list reaches the screen">
+          <li class="pipe__stage">
+            <p><b>Your clusters.</b> Watched over your own credential, and only the clusters you picked.</p>
+          </li>
+          <li class="pipe__stage">
+            <p><b>The v8s agent.</b> Holds compact projections of every object, indexed, sorted and filtered in Go. Secrets are never watched in full.</p>
+          </li>
+          <li class="pipe__stage">
+            <p><b>The UI.</b> Receives only the rows on screen, as msgpack over a WebSocket, into a virtualized table of fixed 32px rows.</p>
+          </li>
+        </ol>
+
+        <div class="budget">
+          <div class="budget__head">
+            <h3 class="h-card">Design budgets on a laptop</h3>
+            <p class="fine">The targets v8s is built and tested against (<a href={doc.performance}>docs</a>), not benchmark claims.</p>
+          </div>
+          <div class="spec" role="table" aria-label="Design budgets">
+            <div class="spec__row" role="row"><span role="cell">Scrolling over 50,000 pods</span><b role="cell">60 fps</b></div>
+            <div class="spec__row" role="row"><span role="cell">Sort or filter change</span><b role="cell">20 ms</b></div>
+            <div class="spec__row" role="row"><span role="cell">Agent memory per 10,000 pods</span><b role="cell">&lt; 50 MB</b></div>
+            <div class="spec__row" role="row"><span role="cell">Objects per cluster, several clusters at once</span><b role="cell">10,000+</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CPU and memory at a glance -->
+    <section id="usage" class="section section--inset" aria-labelledby="usage-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="usage-title" class="h-section">CPU and memory, at a glance.</h2>
+            <p class="lede">
+              Every pod row shows what it uses and how close that is to what it asked for and what it may take: CPU in
+              millicores, memory in MiB, each as a percentage of its request and its limit. One dense block, in the
+              style of k9s. Sort by any column and the busiest pods come first.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <button type="button" class="try" data-demo-cmd=":po">:po<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Open Pods</span></button>
+            <a class="more" href={`${doc.resources}#cpu-and-memory`}>CPU and memory<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+        <figure class="frame frame--usage">
+          <Shot name="pods" width={2880} height={1800} alt="The v8s Pods table for one cluster with the sidebar unpinned: running pods by name, and right of the status one block of right-aligned numbers: CPU in millicores with percent of request and limit, then memory in MiB with percent of request and limit, with n/a where a pod has no CPU limit. Each percentage has a background bar filling the row from the bottom, green, amber or red by how close it is to the limit." />
+        </figure>
+        <figure class="frame frame--usage">
+            <Shot name="overview" width={2340} height={692} alt="The v8s Overview card for one cluster: node, pod and problem counts above CPU and Memory panels, each with a large usage percentage, a bar with a tick at the requests share, requests and limits percentages, and cores or GiB in use." />
+          </figure>
+        <ul class="checks usage__list">
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Pods:</b> CPU (m), MEM (Mi), and each as %R and %L, right-aligned with the unit in the header. Requests, limits and the share of the node are one click away in <b>Columns</b>.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Bars:</b> every percentage of a limit, and of a node’s allocatable, fills the row from the bottom by its value: green below 70&nbsp;%, amber from 70&nbsp;%, red from 90&nbsp;%. A request percentage gets a bar only when the pod has no limit for that resource. Hover a percentage header for what its colours mean.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Next to a limit, the memory request percentage turns amber above 100&nbsp;% and red above 200&nbsp;%, since pods over their memory request are evicted first when a node runs short of memory. CPU request percentages stay plain.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><code>n/a</code> means no request or limit to divide by; <code>—</code> means no data yet. Both always sort last.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>VPA:</b> a pod whose requests a Vertical Pod Autoscaler sets gets a <b>VPA</b> tag, coloured by the VPA’s status, so high usage there is VPA’s to handle. Its Overview compares each container’s request with the recommendation.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Nodes:</b> usage, its percentage of the node’s allocatable, and the allocatable itself.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Overview:</b> per cluster, usage against the allocatable of all nodes, with the requests and limits committed (<code>requests 62% · limits 143%</code>).</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Reads <a href="https://github.com/kubernetes-sigs/metrics-server">metrics-server</a> only while a table or card shows it, every 30 seconds, for the namespaces on screen. Without it the usage columns stay hidden and say why.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Multi-cluster -->
+    <section id="clusters" class="section" aria-labelledby="clusters-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="clusters-title" class="h-section">Multi-cluster by default.</h2>
+            <p class="lede">
+              Select clusters, or a group such as <code>production</code>. Every list, every search and the Problems
+              view span the selection, with the cluster as the first column.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <button type="button" class="try" data-demo-cmd=":ctx production">:ctx production<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Run</span></button>
+            <button type="button" class="try" data-demo-cmd=":ip 10.20.">:ip 10.20.<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Find by IP</span></button>
+            <a class="more" href={doc.clusters}>Clusters and groups<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+        <div class="split split--shot">
+          <ul class="checks">
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Connects only to the clusters you pick, and only when you press <b>Connect</b>. Ticking boxes opens nothing.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Remembers your last cluster selection, page and namespace filters in the browser, and connects on its own when only one cluster is configured.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Loads kubeconfig the way <code>kubectl</code> does, exec plugins included: <code>kubelogin</code>, <code>aws</code>, <code>gke-gcloud-auth-plugin</code>.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Linked read and write contexts for access gateways such as Warpgate: reads use the read-only target, writes switch over on their own, and one click elevates a single cluster to the write target when you need to see more.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Click the lock to protect a cluster: delete, scale, roll back, drain and Helm actions on it ask you to type its name, and a lock marks it everywhere it appears.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Search by IP.</b> Type an address, a prefix, a CIDR or a range to find pods (Multus secondary IPs too), services and load-balancer IPs, nodes and their pod CIDRs, and the MetalLB, Multus, Cilium and Calico objects that hold them.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>RBAC-aware: an action you can’t take is disabled, with the reason.</span></li>
+          </ul>
+          <figure class="frame frame--clusters">
+            <Shot name="clusters-menu" width={1160} height={696} alt="The v8s cluster selector: production and non-prod group chips above a checklist of three clusters with connection dots and lock toggles, the two production clusters locked, and a Connect button." />
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Problems -->
+    <section id="problems" class="section section--rule" aria-labelledby="problems-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="problems-title" class="h-section">What’s broken, everywhere, in one list.</h2>
+            <p class="lede">
+              The Problems view checks 51 classes in 12 families across every selected cluster, rolls pods up to the
+              workload that owns them, and sorts by severity. Acknowledge or snooze what you’ve already
+              seen.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <button type="button" class="try" data-demo-cmd=":pb">:pb<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Open Problems</span></button>
+            <a class="more" href={doc.problems}>Every class and its default<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+        <div class="fam" role="table" aria-label="Problem families and some of their classes">
+          {
+            problemFamilies.map((f) => (
+              <div class="fam__row" role="row">
+                <span class="fam__name" role="rowheader">{f.family}</span>
+                <span class="fam__classes" role="cell">
+                  {f.classes.map((c) => <code>{c}</code>)}
+                </span>
+              </div>
+            ))
+          }
+        </div>
+        <p class="fine fam__foot">A selection. Phones land on Problems first, with hold-to-confirm on anything destructive.</p>
+      </div>
+    </section>
+
+    <!-- Flux and Helm -->
+    <section id="gitops" class="section section--inset" aria-labelledby="gitops-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="gitops-title" class="h-section">Flux and Helm, not raw CRDs.</h2>
+            <p class="lede">
+              Reconcile, suspend and resume Flux objects, walk a Kustomization’s inventory and the dependency graph
+              behind a stuck chain. Read Helm history, diff any two revisions and roll back, with a guard when Flux
+              owns the release.
+            </p>
+          </div>
+          <div class="sh__aside sh__aside--row">
+            <button type="button" class="try" data-demo-cmd=":ks">:ks<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Kustomizations</span></button>
+            <button type="button" class="try" data-demo-cmd=":hr">:hr<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Helm releases</span></button>
+          </div>
+        </div>
+        <div class="gitops">
+          <div>
+            <h3 class="h-card">Flux</h3>
+            <ul class="checks checks--sm">
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Every source, Kustomization, HelmRelease, notification and image kind, with an overview.</span></li>
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Reconcile, reconcile with source, suspend, resume, force, reset failures.</span></li>
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Kustomization inventory and a dependency graph; blocked <code>dependsOn</code> chains collapse to their root cause.</span></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="h-card">Helm</h3>
+            <ul class="checks checks--sm">
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>A metadata-only release list, so big clusters stay cheap.</span></li>
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>History, values, manifest, notes and hooks; diff any two revisions.</span></li>
+              <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Roll back, uninstall and retry, with a guard when Flux manages the release.</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security and network -->
+    <section id="security" class="section" aria-labelledby="security-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="security-title" class="h-section">Policy, vulnerabilities and flows, beside the workload.</h2>
+            <p class="lede">
+              v8s finds the tools already in your clusters and gives each one a real view instead of a CRD dump. Their
+              findings feed the same Problems list as everything else.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <a class="more" href={doc.security}>Security<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="more" href={doc.network}>Network flows<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+        <div class="integ" role="table" aria-label="Security and network integrations">
+          {
+            integrations.map((i) => (
+              <div class="integ__row" role="row">
+                <span class="integ__name" role="rowheader">{i.name}</span>
+                <span class="integ__what" role="cell">{i.what}</span>
+                <span class="integ__tag" role="cell"><span class={`tag tag--${i.tone}`}>{i.word}</span></span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Day-to-day: preview before commit -->
+    <section id="edit" class="section section--inset" aria-labelledby="edit-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="edit-title" class="h-section">See the change before the cluster does.</h2>
+            <p class="lede">
+              Edit YAML and v8s runs a server-side dry run, shows you the diff against the live object, warns about
+              fields another manager owns and flags GitOps-managed objects. Then you apply.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <button type="button" class="try" data-demo-cmd=":deploy payments">:deploy payments<span class="try__run"><i class="fa-solid fa-play" aria-hidden="true"></i>Open, then press <kbd>e</kbd></span></button>
+            <a class="more" href={doc.operations}>Operations<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+      </div>
+      <div class="wrap split">
+        <div class="stack">
+          <ul class="checks">
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Scale, restart, roll back, cordon, drain with a pre-flight check, trigger a CronJob.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Logs across a workload’s pods, pod and node shells, port-forward.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>The Events tab lists every event of an object, Normal and Warning, newest first, live while it is open.</span></li>
+            <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Create from templates or YAML with server-side apply.</span></li>
+          </ul>
+          <ul class="keys" aria-label="Keyboard shortcuts">
+            {keys.map((x) => (
+              <li>{x.k.map((k) => <kbd>{k}</kbd>)}<span>{x.what}</span></li>
+            ))}
+          </ul>
+        </div>
+        <figure class="diff" aria-label="Example: reviewing a replica change before applying it">
+          <div class="diff__bar">
+            <span class="diff__title"><b>payments-api</b> · Deployment</span>
+            <span class="tag">prod-us</span>
+            <span class="tag tag--success"><i class="fa-solid fa-check" aria-hidden="true"></i>Dry run passed</span>
+          </div>
+          <pre class="diff__body"><code><span class="diff__ln"> spec:</span><span class="diff__ln">   revisionHistoryLimit: 10</span><span class="diff__ln diff__ln--del">-  replicas: 3</span><span class="diff__ln diff__ln--add">+  replicas: 6</span><span class="diff__ln">   selector:</span><span class="diff__ln">     matchLabels:</span><span class="diff__ln">       app: payments-api</span></code></pre>
+          <div class="diff__foot">
+            <span class="fine">Example: the review step, against the live object</span>
+            <span class="diff__btns"><span class="btn">Back to edit</span><span class="btn btn--primary">Apply</span></span>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Run it: three ways -->
+    <section id="run" class="section" aria-labelledby="run-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="run-title" class="h-section">One binary. Desktop, browser, or your team’s server.</h2>
+            <p class="lede">
+              The same UI and the same Go agent, three ways. Nothing runs in anyone’s cloud but yours: there is no v8s
+              service and no telemetry.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <a class="more" href={doc.install}>Install<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a class="more" href={doc.cli}>CLI reference<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+        <div class="run">
+          <article class="run__col">
+            <h3 class="h-card"><i class="fa-solid fa-display" aria-hidden="true"></i>Desktop app</h3>
+            <p class="body-2">macOS, Windows and Linux. The app bundles and supervises its own agent; shells and port-forwards just work.</p>
+            <a href="#download" class="more">Downloads<i class="fa-solid fa-arrow-down" aria-hidden="true"></i></a>
+          </article>
+          <article class="run__col">
+            <h3 class="h-card"><i class="fa-solid fa-terminal" aria-hidden="true"></i>In your browser</h3>
+            <p class="body-2">Grab the CLI archive and run it. It listens on <code>127.0.0.1:7931</code> and opens your browser.</p>
+            <pre class="snippet"><code><span class="c"># single user, loopback only</span>
+v8s serve</code></pre>
+            <p class="fine">No cluster handy? <code>v8s agent --fake</code> serves synthetic ones. The page reconnects by itself after a restart, sleep or network change.</p>
+          </article>
+          <article class="run__col">
+            <h3 class="h-card"><i class="fa-solid fa-server" aria-hidden="true"></i>Hosted, for a team</h3>
+            <p class="body-2">
+              <code>v8s server</code> with OIDC sign-in, including a public client with no secret, such as the Entra app
+              <code>kubelogin</code> uses. Each person’s own token goes through to the cluster; IdP groups decide who
+              sees which clusters. Chrome can install it as a web app.
+            </p>
+            <pre class="snippet"><code>helm install v8s \
+  {site.chart} \
+  --version {VERSION} \
+  -n v8s --create-namespace \
+  -f my-values.yaml</code></pre>
+            <a href={doc.hosted} class="more">Hosted mode<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </article>
+        </div>
+        <div class="phone">
+          <figure class="phone__shot">
+            <Shot name="phone" width={1170} height={2532} alt="v8s on a phone: the Problems list as cards with severity tags, and a bottom navigation bar." />
+          </figure>
+          <div class="stack phone__copy">
+            <h3 class="h-sub">On call, on your phone.</h3>
+            <p class="body-2">
+              Hosted mode serves a Problems-first phone layout: cards instead of tables, a bottom bar, narrow
+              subscriptions, and hold-to-confirm for anything destructive.
+            </p>
+            <a href={doc.mobile} class="more">On a phone<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust -->
+    <section id="trust" class="section section--inset section--tight" aria-labelledby="trust-title">
+      <div class="wrap trust">
+        <div class="stack trust__head">
+          <h2 id="trust-title" class="h-sub">Your clusters, your credentials.</h2>
+          <a class="more" href={doc.faq}>FAQ<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        </div>
+        <ul class="trust__list">
+          <li><b>Your identity, all the way through.</b> Every request carries your own credential to the API server or gateway.</li>
+          <li><b>Secrets stay closed.</b> Lists show names only; values load when you choose Reveal all.</li>
+          <li><b>No v8s cloud.</b> No telemetry, no long-term logs. Beyond your clusters, the only call v8s makes is a daily GitHub check for a newer release (a plain GET, with an Update pill if there is one), which you can switch off.</li>
+          <li><b>MIT licensed.</b> Read every line on GitHub; release files carry build provenance attestations.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Download -->
+    <section id="download" class="section" aria-labelledby="download-title">
+      <div class="wrap">
+        <div class="sh sh--row">
+          <div class="stack">
+            <h2 id="download-title" class="h-section">Download v8s</h2>
+            <p class="lede">
+              <span>v{VERSION} · {release.label}</span>. Signed on macOS and Windows; checksums and build provenance for every file.
+            </p>
+          </div>
+          <div class="sh__aside">
+            <a href={notesUrl} class="more">Release notes<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+            <a href={sumsUrl} class="more" download>checksums.txt<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </div>
+
+        <div class="dls">
+          <div class="dls__group">
+            <h3 class="dls__hd">Desktop app</h3>
+            <ul class="dls__list">
+              {
+                platforms.map((p) => (
+                  <li class="dls__row" data-dl-row={p.id}>
+                    <i class={`fa-brands ${p.icon} dls__icon`} aria-hidden="true" />
+                    <span class="dls__name">
+                      <b>{p.name}</b>
+                      <span class="fine">{platformFile(VERSION, p)}</span>
+                    </span>
+                    <span class="dls__trust fine">{p.trust}</span>
+                    <a class="btn dls__btn" href={assetUrl(VERSION, platformFile(VERSION, p))} download data-dl-link aria-label={`Download v8s for ${p.name}`}>
+                      <i class="fa-solid fa-arrow-down" aria-hidden="true" />Download
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+          </div>
+          <div class="dls__group">
+            <h3 class="dls__hd">CLI: <code>v8s serve</code>, <code>v8s server</code></h3>
+            <ul class="dls__list">
+              {
+                cliBuilds.map((c) => (
+                  <li class="dls__row dls__row--cli" data-cli-row={c.id}>
+                    <i class="fa-solid fa-terminal dls__icon" aria-hidden="true" />
+                    <span class="dls__name">
+                      <b>{c.label}</b>
+                      <span class="fine">{cliFile(VERSION, c)}</span>
+                    </span>
+                    <a class="btn dls__btn" href={assetUrl(VERSION, cliFile(VERSION, c))} download aria-label={`Download the v8s CLI for ${c.label}`}>
+                      <i class="fa-solid fa-arrow-down" aria-hidden="true" />Download
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+            <h3 class="dls__hd dls__hd--sp">Container and chart</h3>
+            <pre class="snippet"><code>docker run --rm -p 7931:7931 \
+  -v $PWD/config.yaml:/etc/v8s/config.yaml:ro \
+  {site.image}:{VERSION}</code></pre>
+            <p class="fine dls__note"><code>linux/amd64</code> and <code>linux/arm64</code>. Build from source: Go 1.27 and Node 26, see the <a href={site.repo}>README</a>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<script>
+  import '../scripts/download';
+</script>
+
+<style>
+  /* ── Hero ── */
+  .hero {
+    padding-top: 72px;
+    padding-bottom: 96px;
+  }
+  .hero__top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 40px 64px;
+    align-items: end;
+  }
+  .hero__em {
+    color: var(--accent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .hero__em {
+      color: var(--link);
+    }
+  }
+  :global(:root[data-theme='dark']) .hero__em {
+    color: var(--link);
+  }
+  .hero__lede {
+    margin-top: 24px;
+    max-width: 60ch;
+  }
+  .dl {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
+  }
+  .dl__primary {
+    width: 100%;
+  }
+  .dl__alt {
+    margin-top: -4px;
+  }
+  .dl__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--t-xs);
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .dl__sep {
+    color: var(--text-3);
+  }
+  .dl__ways {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .dl__ways a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: var(--t-micro);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .dl__ways a:hover {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .dl__ways code {
+    padding: 0;
+    background: none;
+    font-size: 11.5px;
+  }
+  .hero__demo {
+    margin-top: 48px;
+  }
+  .hero__hint {
+    margin-top: 16px;
+    text-align: center;
+  }
+
+  /* ── Section heads ── */
+  .sh {
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 48px;
+  }
+  .sh--row {
+    max-width: none;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px 64px;
+  }
+  .sh--row > .stack {
+    max-width: 720px;
+  }
+  .sh__aside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+    flex: 0 0 auto;
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .more {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--link);
+    font-size: var(--t-sm);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .more:hover {
+    text-decoration: underline;
+  }
+  .more i {
+    font-size: 0.8em;
+  }
+
+  /* ── Fast: pipeline and budgets ── */
+  .pipe {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .pipe__stage {
+    position: relative;
+    padding: 20px 24px 20px 24px;
+    color: var(--text-2);
+    font-size: var(--t-sm);
+  }
+  .pipe__stage b {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .pipe__stage + .pipe__stage {
+    border-left: 1px solid var(--border);
+  }
+  /* The hand-off between stages: a small arrow sitting on the hairline. */
+  .pipe__stage + .pipe__stage::before {
+    content: '';
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-top: 1px solid var(--border-strong);
+    border-right: 1px solid var(--border-strong);
+    background: var(--surface);
+    transform: translateY(-50%) rotate(45deg);
+  }
+  .budget {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 24px 48px;
+    align-items: start;
+    margin-top: 48px;
+  }
+  .budget__head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .spec {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .spec__row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    min-height: 36px;
+    padding: 0 14px;
+    font-size: var(--t-sm);
+    color: var(--text-2);
+  }
+  .spec__row + .spec__row {
+    border-top: 1px solid var(--border);
+  }
+  .spec__row b {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ── Shots in a window frame ── */
+  .split--shot {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+  .frame {
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .frame--usage + .frame--usage {
+    margin-top: 24px;
+  }
+  .usage__list {
+    margin-top: 40px;
+    column-count: 2;
+    column-gap: 48px;
+  }
+  .usage__list li {
+    break-inside: avoid;
+  }
+  .gitops {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .gitops > div {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 28px;
+  }
+  .gitops > div + div {
+    border-left: 1px solid var(--border);
+  }
+  .sh__aside--row {
+    flex-direction: row;
+  }
+
+  /* ── Problems: families packed as 32px rows ── */
+  .fam {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .fam__row {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    min-height: 44px;
+    padding: 6px 18px;
+  }
+  .fam__row + .fam__row {
+    border-top: 1px solid var(--border);
+  }
+  .fam__name {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .fam__classes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .fam__classes code {
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .fam__foot {
+    margin-top: 14px;
+  }
+
+  /* ── Security integrations ── */
+  .integ {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .integ__row {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr) 120px;
+    gap: 16px;
+    align-items: center;
+    min-height: 52px;
+    padding: 10px 18px;
+    font-size: var(--t-sm);
+  }
+  .integ__row + .integ__row {
+    border-top: 1px solid var(--border);
+  }
+  .integ__tag {
+    justify-self: end;
+  }
+  .integ__name {
+    font-weight: 600;
+  }
+  .integ__what {
+    color: var(--text-2);
+  }
+
+  /* ── Edit: diff ── */
+  .diff {
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .diff__bar,
+  .diff__foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    font-size: var(--t-xs);
+  }
+  .diff__bar {
+    border-bottom: 1px solid var(--border);
+  }
+  .diff__title {
+    margin-right: auto;
+    color: var(--text-2);
+  }
+  .diff__title b {
+    color: var(--text);
+  }
+  .diff__body {
+    margin: 0;
+    padding: 12px 0;
+    overflow-x: auto;
+    background: var(--surface-2);
+    font-size: 12.5px;
+    line-height: 1.75;
+  }
+  .diff__ln {
+    display: block;
+    padding: 0 16px;
+    white-space: pre;
+    color: var(--text-2);
+  }
+  .diff__ln--del {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .diff__ln--add {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+  .diff__foot {
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+  }
+  .diff__btns {
+    display: flex;
+    gap: 8px;
+  }
+  .diff__btns .btn {
+    height: 30px;
+    cursor: default;
+  }
+  .keys {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    gap: 10px 20px;
+  }
+  .keys li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--t-xs);
+    color: var(--text-2);
+  }
+  .keys kbd {
+    font-family: var(--font-mono);
+  }
+  .keys span {
+    margin-left: 2px;
+  }
+  .try kbd {
+    min-width: 16px;
+    height: 16px;
+    font-size: 10px;
+  }
+
+  /* ── Run ── */
+  .run {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .run__col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 28px;
+    min-width: 0;
+  }
+  .run__col + .run__col {
+    border-left: 1px solid var(--border);
+  }
+  .run__col h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .run__col h3 i {
+    color: var(--text-3);
+    font-size: 14px;
+  }
+  .run__col .snippet {
+    width: 100%;
+    font-size: 12px;
+  }
+  .phone {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 56px;
+    align-items: center;
+    margin-top: 64px;
+    max-width: 860px;
+  }
+  .phone__shot {
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: 36px;
+    box-shadow: var(--shadow-lg);
+    background: var(--surface);
+  }
+  .phone__copy {
+    gap: 14px;
+  }
+
+  /* ── Trust ── */
+  .trust {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 24px 48px;
+  }
+  .trust__head {
+    gap: 12px;
+  }
+  .trust__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 40px;
+    color: var(--text-2);
+    font-size: var(--t-sm);
+  }
+  .trust__list b {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* ── Downloads ── */
+  .dls {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 48px;
+  }
+  .dls__hd {
+    margin-bottom: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .dls__hd code {
+    padding: 0;
+    background: none;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11.5px;
+  }
+  .dls__hd--sp {
+    margin-top: 32px;
+  }
+  .dls__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .dls__row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px 12px 18px;
+  }
+  .dls__row--cli {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+  }
+  .dls__row + .dls__row {
+    border-top: 1px solid var(--border);
+  }
+  .dls__row:global(.is-mine) {
+    background: var(--accent-soft);
+  }
+  .dls__icon {
+    color: var(--text-3);
+    font-size: 16px;
+    text-align: center;
+  }
+  .dls__name {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .dls__name b {
+    font-size: var(--t-sm);
+    font-weight: 600;
+  }
+  .dls__name .fine {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .dls__btn {
+    height: 32px;
+  }
+  .dls__note {
+    margin-top: 12px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 1000px) {
+    .hero__top {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: start;
+    }
+    .dl {
+      max-width: 420px;
+    }
+    .budget {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .dls {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .split--shot {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (max-width: 900px) {
+    .usage__list {
+      column-count: 1;
+    }
+    .pipe,
+    .gitops {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pipe__stage + .pipe__stage,
+    .gitops > div + div {
+      border-left: 0;
+      border-top: 1px solid var(--border);
+    }
+    .pipe__stage + .pipe__stage::before {
+      left: 50%;
+      top: -6px;
+      transform: translateX(-50%) rotate(135deg);
+    }
+    .sh--row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .sh__aside {
+      align-items: flex-start;
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+    .run {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .run__col + .run__col {
+      border-left: 0;
+      border-top: 1px solid var(--border);
+    }
+    .trust {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .keys {
+      grid-template-columns: repeat(2, auto);
+      justify-content: start;
+    }
+  }
+  @media (max-width: 640px) {
+    .hero {
+      padding-top: 40px;
+    }
+    /* Too small to read at phone width; the demo's live cluster menu (:ctx) stands in. */
+    .frame--clusters,
+    .frame--usage {
+      display: none;
+    }
+    .phone {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 28px;
+    }
+    .phone__shot {
+      max-width: 260px;
+    }
+    .fam__row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      padding: 12px 16px;
+    }
+    .integ__row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .integ__what {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .trust__head {
+    gap: 12px;
+  }
+  .trust__list {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .dls__row {
+      grid-template-columns: 20px minmax(0, 1fr) auto;
+    }
+    .dls__trust {
+      display: none;
+    }
+  }
+</style>

@@ -7,7 +7,7 @@
         "node": true,
         "shared-node-browser": true
     },
-    "ignorePatterns": ["dist/", ".yarn/", "**/out/", "packages/client/src/protocol.gen.ts"],
+    "ignorePatterns": ["dist/", ".yarn/", "**/out/", "packages/client/src/protocol.gen.ts", "sites/www/"],
     "rules": {
         "no-array-constructor": "error",
         "no-case-declarations": "error",

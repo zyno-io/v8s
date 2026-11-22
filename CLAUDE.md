@@ -61,6 +61,15 @@ UI work and the UI e2e/perf suites need no real cluster.
 CI (`.github/workflows/ci.yml`) runs exactly: go vet, go test -race, bench smoke, lint, oxfmt check, typecheck, client and
 UI vitest, UI build, docs build. Lefthook pre-commit runs oxlint --fix and oxfmt on staged files.
 
+The marketing site (v8s.io) is a separate Astro project in `sites/www/`, npm (not Yarn), Node 24, outside the Yarn
+workspaces and ignored by the root oxlint/oxfmt (own 2-space style). `.github/workflows/www.yml` deploys it to ZynoHosting
+(staging on push to main, production on `v*` tags); `release.yml` skips site-only pushes. Its version and date come from
+`CHANGELOG.md` at build time. See `sites/www/README.md`.
+
+```sh
+cd sites/www && npm ci && npm run dev    # or: npm run build
+```
+
 ## Architecture
 
 The big-picture design is in `docs/architecture.md` and `docs/performance.md` (the most important chapter). The repo-layout

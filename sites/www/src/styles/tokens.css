@@ -1,0 +1,199 @@
+/*
+ * v8s site tokens: the PixelCI design system ("The Review Desk") with v8s's
+ * indigo, exactly as the app ships them (v8s packages/ui/src/styles/tokens.scss).
+ * Same names as siple-web and pixelci-sales-site so the sites read as one family.
+ *
+ *  - Accent family is v8s indigo: #4f46e5 light, #5b52f0 dark (links #a7a2ff).
+ *    Indigo means action, selection or focus. It never carries status.
+ *  - --dot-* are the app's cluster connection dots; always beside a word.
+ *  - Theme follows the OS; [data-theme] pins a reader's choice.
+ *  - The marketing type scale (--t-*) and layout tokens at the bottom are site-only.
+ */
+:root {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --surface-3: #eceef2;
+  --surface-hover: #f7f8fa;
+  --border: #e3e5ea;
+  --border-strong: #cfd3db;
+  --text: #15171c;
+  --text-2: #4f5562;
+  --text-3: #646a78;
+  --placeholder: #6f7583;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(79, 70, 229, 0.1);
+  --focus: #6366f1;
+  --link: #3d37c9;
+
+  --danger: #c4320a;
+  --danger-strong: #b42318;
+  --danger-soft: #fef1ee;
+  --danger-border: #fbd0c5;
+  --warning: #a15c07;
+  --warning-soft: #fef6e7;
+  --warning-border: #f8dfaa;
+  --success: #067647;
+  --success-soft: #ecfaf3;
+  --bar-ok: rgba(23, 178, 106, 0.15);
+  --bar-warn: rgba(247, 144, 9, 0.18);
+  --bar-hot: rgba(240, 68, 56, 0.16);
+  --success-border: #b7e9d0;
+  --info: #1e5bd6;
+  --info-soft: #eef4ff;
+  --info-border: #c7d7fe;
+  --release: #6927da;
+  --release-soft: #f5f1ff;
+  --release-border: #ddd1fb;
+  --neutral: #545b69;
+  --neutral-soft: #f1f2f5;
+  --neutral-border: #dcdfe5;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 24px 48px -12px rgba(16, 24, 40, 0.18);
+
+  --radius-sm: 5px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+
+  /* Cluster connection dots (connected, connecting, error, disconnected). */
+  --dot-ok: #22a05a;
+  --dot-warn: #e0a100;
+  --dot-err: #dc3b30;
+  --dot-idle: #a3adb9;
+
+  color-scheme: light;
+}
+
+/* Dark: the same names redeclared. Two selectors carry one block — the OS
+   preference when nothing is pinned, and an explicit pin. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0c0d10;
+    --surface: #131418;
+    --surface-2: #191b20;
+    --surface-3: #20232a;
+    --surface-hover: #171920;
+    --border: #24272e;
+    --border-strong: #333741;
+    --text: #ececf0;
+    --text-2: #aeb2bd;
+    --text-3: #8b909c;
+    --placeholder: #7a7f8c;
+    --accent: #5b52f0;
+    --accent-hover: #6d65f5;
+    --accent-text: #ffffff;
+    --accent-soft: rgba(124, 116, 255, 0.14);
+    --focus: #8b85ff;
+    --link: #a7a2ff;
+    --danger: #ff8a73;
+    --danger-strong: #ff9c88;
+    --danger-soft: rgba(240, 68, 56, 0.12);
+    --danger-border: rgba(240, 68, 56, 0.32);
+    --warning: #f8c55c;
+    --warning-soft: rgba(247, 144, 9, 0.12);
+    --warning-border: rgba(247, 144, 9, 0.3);
+    --success: #5ad49a;
+    --success-soft: rgba(23, 178, 106, 0.12);
+    --bar-ok: rgba(90, 212, 154, 0.16);
+    --bar-warn: rgba(248, 197, 92, 0.19);
+    --bar-hot: rgba(255, 138, 115, 0.22);
+    --success-border: rgba(23, 178, 106, 0.3);
+    --info: #8db4ff;
+    --info-soft: rgba(46, 144, 250, 0.12);
+    --info-border: rgba(46, 144, 250, 0.3);
+    --release: #c2a8ff;
+    --release-soft: rgba(122, 90, 248, 0.15);
+    --release-border: rgba(122, 90, 248, 0.36);
+    --neutral: #b3b8c3;
+    --neutral-soft: rgba(148, 155, 170, 0.1);
+    --neutral-border: rgba(148, 155, 170, 0.24);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 16px -4px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 56px -12px rgba(0, 0, 0, 0.7);
+    --dot-ok: #3dd68c;
+    --dot-warn: #f2c14e;
+    --dot-err: #ff6b5e;
+    --dot-idle: #5e6a77;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #0c0d10;
+  --surface: #131418;
+  --surface-2: #191b20;
+  --surface-3: #20232a;
+  --surface-hover: #171920;
+  --border: #24272e;
+  --border-strong: #333741;
+  --text: #ececf0;
+  --text-2: #aeb2bd;
+  --text-3: #8b909c;
+  --placeholder: #7a7f8c;
+  --accent: #5b52f0;
+  --accent-hover: #6d65f5;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(124, 116, 255, 0.14);
+  --focus: #8b85ff;
+  --link: #a7a2ff;
+  --danger: #ff8a73;
+  --danger-strong: #ff9c88;
+  --danger-soft: rgba(240, 68, 56, 0.12);
+  --danger-border: rgba(240, 68, 56, 0.32);
+  --warning: #f8c55c;
+  --warning-soft: rgba(247, 144, 9, 0.12);
+  --warning-border: rgba(247, 144, 9, 0.3);
+  --success: #5ad49a;
+  --success-soft: rgba(23, 178, 106, 0.12);
+  --bar-ok: rgba(90, 212, 154, 0.16);
+  --bar-warn: rgba(248, 197, 92, 0.19);
+  --bar-hot: rgba(255, 138, 115, 0.22);
+  --success-border: rgba(23, 178, 106, 0.3);
+  --info: #8db4ff;
+  --info-soft: rgba(46, 144, 250, 0.12);
+  --info-border: rgba(46, 144, 250, 0.3);
+  --release: #c2a8ff;
+  --release-soft: rgba(122, 90, 248, 0.15);
+  --release-border: rgba(122, 90, 248, 0.36);
+  --neutral: #b3b8c3;
+  --neutral-soft: rgba(148, 155, 170, 0.1);
+  --neutral-border: rgba(148, 155, 170, 0.24);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px -12px rgba(0, 0, 0, 0.7);
+  --dot-ok: #3dd68c;
+  --dot-warn: #f2c14e;
+  --dot-err: #ff6b5e;
+  --dot-idle: #5e6a77;
+  color-scheme: dark;
+}
+
+/* ── Site-only tokens ─────────────────────────────────────────────────────── */
+:root {
+  --t-hero: clamp(2.5rem, 1.6rem + 3.6vw, 4.25rem);
+  --t-section: clamp(1.875rem, 1.4rem + 1.9vw, 2.75rem);
+  --t-sub: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --t-lede: 1.1875rem;
+  --t-body: 1rem;
+  --t-sm: 0.875rem;
+  --t-xs: 0.8125rem;
+  --t-micro: 0.75rem;
+
+  --col: 1180px;
+  --gutter: 32px;
+  --header-h: 60px;
+  --cmdbar-h: 44px;
+}
+@media (max-width: 600px) {
+  :root {
+    --gutter: 16px;
+    --t-lede: 1.0625rem;
+  }
+}

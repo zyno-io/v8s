@@ -72,6 +72,8 @@ notarization, attestations, the Helm chart and the GitHub release happen on tags
 
 The design behind v8s is in [docs/](docs/architecture.md): [architecture](docs/architecture.md), [performance](docs/performance.md), [data model](docs/data-model.md), [problems engine](docs/problems.md), [integrations](docs/integrations.md), [operations and security](docs/operations.md), [authentication](docs/auth.md), [packaging](docs/packaging.md), and the [design system](docs/design-system.md). The [decode spike](spikes/decode-bench/README.md) backs the main performance decisions.
 
+The [v8s.io](https://v8s.io) marketing site is in [sites/www/](sites/www/README.md).
+
 ## Stack
 
 Go agent (client-go, Helm SDK) · Vue 3 + Vite + Pinia · Electron for desktop · msgpack over WebSocket.
