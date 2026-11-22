@@ -28,9 +28,7 @@ async function remove(key: string, i: number) {
 
 <template>
     <div v-if="items.length" ref="el" class="picked" role="group" :aria-label="label" data-testid="selected-chips">
-        <div class="ph">
-            {{ label }} <span class="muted">{{ items.length }}</span>
-        </div>
+        <div class="ph">{{ label }} <span class="muted">{{ items.length }}</span></div>
         <div class="pchips">
             <button
                 v-for="(it, i) in items"
