@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.7.0 — 2026-11-22
+
 ### Added
 
 - **Elevate a linked cluster.** For a cluster with a linked write context, click its status chip above a table (or the button on its Overview card): **Elevate to `<write context>`** runs that cluster's reads, watches, Problems and writes as the write context without touching the other clusters; **Revert** goes back. The cluster's data reloads each time, and while elevated its chip and tags turn amber and name the write context. Elevation lasts until you revert, deselect the cluster, or restart v8s.
