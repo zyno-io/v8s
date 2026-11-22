@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
 
 const shown = computed(() => sortDrops(filterDrops(data.value?.groups ?? [], text.value), sort.value));
 const selected = computed(() => shown.value.find(g => dropKey(g) === selectedKey.value) ?? null);
-const clusterName = (id: string) => clusters.nameById.get(id) ?? id;
+const clusterName = (id: string) => clusters.displayName(id);
 const notes = computed(() => (data.value?.errors ?? []).map(e => dropNote(e, clusterName(e.cluster))));
 
 // ---- virtualized rows ----

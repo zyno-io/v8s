@@ -181,8 +181,9 @@ onMounted(async () => {
         <form method="dialog" @submit.prevent="phase === 'form' && canStart && !holdStart && start()">
             <h2 id="helm-dlg-title">{{ title }} {{ release.name }}</h2>
             <p class="muted small">
-                <span class="mono">{{ ns }}</span> on {{ clusters.nameById.get(target.cluster) ?? target.cluster }} · revision
-                {{ release.revision }} ({{ release.status }})
+                <span class="mono">{{ ns }}</span> on {{ clusters.displayName(target.cluster) }} · revision {{ release.revision }} ({{
+                    release.status
+                }})
             </p>
 
             <template v-if="phase === 'form'">

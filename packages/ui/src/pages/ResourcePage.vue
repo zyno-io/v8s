@@ -85,7 +85,7 @@ const metricTags = computed(() =>
               .filter(s => s.metrics && s.metrics !== 'ok')
               .map(s => ({
                   id: s.id,
-                  text: `${clusters.nameById.get(s.id) ?? s.id} · ${s.metrics === 'absent' ? 'no metrics' : s.metrics === 'forbidden' ? 'metrics not allowed' : 'metrics unavailable'}`,
+                  text: `${clusters.displayName(s.id)} · ${s.metrics === 'absent' ? 'no metrics' : s.metrics === 'forbidden' ? 'metrics not allowed' : 'metrics unavailable'}`,
                   title: s.metricsMessage ?? ''
               }))
         : []
@@ -105,19 +105,23 @@ const summary = computed(() => {
 
 const syncTags = computed(() =>
     clusters.states.map(s => {
-        const name = clusters.nameById.get(s.id) ?? s.id;
+        const readName = clusters.nameById.get(s.id) ?? s.id;
+        // An elevated cluster's chip names the context it runs as, in the warning tone (no separate chip).
+        const elevated = s.elevated === true;
+        const writeCtx = clusters.writeContextOf(s.id);
+        const name = elevated && writeCtx ? writeCtx : readName;
         const syncing = s.phase === 'syncing' || s.phase === 'connecting';
         const text = s.phase === 'ready' ? 'synced' : syncing ? `${s.phase} · ${formatCount(s.synced)} rows` : s.phase;
-        const tone = s.phase === 'ready' ? '' : s.phase === 'unreachable' || s.phase === 'auth-required' ? 'danger' : 'warning';
+        const tone =
+            s.phase === 'ready' ? (elevated ? 'warning' : '') : s.phase === 'unreachable' || s.phase === 'auth-required' ? 'danger' : 'warning';
         return {
             id: s.id,
             name,
             text,
             tone,
             color: phaseColor(s.phase),
-            title: s.message ?? '',
-            elevated: s.elevated === true,
-            writeCtx: clusters.writeContextOf(s.id)
+            title: [elevated ? `Elevated: running as ${name} instead of ${readName}` : '', s.message ?? ''].filter(Boolean).join('\n'),
+            elevated
         };
     })
 );
@@ -214,14 +218,15 @@ function star() {
             <span class="muted summary">{{ summary }}</span>
             <div class="grow"></div>
             <span v-for="t in metricTags" :key="'m' + t.id" class="tag sync warning" :title="t.title" data-testid="metrics-tag">{{ t.text }}</span>
-            <span v-for="t in syncTags" :key="t.id" class="tag sync" :class="t.tone" :title="t.title"
+            <span
+                v-for="t in syncTags"
+                :key="t.id"
+                class="tag sync"
+                :class="t.tone"
+                :title="t.title"
+                :data-testid="t.elevated ? 'elevated-tag' : undefined"
                 ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}<ClusterElevateMenu :id="t.id"
             /></span>
-            <template v-for="t in syncTags" :key="'e' + t.id"
-                ><span v-if="t.elevated" class="tag sync warning" :title="'Running as ' + t.writeCtx" data-testid="elevated-tag"
-                    >{{ t.name }} elevated</span
-                ></template
-            >
             <div class="colwrap opt" @keydown.esc.stop="colsOpen && (colsOpen = false)">
                 <button class="btn" type="button" :aria-expanded="colsOpen" aria-haspopup="dialog" @click="colsOpen = !colsOpen">Columns</button>
                 <template v-if="colsOpen">

@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
     controllers.close();
 });
 
-const nameOf = (id: string) => clusters.nameById.get(id) ?? id;
+const nameOf = (id: string) => clusters.displayName(id);
 
 const overview = computed(() => {
     void tick.value;

@@ -22,7 +22,7 @@ const KIND_GROUPS = [
 ];
 
 const cluster = ref(String(route.query.c ?? ''));
-const picks = computed(() => clusters.activeIds.map(id => ({ id, name: clusters.nameById.get(id) ?? id })));
+const picks = computed(() => clusters.activeIds.map(id => ({ id, name: clusters.displayName(id) })));
 const clusterOptions = computed(() => picks.value.map(p => ({ value: p.id, label: p.name })));
 watch(
     picks,

@@ -11,7 +11,7 @@ import { useClustersStore } from '@/stores/clusters.ts';
 export function confirmGuard(targets: readonly Pick<ObjectRef, 'cluster' | 'name'>[]): { phrase?: string; note?: string; locked?: boolean } {
     const clusters = useClustersStore();
     const ids = [...new Set(targets.map(t => t.cluster))];
-    const prod = ids.filter(c => clusters.isProtected(c)).map(c => clusters.nameById.get(c) ?? c);
+    const prod = ids.filter(c => clusters.isProtected(c)).map(c => clusters.displayName(c));
     const typed = needsTypeToConfirm({
         count: targets.length,
         clusters: ids,

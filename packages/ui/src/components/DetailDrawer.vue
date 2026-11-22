@@ -16,8 +16,10 @@ import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
 import { gvrFromRoute, HELM_RELEASES_GVR, parseDrawer, tabsFor } from '@/lib/route.ts';
+import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
 
+const clusters = useClustersStore();
 const YamlPane = defineAsyncComponent(() => import('@/components/YamlPane.vue'));
 const EventsPane = defineAsyncComponent(() => import('@/components/EventsPane.vue'));
 const RelatedPane = defineAsyncComponent(() => import('@/components/RelatedPane.vue'));
@@ -179,7 +181,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
         <header>
             <div class="meta">
                 <span class="tag"
-                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster
+                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>
                 <span class="muted small">{{ kindName }}<template v-if="target.namespace"> · {{ target.namespace }}</template></span>
@@ -238,7 +240,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                         values stay hidden until you choose Reveal.
                         <dl class="sgrid">
                             <dt class="lbl">Cluster</dt>
-                            <dd>{{ target.cluster }}</dd>
+                            <dd>{{ clusters.displayName(target.cluster) }}</dd>
                             <dt v-if="target.namespace" class="lbl">Namespace</dt>
                             <dd v-if="target.namespace">{{ target.namespace }}</dd>
                             <dt class="lbl">Name</dt>

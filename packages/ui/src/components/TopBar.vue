@@ -23,7 +23,7 @@ const sidebar = useSidebarStore();
 const label = computed(() => {
     const ids = clusters.activeIds;
     if (!ids.length) return 'Choose clusters';
-    if (ids.length === 1) return clusters.nameById.get(ids[0]) ?? ids[0];
+    if (ids.length === 1) return clusters.displayName(ids[0]);
     return `${ids.length} clusters`;
 });
 

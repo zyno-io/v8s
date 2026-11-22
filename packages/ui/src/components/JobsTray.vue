@@ -143,7 +143,7 @@ const started = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-d
                             <span aria-hidden="true">{{ expandedId === j.jobId ? '▾' : '▸' }}</span>
                             <b class="label">{{ jobLabel(j) }}</b>
                         </button>
-                        <span v-if="j.cluster" class="tag">{{ clusters.nameById.get(j.cluster) ?? j.cluster }}</span>
+                        <span v-if="j.cluster" class="tag">{{ clusters.displayName(j.cluster) }}</span>
                         <span class="tag" :class="jobTone(j.state)">{{ j.state }}</span>
                     </div>
                     <div class="meta muted">

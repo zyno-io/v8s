@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
 });
 
 const state = computed(() => clusters.stateById.get(props.id));
-const name = computed(() => clusters.nameById.get(props.id) ?? props.id);
+const name = computed(() => clusters.displayName(props.id));
 const phase = computed(() => state.value?.phase ?? 'connecting');
 const version = computed(() => {
     // The first node's kubelet version: columns carry `version`; read it after the version ref moves.

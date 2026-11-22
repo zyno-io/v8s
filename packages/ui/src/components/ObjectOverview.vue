@@ -14,7 +14,9 @@ import { resolveKind } from '@/lib/kinds.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
 import { isVpaGvr, podRequests, VPA_GVR, vpaNameFromAnnotation, vpaRecommendations } from '@/lib/vpa.ts';
+import { useClustersStore } from '@/stores/clusters.ts';
 
+const clusters = useClustersStore();
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload; parsed: ParsedObject | null }>();
 const emit = defineEmits<{ openSource: [kind: string, name: string, namespace: string | undefined] }>();
 
@@ -111,7 +113,7 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dt class="lbl">Cluster</dt>
             <dd>
                 <span class="tag"
-                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ target.cluster
+                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>
             </dd>

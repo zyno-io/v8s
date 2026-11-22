@@ -144,7 +144,7 @@ export function reportGvrs(kinds: readonly Kind[]) {
 export async function rescanReport(ref: ObjectRef, label: string): Promise<boolean> {
     const ui = useUiStore();
     const clusters = useClustersStore();
-    const name = clusters.nameById.get(ref.cluster) ?? ref.cluster;
+    const name = clusters.displayName(ref.cluster);
     const ok = await ask({
         title: `Rescan ${label}?`,
         body: `Deletes the report ${ref.namespace ? ref.namespace + '/' : ''}${ref.name} on ${name}. The Trivy operator recreates it on its next reconcile, so the report is missing until then.`,
@@ -169,7 +169,7 @@ export async function rescanReport(ref: ObjectRef, label: string): Promise<boole
 export async function kubescapeScanNow(cluster: string): Promise<boolean> {
     const ui = useUiStore();
     const clusters = useClustersStore();
-    const name = clusters.nameById.get(cluster) ?? cluster;
+    const name = clusters.displayName(cluster);
     const ok = await ask({
         title: `Run a Kubescape scan on ${name}?`,
         body: `Creates a Job from each of the Kubescape operator's scan CronJobs on ${name}. The scan uses cluster resources while it runs.`,

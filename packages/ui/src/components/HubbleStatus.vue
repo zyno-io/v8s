@@ -43,7 +43,7 @@ async function load() {
 onMounted(() => void load());
 onBeforeUnmount(() => seq++);
 
-const name = (id: string) => clusters.nameById.get(id) ?? id;
+const name = (id: string) => clusters.displayName(id);
 const NODE_CAP = 400;
 const nodesOf = (s: HubbleStatus) => (s.nodes ?? []).slice(0, NODE_CAP);
 const relay = (s: HubbleStatus) => (s.relay ? `${s.relay.namespace}/${s.relay.service}${s.relay.port ? ':' + s.relay.port : ''}` : '');
