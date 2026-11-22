@@ -2,8 +2,10 @@ name: Container cleanup
 
 # Prunes ghcr.io/zyno-io/v8s images that are not releases once they are two weeks old: pull request images (:pr-<n>,
 # :pr-<n>-<sha>), main's per-commit images (:<short sha>), manual branch builds (:<branch>) and untagged images.
-# Releases (:X.Y.Z, :X.Y.Z-pre), their sha256-<digest> attestation tags, :latest and :main are never touched: an image carrying any of those tags is excluded
-# whole, even when it also carries a prunable tag. Multi-arch children, provenance and SBOM manifests go with their image.
+# An image tagged :X.Y.Z, :X.Y.Z-pre, :latest or :main is never touched, nor are its children and attestations: it is
+# excluded whole, even when it also carries a prunable tag. Multi-arch children, provenance and SBOM manifests go with their
+# image. A release build that a re-run of its tag replaced is untagged, so it is pruned too, with its sha256-<digest>
+# attestations.
 # A deleted version can be restored for 30 days (the run log lists every deleted id; see the action's README).
 on:
   schedule:
