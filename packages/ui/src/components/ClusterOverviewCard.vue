@@ -20,7 +20,7 @@ import {
     SEVERITIES,
     type Severity
 } from '@/lib/cluster-overview.ts';
-import { phaseColor } from '@/lib/colors.ts';
+import { clusterColor, phaseColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { gvrPath } from '@/lib/route.ts';
 import { usePageVisible } from '@/lib/viewport.ts';
@@ -158,7 +158,7 @@ function goHealth(h: Health, tones: number[]) {
 <template>
     <section class="card cov" :aria-label="`Cluster ${name}`" :data-testid="`overview-${id}`">
         <header class="hd">
-            <span class="dot" :style="{ background: clusters.dotColor(id) }"></span>
+            <span class="dot" :style="{ background: clusterColor(id) }"></span>
             <h2>{{ name }}</h2>
             <span class="tag" :class="phase === 'ready' ? 'success' : phase === 'unreachable' || phase === 'auth-required' ? 'danger' : 'warning'">
                 <span class="dot" :style="{ background: phaseColor(phase) }"></span>{{ phaseLabel(phase) }}

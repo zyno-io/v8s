@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
+import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { rank } from '@/lib/fuzzy.ts';
 import { ipItems, looksLikeIP, pendingText, skippedText } from '@/lib/ip-search.ts';
@@ -283,7 +284,7 @@ const multi = computed(() => clusters.activeIds.length > 1);
                     @mousemove="sel = i"
                 >
                     <span v-if="it.cluster && multi" class="tag" :class="clusters.tagTone(it.cluster)"
-                        ><span class="dot" :style="{ background: clusters.dotColor(it.cluster) }"></span>{{ clusters.displayName(it.cluster)
+                        ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ clusters.displayName(it.cluster)
                         }}<ProtectedMark :cluster="it.cluster"
                     /></span>
                     <span class="lab">{{ it.label }}</span>

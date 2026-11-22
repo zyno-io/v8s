@@ -4,6 +4,7 @@ import type { ImageVulnSummary, ObjectRef } from '@v8s/client';
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
 import { kinds } from '@/lib/agent.ts';
+import { clusterColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { colIdx, reportGvrs, reportView, rescanReport, snapshotView } from '@/lib/security-api.ts';
@@ -148,8 +149,7 @@ const sums = computed(() => {
                                 >
                                 <span class="meta">
                                     <span v-if="clusters.activeIds.length > 1" class="tag" :class="clusters.tagTone(it.cluster)"
-                                        ><span class="dot" :style="{ background: clusters.dotColor(it.cluster) }"></span
-                                        >{{ nameOf(it.cluster) }}</span
+                                        ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ nameOf(it.cluster) }}</span
                                     >
                                     <span v-if="it.ref.namespace" class="muted small">{{ it.ref.namespace }}</span>
                                     <span v-for="(k, i) in SEVERITIES.slice(0, 4)" :key="k" class="tag" :class="it.counts[i] > 0 ? sevTone(k) : ''"

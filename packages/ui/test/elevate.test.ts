@@ -90,13 +90,11 @@ describe('displayName', () => {
 });
 
 describe('cluster tag tone', () => {
-    it('is the warning tone and dot only while elevated', () => {
+    it('is the warning tone only while elevated', () => {
         const c = useClustersStore();
         clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0 }];
         expect(c.tagTone('prod')).toBe('');
-        expect(c.dotColor('prod')).not.toBe('var(--warning)');
         clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
         expect(c.tagTone('prod')).toBe('warning');
-        expect(c.dotColor('prod')).toBe('var(--warning)');
     });
 });

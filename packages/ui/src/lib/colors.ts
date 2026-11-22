@@ -1,4 +1,5 @@
-const HUES = ['var(--info)', 'var(--release)', 'var(--warning)', 'var(--success)', 'var(--danger)', 'var(--neutral)'];
+// No grey: a grey dot reads as "disconnected". The dot is the cluster's identity, never its state.
+const HUES = ['var(--info)', 'var(--release)', 'var(--warning)', 'var(--success)', 'var(--danger)'];
 const cache = new Map<string, string>();
 
 /** Stable accent for a cluster tag dot. */

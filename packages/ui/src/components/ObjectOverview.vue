@@ -8,6 +8,7 @@ import type { ParsedObject } from '@/lib/object-session.ts';
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import VpaRecommendations from '@/components/VpaRecommendations.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
+import { clusterColor } from '@/lib/colors.ts';
 import { formatAge } from '@/lib/format.ts';
 import { resolveKind } from '@/lib/kinds.ts';
 import { errorText } from '@/lib/mutations.ts';
@@ -112,7 +113,7 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dt class="lbl">Cluster</dt>
             <dd>
                 <span class="tag" :class="clusters.tagTone(target.cluster)"
-                    ><span class="dot" :style="{ background: clusters.dotColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
+                    ><span class="dot" :style="{ background: clusterColor(target.cluster) }"></span>{{ clusters.displayName(target.cluster)
                     }}<ProtectedMark :cluster="target.cluster"
                 /></span>
             </dd>

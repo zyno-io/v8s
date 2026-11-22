@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import type { EvState, ProblemAction, ProblemRow, SnoozePreset } from '@/lib/problems.ts';
 
 import { kinds } from '@/lib/agent.ts';
+import { clusterColor } from '@/lib/colors.ts';
 import { openObject } from '@/lib/drawer.ts';
 import { formatAge } from '@/lib/format.ts';
 import { canRun, relatedRef, runProblemAction } from '@/lib/problems-actions.ts';
@@ -39,7 +40,7 @@ const age = (t?: number) => (t ? formatAge(t, now) : '—');
         <header class="evh">
             <span class="tag" :class="severityTone(row.severity)">{{ row.severity }}</span>
             <span class="tag" :class="clusters.tagTone(row.cluster)"
-                ><span class="dot" :style="{ background: clusters.dotColor(row.cluster) }"></span>{{ clusters.displayName(row.cluster) }}</span
+                ><span class="dot" :style="{ background: clusterColor(row.cluster) }"></span>{{ clusters.displayName(row.cluster) }}</span
             >
             <span class="mono muted">{{ row.class }}</span>
             <b class="ttl">{{ ev?.title || row.title }}</b>

@@ -9,6 +9,7 @@ import type { SelectOption } from '@/lib/smart-select.ts';
 
 import CheckMenu from '@/components/CheckMenu.vue';
 import SmartSelect from '@/components/SmartSelect.vue';
+import { clusterColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { fetchImages, kubescapeScanNow } from '@/lib/security-api.ts';
@@ -397,7 +398,7 @@ function onScan() {
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].reports) }}</span>
                                 <span class="c ctags" role="cell">
                                     <span v-for="id in view[vi.index].clusters.slice(0, 2)" :key="id" class="tag" :class="clusters.tagTone(id)"
-                                        ><span class="dot" :style="{ background: clusters.dotColor(id) }"></span>{{ nameOf(id) }}</span
+                                        ><span class="dot" :style="{ background: clusterColor(id) }"></span>{{ nameOf(id) }}</span
                                     >
                                     <span v-if="view[vi.index].clusters.length > 2" class="muted">+{{ view[vi.index].clusters.length - 2 }}</span>
                                 </span>
