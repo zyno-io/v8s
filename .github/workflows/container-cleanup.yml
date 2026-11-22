@@ -39,11 +39,12 @@ jobs:
           owner: zyno-io
           package: v8s
           use-regex: true
-          # Anchored: unanchored patterns match anywhere in a tag (or digest).
-          exclude-tags: '^(latest|main|[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$'
-          # Tags without a dot: short shas, pr-<n>[-<sha>], branch names. No release tag can match (they all have dots),
-          # and the exclusion above is the second guard.
-          delete-tags: '^[A-Za-z0-9][A-Za-z0-9-]*$'
+          # Patterns are tested against tags and digests, unanchored, and must be simple (the action rejects nested
+          # quantifiers). Every release tag has a dot, and no prunable tag or digest does: excluded are latest, main and any
+          # tag with a dot.
+          exclude-tags: '^(latest|main)$|[.]'
+          # Short shas, pr-<n>[-<sha>], branch names: letters, digits and dashes only (never a dot or a digest's colon).
+          delete-tags: '^[A-Za-z0-9-]+$'
           delete-untagged: true
           older-than: 14 days
           dry-run: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
