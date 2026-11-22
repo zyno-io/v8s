@@ -2,8 +2,10 @@ name: Release
 
 # Tags (vX.Y.Z[-pre]) build, sign and publish a release. Pushes to main build everything unsigned: the artifacts (kept 7 days)
 # and the container image as ghcr.io/zyno-io/v8s:main and :<short sha>, which is what gets live-tested before tagging. A manual
-# run builds any branch the same unsigned way (image :<branch> and :<short sha>). Signing, notarization, attestations,
-# the Helm chart and the GitHub release happen on tags only.
+# run builds any branch the same unsigned way (image :<branch> and :<short sha>). A pull request from this repository builds
+# only the container image, amd64 only, as :pr-<number> and :pr-<number>-<short head sha>, to test on staging before merging.
+# Signing, notarization, attestations, the Helm chart and the GitHub release happen on tags only. container-cleanup.yml
+# prunes the non-release images.
 on:
   push:
     branches: [main]
@@ -13,6 +15,10 @@ on:
       - 'sites/www/**'
       - '.github/workflows/www.yml'
     tags: ['v*']
+  pull_request:
+    paths-ignore:
+      - 'sites/www/**'
+      - '.github/workflows/www.yml'
   workflow_dispatch:
 
 permissions:
@@ -30,6 +36,10 @@ env:
 
 jobs:
   meta:
+    # Fork and Dependabot pull requests get a read-only token and cannot push the image.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.parse.outputs.version }}
@@ -41,6 +51,9 @@ jobs:
     steps:
       - name: Parse ref
         id: parse
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           img=ghcr.io/zyno-io/v8s
@@ -60,6 +73,13 @@ jobs:
             if [[ "$prerelease" != true ]]; then images+=$'\n'"$img:latest"; fi
             tagged=true
             environment=release
+          elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            # Pull request: 0.0.0-pr-<n>.g<head sha>, built from the PR's head commit (not the merge commit).
+            version="0.0.0-pr-${PR_NUMBER}.g${PR_SHA::7}"
+            prerelease=true
+            images="$img:pr-${PR_NUMBER}"$'\n'"$img:pr-${PR_NUMBER}-${PR_SHA::7}"
+            tagged=false
+            environment=''
           else
             # Branch build: 0.0.0-<branch>.g<sha> (the g keeps an all-digit sha a valid semver identifier).
             ref="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9-' '-' | cut -c1-100)"
@@ -88,6 +108,7 @@ jobs:
 
   ui:
     needs: meta
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,6 +125,7 @@ jobs:
   # notarized there); Windows builds on windows-latest so the exe can be signed with Azure Artifact Signing.
   cli:
     needs: [meta, ui]
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
     # The release environment (signing secrets) only on tags.
     environment: ${{ needs.meta.outputs.environment }}
@@ -224,6 +246,7 @@ jobs:
   # Electron installers. Each runner first builds the matching agent into agent/bin/<os>-<arch>/.
   desktop:
     needs: [meta, ui]
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
     # The release environment (signing secrets) only on tags.
     environment: ${{ needs.meta.outputs.environment }}
@@ -354,6 +377,8 @@ jobs:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
@@ -365,7 +390,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # Pull requests build amd64 only (staging is amd64): about half the build time.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
           push: true
           tags: ${{ needs.meta.outputs.images }}
           build-args: VERSION=${{ env.VERSION }}
