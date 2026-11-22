@@ -218,15 +218,16 @@ function star() {
             <span class="muted summary">{{ summary }}</span>
             <div class="grow"></div>
             <span v-for="t in metricTags" :key="'m' + t.id" class="tag sync warning" :title="t.title" data-testid="metrics-tag">{{ t.text }}</span>
-            <span
+            <ClusterElevateMenu
                 v-for="t in syncTags"
+                :id="t.id"
                 :key="t.id"
                 class="tag sync"
                 :class="t.tone"
                 :title="t.title"
-                :data-testid="t.elevated ? 'elevated-tag' : undefined"
-                ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}<ClusterElevateMenu :id="t.id"
-            /></span>
+                :data-testid="t.elevated ? 'elevated-tag' : `sync-${t.id}`"
+                ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}</ClusterElevateMenu
+            >
             <div class="colwrap opt" @keydown.esc.stop="colsOpen && (colsOpen = false)">
                 <button class="btn" type="button" :aria-expanded="colsOpen" aria-haspopup="dialog" @click="colsOpen = !colsOpen">Columns</button>
                 <template v-if="colsOpen">

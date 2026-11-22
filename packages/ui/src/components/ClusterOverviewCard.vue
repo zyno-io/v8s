@@ -5,7 +5,6 @@ import { CapacityGVR } from '@v8s/client';
 import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import ClusterElevateMenu from '@/components/ClusterElevateMenu.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { capacityRow, capacityView } from '@/lib/capacity.ts';
 import {
@@ -21,6 +20,7 @@ import {
     type Severity
 } from '@/lib/cluster-overview.ts';
 import { clusterColor, phaseColor } from '@/lib/colors.ts';
+import { elevateItem } from '@/lib/elevate.ts';
 import { formatCount } from '@/lib/format.ts';
 import { gvrPath } from '@/lib/route.ts';
 import { usePageVisible } from '@/lib/viewport.ts';
@@ -108,6 +108,10 @@ onBeforeUnmount(() => {
 
 const state = computed(() => clusters.stateById.get(props.id));
 const name = computed(() => clusters.displayName(props.id));
+// Elevate / Revert, shown as a plain button (the Overview is where a cluster's context is changed deliberately).
+const elevate = computed(() =>
+    elevateItem(clusters.nameById.get(props.id) ?? props.id, clusters.writeContextOf(props.id), clusters.isElevated(props.id))
+);
 const phase = computed(() => state.value?.phase ?? 'connecting');
 const version = computed(() => {
     // The first node's kubelet version: columns carry `version`; read it after the version ref moves.
@@ -166,7 +170,17 @@ function goHealth(h: Health, tones: number[]) {
             <span v-if="clusters.isElevated(id)" class="tag warning" :title="'Running as ' + clusters.writeContextOf(id)" data-testid="elevated-tag"
                 >elevated</span
             >
-            <ClusterElevateMenu :id="id" />
+            <button
+                v-if="elevate"
+                class="btn sm"
+                type="button"
+                :disabled="clusters.elevating.has(id)"
+                :title="elevate.hint"
+                :data-testid="`elevate-btn-${id}`"
+                @click="clusters.setElevated(id, elevate.elevate)"
+            >
+                {{ clusters.elevating.has(id) ? 'Switching…' : elevate.label }}
+            </button>
             <span v-if="version" class="muted mono">{{ version }}</span>
             <span v-if="state?.message" class="muted msg" :title="state.message">{{ state.message }}</span>
         </header>
