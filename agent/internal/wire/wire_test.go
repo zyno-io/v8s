@@ -42,7 +42,7 @@ func startEnv(t *testing.T, cfg fake.Config, mut func(*Options)) *env {
 	mgr := cluster.NewManager(ctx, src, eng, nil)
 	set, _ := settings.Open("")
 	mgr.SetSettings(set)
-	svc := ops.New(ops.Config{Conn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Links: mgr.Links, Resolve: mgr.Resolve})
+	svc := ops.New(ops.Config{Conn: func(id string) (kube.Conn, error) { return src.Backend(mgr.Effective(id)) }, Links: mgr.Links, RawConn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Elevated: mgr.Elevated, Resolve: mgr.Resolve})
 	go eng.Run(ctx)
 	opt := Options{Manager: mgr, Engine: eng, Ops: svc, Settings: set, Token: testToken, Mode: "fake", AgentVersion: "test", Tick: 100 * time.Millisecond}
 	g2Services(ctx, &opt, src, mgr, svc, set)

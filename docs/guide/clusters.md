@@ -107,6 +107,15 @@ By default, writes switch to the linked write context automatically. If you unti
 
 Before the first write through a link, v8s checks that both contexts point at the same cluster (it compares the `kube-system` namespace UID). If they do not match, nothing is written and v8s tells you the link looks wrong.
 
+### Elevate a cluster
+
+To run a whole cluster as its write context, not just single actions, use the small arrow on its `synced` chip above a table (or on its card in the Overview) and pick **Elevate to `<write context>`**. Until you **Revert**, that one cluster's reads, watches, discovery, Problems and usage all run as the write context, so you see what that identity sees (for example Secrets the read context cannot list). Other selected clusters are not touched. A cluster that is elevated shows an `elevated` tag, and its actions run as the write context without asking for confirmation ("Runs as `<write context>` (elevated)").
+
+- **Cost.** Elevating and reverting each restart that cluster's data cold, like reselecting it after the grace period. Expect the cluster to show `syncing` again.
+- **Lifetime.** Elevation is kept in memory only. It ends when you revert, when the cluster stays deselected past the grace period, when you unlink the write context, or when v8s restarts.
+- **Streams.** Exec, shell and port-forward streams opened while elevated keep the write-context limits (closed after 15 minutes idle, and after 60 minutes at most). A stream that is already open keeps the context it started with; reopen it to switch.
+- **Gateways.** If the write context's session is not active, the cluster shows `sign-in required ... (is its elevated session active?)`: renew the session or Revert.
+
 ### "Write context rejected"
 
 This means the cluster's write context refused the request. With a gateway, it almost always means **your elevated session is not active**: start or renew it in the gateway (Warpgate), then retry. Reads keep working in the meantime. Other rejections through the write context (admission webhooks, quota, validation) keep their own message, so read it. See [Troubleshooting](/guide/troubleshooting#write-context-rejected).

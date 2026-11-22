@@ -199,6 +199,21 @@ func (e *Engine) DetachKind(name, gvr string) {
 	e.markAllDirty()
 }
 
+// DetachKindIf is DetachKind when the attached store is st: a stopped runner's late detach must not remove the store
+// of the runner that replaced it.
+func (e *Engine) DetachKindIf(name, gvr string, st *store.Store) {
+	e.mu.Lock()
+	cl, ok1 := e.idx[name]
+	gv, ok2 := e.gvrs[gvr]
+	if ok1 && ok2 {
+		if rec := e.srcs[srcKey{cl, gv}]; rec != nil && rec.attached && rec.st == st {
+			e.detachLocked(rec)
+		}
+	}
+	e.mu.Unlock()
+	e.markAllDirty()
+}
+
 func (e *Engine) detachLocked(rec *srcRec) {
 	rec.attached = false
 	rec.st.SetNotify(nil)

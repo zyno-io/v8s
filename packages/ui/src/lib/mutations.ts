@@ -26,9 +26,10 @@ export const isCancelled = (e: unknown): boolean => e instanceof RpcError && e.c
 
 /** "Runs as <write context>" or "Runs as your current context", for confirm dialogs. */
 export function runAs(cluster: string, viaWrite: boolean): string {
-    if (!viaWrite) return 'Runs as your current context';
-    const ctx = useClustersStore().writeContextOf(cluster);
-    return `Runs as ${ctx || 'the linked write context'}`;
+    if (!viaWrite && !useClustersStore().isElevated(cluster)) return 'Runs as your current context';
+    const clusters = useClustersStore();
+    const ctx = clusters.writeContextOf(cluster);
+    return `Runs as ${ctx || 'the linked write context'}${clusters.isElevated(cluster) ? ' (elevated)' : ''}`;
 }
 
 /** One dialog per (kind, cluster) at a time: concurrent callers for the same cluster share the answer instead of stacking dialogs. */

@@ -108,7 +108,7 @@ Every projection drops `managedFields` and `kubectl.kubernetes.io/last-applied-c
 
 ### Cluster deselect and GC
 
-Deselecting a cluster starts a 10 s grace (accidental toggles are free), then stops all its watches, drops its stores, row handles, string dictionaries, and problem state, and, on desktop, calls `debug.FreeOSMemory()` when more than 100 MB was released so the RSS actually falls. Re-selecting is a cold start (WatchList makes that cheap for the API server).
+Deselecting a cluster starts a 10 s grace (accidental toggles are free), then stops all its watches, drops its stores, row handles, string dictionaries, and problem state, and, on desktop, calls `debug.FreeOSMemory()` when more than 100 MB was released so the RSS actually falls. Re-selecting is a cold start (WatchList makes that cheap for the API server). Elevating or reverting a cluster (`clusters.elevate`) is the same cold restart of that one cluster; the other clusters are untouched.
 
 ### Restricted users
 

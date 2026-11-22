@@ -247,25 +247,36 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 			r.stopTimer = time.AfterFunc(DeselectGrace, func() { m.stopIfDeselected(id) })
 		}
 	}
+	var swapped []swap
+	links := m.settings().Links
 	for _, id := range list {
 		r := m.runners[id]
 		if r != nil {
 			if r.stopTimer != nil { // reselected during grace
 				r.stopTimer.Stop()
 				r.stopTimer = nil
-				r.attachAll()
+				if r.ctxID != id && links[id] != r.ctxID { // unlinked or relinked during the grace period: back to the read context
+					swapped = append(swapped, swap{id, r})
+					m.swapLocked(id, r, id)
+				} else {
+					r.attachAll()
+				}
 			}
 			continue
 		}
-		nr, err := m.start(id)
+		nr, err := m.startOn(id, id)
 		if err != nil {
 			m.log.Warn("cluster start failed", "cluster", id, "err", err)
-			nr = m.failed(id, err)
+			nr = m.failed(id, id, err)
 		}
 		m.runners[id] = nr
 	}
 	m.selected = list
 	m.mu.Unlock()
+	for _, s := range swapped {
+		s.old.stop()
+		m.dropHeld(s.id)
+	}
 	if m.set != nil {
 		if _, err := m.set.Patch(map[string]any{"selection": toAny(list)}); err != nil {
 			m.log.Warn("could not remember cluster selection", "err", err)
@@ -305,6 +316,116 @@ func (m *Manager) stopIfDeselected(id string) {
 	maybeFree(before, heapAlloc())
 }
 
+// ErrNotLinked is returned by Elevate when the cluster has no linked write context.
+var ErrNotLinked = errors.New("cluster has no linked write context")
+
+// Elevated returns the write context the cluster currently runs as ("" = not elevated).
+func (m *Manager) Elevated(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r := m.runners[id]; r != nil && r.ctxID != id {
+		return r.ctxID
+	}
+	return ""
+}
+
+// Effective returns the context the cluster's ingest runs as: its write context while elevated, else id.
+func (m *Manager) Effective(id string) string {
+	if e := m.Elevated(id); e != "" {
+		return e
+	}
+	return id
+}
+
+func (m *Manager) known(id string) bool {
+	for _, c := range m.src.Clusters() {
+		if c.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// swap is a runner replaced by swapLocked, still to be stopped (outside m.mu).
+type swap struct {
+	id  string
+	old *runner
+}
+
+// swapLocked replaces id's runner with a cold one running as ctxID. Caller holds m.mu and then, outside it, stops old
+// and calls dropHeld (the old discovery loop may be inside reconcileAll, which takes m.mu).
+func (m *Manager) swapLocked(id string, old *runner, ctxID string) {
+	old.detachAll()
+	if m.problems != nil {
+		m.problems.Drop(id)
+	}
+	nr, err := m.startOn(id, ctxID)
+	if err != nil {
+		m.log.Warn("cluster restart failed", "cluster", id, "context", ctxID, "err", err)
+		nr = m.failed(id, ctxID, err)
+	}
+	m.runners[id] = nr
+}
+
+// ErrLinkChanged is returned by Elevate when the cluster's link is no longer the write context that was verified.
+var ErrLinkChanged = errors.New("the linked write context changed; try again")
+
+// Elevate restarts one selected cluster's ingest as the write context w (on; the caller has verified that w is the
+// cluster's current link) or back as its own context (off, w ignored). Only that cluster restarts, cold.
+func (m *Manager) Elevate(id string, on bool, w string) (protocol.ClusterStates, error) {
+	target := id
+	if on {
+		if lw, _ := m.Links(id); lw == "" || lw == id || !m.known(lw) {
+			return protocol.ClusterStates{}, ErrNotLinked
+		} else if lw != w {
+			return protocol.ClusterStates{}, ErrLinkChanged
+		}
+		target = w
+	}
+	m.mu.Lock()
+	old := m.runners[id]
+	if old == nil || old.stopTimer != nil || !contains(m.selected, id) {
+		m.mu.Unlock()
+		return protocol.ClusterStates{}, ErrClusterNotSelected
+	}
+	if on { // re-checked under the lock: the link may have changed since
+		if lw, _ := m.Links(id); lw != w {
+			m.mu.Unlock()
+			return protocol.ClusterStates{}, ErrLinkChanged
+		}
+	}
+	if old.ctxID == target {
+		m.mu.Unlock()
+		return m.States(), nil
+	}
+	m.swapLocked(id, old, target)
+	m.mu.Unlock()
+	old.stop() // outside m.mu: the old discovery loop may be inside reconcileAll, which takes m.mu
+	m.dropHeld(id)
+	m.reconcileAll()
+	m.reconcileUsage()
+	m.kick()
+	return m.States(), nil
+}
+
+// dropHeld releases every scope's references into id's old runner so reconcile re-acquires on the new one.
+func (m *Manager) dropHeld(id string) {
+	m.mu.Lock()
+	scopes := make([]*Scope, 0, len(m.scopes))
+	for s := range m.scopes {
+		scopes = append(scopes, s)
+	}
+	m.mu.Unlock()
+	m.reconcileMu.Lock()
+	defer m.reconcileMu.Unlock()
+	for _, s := range scopes {
+		if rel := s.held[id]; rel != nil {
+			rel()
+			delete(s.held, id)
+		}
+	}
+}
+
 // Running reports whether ingest for id is still alive (including during its grace period).
 func (m *Manager) Running(id string) bool {
 	m.mu.Lock()
@@ -312,23 +433,24 @@ func (m *Manager) Running(id string) bool {
 	return m.runners[id] != nil
 }
 
-func (m *Manager) failed(id string, err error) *runner {
+func (m *Manager) failed(id, ctxID string, err error) *runner {
 	ctx, cancel := context.WithCancel(m.ctx)
-	r := &runner{m: m, id: id, ctx: ctx, cancel: cancel, done: make(chan struct{}), watches: map[string]*watchEntry{}, discKick: make(chan struct{}, 1)}
+	r := &runner{m: m, id: id, ctxID: ctxID, ctx: ctx, cancel: cancel, done: make(chan struct{}), watches: map[string]*watchEntry{}, discKick: make(chan struct{}, 1)}
 	close(r.done)
-	phase, msg := classify(err)
+	phase, msg := r.classify(err)
 	r.phase.Store(phase)
 	r.message.Store(msg)
 	return r
 }
 
-func (m *Manager) start(id string) (*runner, error) {
-	be, err := m.src.Backend(id)
+// startOn starts ingest for cluster id running as context ctxID (id itself, or its write context while elevated).
+func (m *Manager) startOn(id, ctxID string) (*runner, error) {
+	be, err := m.src.Backend(ctxID)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
-	r := &runner{m: m, id: id, be: be, ctx: ctx, cancel: cancel, done: make(chan struct{}), watches: map[string]*watchEntry{},
+	r := &runner{m: m, id: id, ctxID: ctxID, be: be, ctx: ctx, cancel: cancel, done: make(chan struct{}), watches: map[string]*watchEntry{},
 		discKick: make(chan struct{}, 1), attached: true}
 	r.phase.Store(protocol.PhaseConnecting)
 	r.message.Store("")
@@ -435,7 +557,7 @@ func (m *Manager) Resolve(clusterID, apiVersion, kind string) (gvr string, names
 	m.mu.Unlock()
 	if r == nil || r.disc.Load() == nil {
 		// no discovery yet: ask the backend directly
-		be, e := m.src.Backend(clusterID)
+		be, e := m.src.Backend(m.Effective(clusterID))
 		if e != nil {
 			return "", false, e
 		}
@@ -790,7 +912,28 @@ func classify(err error) (protocol.ClusterPhase, string) {
 }
 
 // Changed tells listeners that settings affecting the cluster list or states changed.
-func (m *Manager) Changed() { m.kick() }
+func (m *Manager) Changed() {
+	m.kick()
+	go m.revertUnlinked()
+}
+
+// revertUnlinked reverts every elevated cluster whose link was removed or changed.
+func (m *Manager) revertUnlinked() {
+	links := m.settings().Links
+	var ids []string
+	m.mu.Lock()
+	for id, r := range m.runners {
+		if r.ctxID != id && links[id] != r.ctxID && r.stopTimer == nil {
+			ids = append(ids, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		if _, err := m.Elevate(id, false, ""); err != nil {
+			m.log.Debug("auto-revert failed", "cluster", id, "err", err)
+		}
+	}
+}
 
 // freeOSMemory is debug.FreeOSMemory (replaced in tests).
 var freeOSMemory = debug.FreeOSMemory

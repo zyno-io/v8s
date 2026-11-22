@@ -164,6 +164,8 @@ export interface Agent {
     readonly clusterStates: ShallowRef<ClusterState[]>;
     listClusters(): Promise<ClustersListResult>;
     selectClusters(ids: string[]): Promise<ClusterStates>;
+    /** Runs a selected cluster as its linked write context (`elevated`) or back as its read context. That cluster reloads cold. */
+    elevateCluster(id: string, elevated: boolean): Promise<ClusterStates>;
     listKinds(): Promise<KindsListResult>;
     /** Any request/response method (`object.get`, `settings.set`, …). Rejects with RpcError. */
     call<T = unknown>(method: string, params?: unknown): Promise<T>;
@@ -411,6 +413,11 @@ export function connectAgent(opts: ConnectOptions): Promise<Agent> {
         listClusters: () => call('clusters.list'),
         async selectClusters(ids) {
             const res = await call<ClusterStates>('clusters.select', { ids });
+            if (res?.states) clusterStates.value = res.states;
+            return res;
+        },
+        async elevateCluster(id, elevated) {
+            const res = await call<ClusterStates>('clusters.elevate', { id, elevated });
             if (res?.states) clusterStates.value = res.states;
             return res;
         },

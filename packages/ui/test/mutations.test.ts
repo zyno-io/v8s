@@ -3,8 +3,9 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const call = vi.fn();
+const clusterStates = vi.hoisted(() => ({ value: [] as { id: string; phase: string; synced: number; elevated?: boolean }[] }));
 vi.mock('../src/lib/agent.ts', () => ({
-    getAgent: () => ({ call, clusterStates: { value: [] } }),
+    getAgent: () => ({ call, clusterStates }),
     refreshKinds: () => {}
 }));
 
@@ -15,6 +16,7 @@ import { useUiStore } from '../src/stores/ui.ts';
 beforeEach(() => {
     setActivePinia(createPinia());
     call.mockReset();
+    clusterStates.value = [];
     useClustersStore().list = [{ id: 'prod', name: 'Prod', server: '', groups: [], writeContext: 'prod-admin' }];
 });
 
@@ -123,6 +125,14 @@ describe('errorText and runAs', () => {
     it('names the write context or the current one', () => {
         expect(runAs('prod', true)).toBe('Runs as prod-admin');
         expect(runAs('prod', false)).toBe('Runs as your current context');
+    });
+
+    it('runAs says (elevated) while the cluster is elevated', () => {
+        const clusters = useClustersStore();
+        clusters.loaded = true;
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
+        expect(runAs('prod', false)).toBe('Runs as prod-admin (elevated)');
+        expect(runAs('prod', true)).toBe('Runs as prod-admin (elevated)');
     });
 });
 

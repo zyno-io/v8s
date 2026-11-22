@@ -9,6 +9,8 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/kube"
 	"github.com/zyno-io/v8s/agent/internal/ops"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func newOps(t *testing.T) (*ops.Service, *Source) {
@@ -123,4 +125,29 @@ func TestFakeActionsAndApply(t *testing.T) {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+func TestFakeSecretsForbiddenForReadContext(t *testing.T) {
+	_, src := newOps(t)
+	list := func(id string) error {
+		be, err := src.Backend(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		api, err := be.(*Backend).API("v1/secrets", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = api.List(context.Background(), metav1.ListOptions{})
+		return err
+	}
+	if err := list("prod-eu"); !apierrors.IsForbidden(err) {
+		t.Fatalf("read context list secrets: %v", err)
+	}
+	if err := list("prod-eu-admin"); err != nil {
+		t.Fatalf("admin list secrets: %v", err)
+	}
+	if be, _ := src.Backend("prod-eu-admin"); !be.(*Backend).Admin() {
+		t.Fatal("Admin()")
+	}
 }

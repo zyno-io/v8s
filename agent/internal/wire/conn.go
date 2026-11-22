@@ -566,6 +566,8 @@ func errBody(err error) protocol.ErrorBody {
 		return protocol.ErrorBody{Code: "unavailable", Message: "timed out waiting for the kind's schema"}
 	case errors.Is(err, cluster.ErrBudget), errors.Is(err, cluster.ErrEventsTimeout), errors.Is(err, cluster.ErrEventsUnsupported):
 		return protocol.ErrorBody{Code: "unavailable", Message: err.Error()}
+	case errors.Is(err, cluster.ErrNotLinked), errors.Is(err, cluster.ErrLinkChanged):
+		return protocol.ErrorBody{Code: "bad_request", Message: err.Error()}
 	case errors.Is(err, cluster.ErrClusterNotSelected):
 		return protocol.ErrorBody{Code: "not_found", Message: err.Error()}
 	case apierrors.IsUnauthorized(err):
@@ -684,6 +686,22 @@ func (c *conn) dispatch(id uint32, req *rawRequest) error {
 			return err
 		}
 		return c.sendStates()
+	case "clusters.elevate":
+		var p protocol.ClustersElevateParams
+		if err := decodeParams(req, &p); err != nil {
+			return bad(err)
+		}
+		c.async(id, func(ctx context.Context) (any, error) {
+			w, _ := opt.Manager.Links(p.ID)
+			// Verify the write context that will be switched to (Elevate refuses if the link changes meanwhile).
+			if p.Elevated && w != "" && w != opt.Manager.Effective(p.ID) && opt.Ops != nil {
+				if err := opt.Ops.CheckLink(ctx, p.ID, w); err != nil {
+					return nil, err
+				}
+			}
+			return opt.Manager.Elevate(p.ID, p.Elevated, w)
+		})
+		return nil
 	case "kinds.list":
 		return c.respond(id, protocol.KindsListResult{Kinds: opt.Manager.Kinds()})
 	case "view.subscribe":

@@ -37,6 +37,12 @@ type Config struct {
 	Links func(clusterID string) (writeCtx string, autoSwitch bool)
 	// Resolve maps an object's apiVersion+kind to its resource (plural, "v1/pods" form) and scope.
 	Resolve func(clusterID, apiVersion, kind string) (gvr string, namespaced bool, err error)
+	// RawConn returns the connection of exactly this context, ignoring elevation (Conn follows it: a cluster id
+	// resolves to its write context while elevated). Default: Conn.
+	RawConn func(contextID string) (kube.Conn, error)
+	// Elevated returns the write context a cluster currently runs as ("" = not elevated, the default). While
+	// elevated, every context of the cluster is already the write context: no read-context review, no confirmation.
+	Elevated func(clusterID string) (writeCtx string)
 	// Now is used for the SSAR cache and the dedupe table; default time.Now.
 	Now func() time.Time
 }
@@ -66,6 +72,9 @@ func New(cfg Config) *Service {
 	}
 	if cfg.Links == nil {
 		cfg.Links = func(string) (string, bool) { return "", false }
+	}
+	if cfg.Elevated == nil {
+		cfg.Elevated = func(string) string { return "" }
 	}
 	return &Service{cfg: cfg, ssar: map[string]ssarEntry{}, dd: map[string]*ddEntry{}, links: map[string]string{}}
 }
@@ -149,6 +158,22 @@ func resource(dyn dynamic.Interface, gvr schema.GroupVersionResource, ns string)
 		return dyn.Resource(gvr)
 	}
 	return dyn.Resource(gvr).Namespace(ns)
+}
+
+// rawConn is conn for exactly this context: the review cache is keyed by context id, so the connection and the key
+// must not come from two different reads of the elevation state.
+func (s *Service) rawConn(contextID string) (kube.Conn, error) {
+	if s.cfg.RawConn == nil {
+		return s.conn(contextID)
+	}
+	c, err := s.cfg.RawConn(contextID)
+	if err != nil {
+		return nil, newErr("internal", "context %q unavailable: %s", contextID, err.Error())
+	}
+	if c == nil {
+		return nil, newErr("internal", "context %q unavailable", contextID)
+	}
+	return c, nil
 }
 
 func (s *Service) conn(contextID string) (kube.Conn, error) {
@@ -306,7 +331,14 @@ func kubeSystemUID(ctx context.Context, c kube.Conn) (string, error) {
 }
 
 func (s *Service) routeSub(ctx context.Context, cluster, verb string, gvr schema.GroupVersionResource, sub, ns, name string) (string, kube.Conn, bool, error) {
-	rc, err := s.conn(cluster)
+	if ectx := s.cfg.Elevated(cluster); ectx != "" {
+		c, err := s.rawConn(ectx)
+		if err != nil {
+			return "", nil, false, err
+		}
+		return ectx, c, true, nil // viaWrite: a 401 is write_unavailable
+	}
+	rc, err := s.rawConn(cluster)
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -374,6 +406,25 @@ func (s *Service) mapW(ctx context.Context, err error, viaWrite bool, w wsite) *
 	return e
 }
 
+// CheckLink verifies that wctx reaches the same cluster as cluster's own (read) context, the check elevation runs
+// before it switches. It compares the raw read context, never the elevated connection.
+func (s *Service) CheckLink(ctx context.Context, cluster, wctx string) error {
+	if wctx == "" {
+		return newErr("bad_request", "cluster %q has no linked write context", cluster)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	rc, err := s.rawConn(cluster)
+	if err != nil {
+		return err
+	}
+	wc, err := s.rawConn(wctx)
+	if err != nil {
+		return err
+	}
+	return s.checkLink(ctx, cluster, wctx, rc, wc)
+}
+
 // Access answers access.check, in input order.
 func (s *Service) Access(ctx context.Context, checks []protocol.AccessCheck) []protocol.AccessResult {
 	out := make([]protocol.AccessResult, len(checks))
@@ -391,7 +442,23 @@ func (s *Service) access(ctx context.Context, ck protocol.AccessCheck) protocol.
 	unable := func(err error) protocol.AccessResult {
 		return protocol.AccessResult{Reason: "unable to check: " + checkCause(err)}
 	}
-	rc, err := s.conn(ck.Cluster)
+	if ectx := s.cfg.Elevated(ck.Cluster); ectx != "" {
+		ec, err := s.rawConn(ectx)
+		if err != nil {
+			return unable(err)
+		}
+		ok, reason, rerr := s.review(ctx, ectx, ec, ck.Verb, gvr, ck.Namespace, ck.Name)
+		switch {
+		case rerr != nil:
+			return unable(rerr)
+		case ok:
+			return protocol.AccessResult{Allowed: true}
+		case reason == "":
+			reason = "denied"
+		}
+		return protocol.AccessResult{Reason: reason}
+	}
+	rc, err := s.rawConn(ck.Cluster)
 	if err != nil {
 		return unable(err)
 	}

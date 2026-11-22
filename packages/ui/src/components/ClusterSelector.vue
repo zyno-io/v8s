@@ -242,7 +242,8 @@ const suggestions = computed(() =>
                                 >
                                 <span class="muted small sub"><span class="mono url">{{ c.server }}</span></span>
                                 <span v-if="c.writeContext" class="muted small sub"
-                                    ><span class="tag warning">write</span><span class="mono">{{ c.writeContext }}</span></span
+                                    ><span class="tag warning">{{ clusters.isElevated(c.id) ? 'elevated' : 'write' }}</span
+                                    ><span class="mono">{{ c.writeContext }}</span></span
                                 >
                             </span>
                             <span class="small state" :class="{ bad: stateBad(c.id) }" :title="stateTitle(c.id)">{{ stateText(c.id) }}</span>
