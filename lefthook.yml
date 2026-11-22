@@ -4,7 +4,7 @@ pre-commit:
   commands:
     lint:
       glob: '*.{js,ts,jsx,tsx}'
-      run: 'npx oxlint --fix --fix-suggestions --fix-dangerously {staged_files}'
+      run: 'npx oxlint --no-error-on-unmatched-pattern --fix --fix-suggestions --fix-dangerously {staged_files}'
       stage_fixed: true
     format:
       glob: '*.{js,ts,jsx,tsx,json,vue,yaml,yml,md}'

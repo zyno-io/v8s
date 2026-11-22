@@ -1,0 +1,27 @@
+# build output
+dist/
+# generated types
+.astro/
+# deps
+node_modules/
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# env
+.env
+.env.production
+# macOS
+.DS_Store
+
+# VRT — screenshots are PixelCI artifacts; baselines live on the PixelCI server
+screenshots/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Impeccable runtime folders (review captures, mocks); briefs and config stay tracked
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/questions/

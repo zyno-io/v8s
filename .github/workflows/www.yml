@@ -1,0 +1,147 @@
+name: Website
+
+# Builds the Astro marketing site in sites/www/ and publishes it to ZynoHosting.
+#   - www-staging.v8s.io (alpha cluster): automatically on every push to main.
+#   - v8s.io (production): on every release tag (v*, the same tags release.yml builds; the site is built from
+#     the tagged commit), or manually: Actions > Website > Run workflow > target = production (main only).
+# Pull requests only build the site; they never deploy.
+#
+# Each deploy job reads ZYNOHOSTING_DEPLOY_TOKEN from its GitHub environment (www-staging, www-production).
+# A deploy token can deploy one site and nothing else. Create or rotate one with
+#   zynohosting deploy-tokens create <site> --production --github zyno-io/v8s --github-environment <env>
+# (add --environment alpha for www-staging). Never use a tenant API key here.
+# The CLI and its dependency tree are pinned by sites/www/deploy/package-lock.json.
+
+on:
+  push:
+    branches: [main]
+    # Path filters do not apply to tag pushes: every release tag publishes v8s.io. Release candidates (v0.8.0-rc.1)
+    # never do: their CHANGELOG section already names the unreleased version.
+    tags: ['v*', '!v*-*']
+    # CHANGELOG.md: the site reads the released version and date from it (src/data/release.ts).
+    paths:
+      - 'sites/www/**'
+      - 'CHANGELOG.md'
+      - '.github/workflows/www.yml'
+  pull_request:
+    paths:
+      - 'sites/www/**'
+      - 'CHANGELOG.md'
+      - '.github/workflows/www.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+# One run per ref and target: a newer push supersedes a queued staging deploy (so staging never ends up on an
+# older commit), and never cancels a pending production dispatch. PR runs cancel their stale builds.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('www-pr-{0}', github.ref) || format('www-{0}-{1}', github.ref, inputs.target || (github.ref_type == 'tag' && 'production' || 'staging')) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    env:
+      # @playwright/test (VRT, local only) is a devDependency; the build never needs its browsers.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: sites/www/.nvmrc
+          cache: npm
+          cache-dependency-path: sites/www/package-lock.json
+      - name: Install
+        working-directory: sites/www
+        run: npm ci
+      - name: Build
+        working-directory: sites/www
+        run: npm run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name != 'pull_request'
+        with:
+          name: www-dist
+          path: sites/www/dist
+          if-no-files-found: error
+          # deploy mirrors dist/ exactly: a dropped dotfile (.well-known/...) would be deleted from the site.
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy-staging:
+    name: deploy (www-staging.v8s.io)
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging'))
+    runs-on: ubuntu-latest
+    environment:
+      name: www-staging
+      url: https://www-staging.v8s.io
+    # A newer run must never cancel a deploy halfway.
+    concurrency:
+      group: www-deploy-staging
+      cancel-in-progress: false
+    steps:
+      # The CLI and its whole dependency tree come from sites/www/deploy/package-lock.json, installed
+      # without lifecycle scripts, since this job holds the deploy token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: sites/www/deploy
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: sites/www/deploy/.nvmrc
+      - name: Install the ZynoHosting CLI
+        working-directory: sites/www/deploy
+        run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: www-dist
+          path: dist
+      - name: Deploy
+        env:
+          ZYNOHOSTING_DEPLOY_TOKEN: ${{ secrets.ZYNOHOSTING_DEPLOY_TOKEN }}
+        run: sites/www/deploy/node_modules/.bin/zynohosting deploy www-staging.v8s.io ./dist --yes --environment alpha
+
+  deploy-production:
+    name: deploy (v8s.io)
+    needs: build
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) ||
+      (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.target == 'production')
+    runs-on: ubuntu-latest
+    environment:
+      name: www-production
+      url: https://v8s.io
+    concurrency:
+      group: www-deploy-production
+      cancel-in-progress: false
+    steps:
+      # The CLI and its whole dependency tree come from sites/www/deploy/package-lock.json, installed
+      # without lifecycle scripts, since this job holds the deploy token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: sites/www/deploy
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: sites/www/deploy/.nvmrc
+      - name: Install the ZynoHosting CLI
+        working-directory: sites/www/deploy
+        run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: www-dist
+          path: dist
+      - name: Deploy
+        env:
+          ZYNOHOSTING_DEPLOY_TOKEN: ${{ secrets.ZYNOHOSTING_DEPLOY_TOKEN }}
+        run: sites/www/deploy/node_modules/.bin/zynohosting deploy v8s.io ./dist --yes

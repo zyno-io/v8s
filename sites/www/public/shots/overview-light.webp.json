@@ -1,0 +1,4 @@
+{
+  "prompt": "Sourced, not generated: v8s UI captured in demo mode (v8s agent --fake clusters=1,pods=4500,churn=0,lograte=20) from github.com/zyno-io/v8s at commit 26a52e7, the Overview card of one cluster with CPU and Memory capacity (usage, requests and limits committed), light, 1170x346 @2x. Synthetic clusters; no real data.",
+  "createdAt": "2026-11-18T19:26:41.152Z"
+}

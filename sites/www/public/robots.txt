@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://v8s.io/sitemap.xml

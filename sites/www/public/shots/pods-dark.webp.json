@@ -1,0 +1,4 @@
+{
+  "prompt": "Sourced, not generated: v8s UI captured in demo mode (v8s agent --fake clusters=1,pods=4500,churn=0,lograte=20) from github.com/zyno-io/v8s at commit a6283be, the Pods table, Running pods of one cluster in the default order (status, then name), with the sidebar unpinned and the CPU and memory usage block, dark, 1440x900 @2x. Synthetic clusters; no real data.",
+  "createdAt": "2026-11-19T21:39:36.504Z"
+}
