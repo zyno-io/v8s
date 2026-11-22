@@ -2,7 +2,7 @@ name: Container cleanup
 
 # Prunes ghcr.io/zyno-io/v8s images that are not releases once they are two weeks old: pull request images (:pr-<n>,
 # :pr-<n>-<sha>), main's per-commit images (:<short sha>), manual branch builds (:<branch>) and untagged images.
-# Releases (:X.Y.Z, :X.Y.Z-pre), :latest and :main are never touched: an image carrying any of those tags is excluded
+# Releases (:X.Y.Z, :X.Y.Z-pre), their sha256-<digest> attestation tags, :latest and :main are never touched: an image carrying any of those tags is excluded
 # whole, even when it also carries a prunable tag. Multi-arch children, provenance and SBOM manifests go with their image.
 # A deleted version can be restored for 30 days (the run log lists every deleted id; see the action's README).
 on:
@@ -14,7 +14,7 @@ on:
         description: List what would be deleted without deleting
         type: boolean
         default: true
-  # Changes to this workflow show what they would delete (dry run).
+  # Changes to this workflow show what they would delete (dry run, with a 1-hour age so the preview is not empty).
   pull_request:
     paths:
       - '.github/workflows/container-cleanup.yml'
@@ -40,11 +40,12 @@ jobs:
           package: v8s
           use-regex: true
           # Patterns are tested against tags and digests, unanchored, and must be simple (the action rejects nested
-          # quantifiers). Every release tag has a dot, and no prunable tag or digest does: excluded are latest, main and any
-          # tag with a dot.
-          exclude-tags: '^(latest|main)$|[.]'
+          # quantifiers). Excluded: latest, main, any tag with a dot (every release tag has one; no prunable tag or digest
+          # does) and sha256-<digest> tags (the release provenance attestations pushed to the registry).
+          exclude-tags: '^(latest|main)$|[.]|^sha256-'
           # Short shas, pr-<n>[-<sha>], branch names: letters, digits and dashes only (never a dot or a digest's colon).
           delete-tags: '^[A-Za-z0-9-]+$'
           delete-untagged: true
-          older-than: 14 days
+          # A pull request's dry run uses 1 hour, so it previews what the patterns match on today's images.
+          older-than: ${{ github.event_name == 'pull_request' && '1 hour' || '14 days' }}
           dry-run: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
