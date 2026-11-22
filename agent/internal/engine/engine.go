@@ -127,11 +127,12 @@ func New(cfg Config) *Engine {
 	log, src, set := cfg.Log, cfg.Source, cfg.Settings
 	ctx, cancel := context.WithCancel(cfg.Ctx)
 	e := &Engine{cancel: cancel, Handlers: map[string]rpc.Handler{}}
-	connFn := func(id string) (kube.Conn, error) { return src.Backend(id) }
 
 	e.View = view.NewEngine()
 	e.Manager = cluster.NewManager(ctx, src, e.View, log)
 	mgr := e.Manager
+	// A cluster elevated to its write context (clusters.elevate) is that context for every consumer.
+	connFn := func(id string) (kube.Conn, error) { return src.Backend(mgr.Effective(id)) }
 	mgr.SetSettings(set)
 	e.Problems = problems.NewHub(problems.HubConfig{Settings: set.Get, Patch: set.Patch, Log: log, Fetch: getter(connFn)})
 	// A settings store can outlive the engine (hosted); a closed engine's hub must stop reacting.
@@ -141,7 +142,7 @@ func New(cfg Config) *Engine {
 		}
 	})
 	mgr.SetProblems(e.Problems)
-	e.Ops = ops.New(ops.Config{Conn: connFn, Links: mgr.Links, Resolve: mgr.Resolve, Now: cfg.Now})
+	e.Ops = ops.New(ops.Config{Conn: connFn, RawConn: func(id string) (kube.Conn, error) { return src.Backend(id) }, Links: mgr.Links, Elevated: mgr.Elevated, Resolve: mgr.Resolve, Now: cfg.Now})
 	if cfg.Jobs != nil {
 		e.Jobs = cfg.Jobs
 	} else {
@@ -188,7 +189,7 @@ func New(cfg Config) *Engine {
 	for k, v := range e.Security.Handlers() {
 		e.Handlers[k] = v
 	}
-	e.Hubble = hubble.New(hubble.Config{Conn: connFn, Router: e.Ops, Clusters: selected, Problems: e.Problems,
+	e.Hubble = hubble.New(hubble.Config{Conn: connFn, Effective: mgr.Effective, Router: e.Ops, Clusters: selected, Problems: e.Problems,
 		ClientCount: e.clientCount, Log: log})
 	e.Hubble.RegisterStreams(e.Streams)
 	for k, v := range e.Hubble.Handlers() {

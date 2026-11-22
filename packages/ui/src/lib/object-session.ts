@@ -3,6 +3,8 @@ import type { Ref } from 'vue';
 
 import { onScopeDispose, ref, shallowRef, watch } from 'vue';
 
+import { useClustersStore } from '@/stores/clusters.ts';
+
 import { getAgent } from './agent.ts';
 import { errorText } from './mutations.ts';
 
@@ -59,7 +61,8 @@ export function useObjectSession(target: Readonly<Ref<ObjectRef | null>>) {
     }
 
     watch(
-        () => keyOf(target.value),
+        // '|e' while the cluster is elevated: the object is re-read and resubscribed as the other identity.
+        () => keyOf(target.value) + (target.value && useClustersStore().isElevated(target.value.cluster) ? '|e' : ''),
         async () => {
             close();
             clearTimeout(parseTimer);

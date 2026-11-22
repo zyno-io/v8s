@@ -37,6 +37,9 @@ const (
 // per-object etcd watches, so the linger is short).
 const DefaultEventsLinger = 30 * time.Second
 
+// ErrRunnerStopped is returned when a watch is requested from a runner that was stopped (a stale reconcile).
+var ErrRunnerStopped = errors.New("cluster runner stopped")
+
 // ErrBudget is returned when a cluster is at its watch budget and nothing lingering can be evicted.
 var ErrBudget = errors.New("watch budget exhausted")
 
@@ -89,10 +92,12 @@ type discState struct {
 
 // runner is one selected cluster: its phase, its watches and its discovery cache.
 type runner struct {
-	m   *Manager
-	id  string
-	be  Backend
-	ctx context.Context
+	m  *Manager
+	id string
+	// ctxID is the context the cluster's ingest runs as: id, or its linked write context while elevated.
+	ctxID string
+	be    Backend
+	ctx   context.Context
 
 	cancel context.CancelFunc
 	done   chan struct{} // closed when every goroutine of the runner has ended
@@ -106,6 +111,7 @@ type runner struct {
 	mu        sync.Mutex
 	watches   map[string]*watchEntry
 	attached  bool
+	stopped   bool        // set by stop (under mu): nothing new may start on this runner
 	stopTimer *time.Timer // pending grace-period stop
 	wg        sync.WaitGroup
 
@@ -130,7 +136,16 @@ func (r *runner) state() protocol.ClusterState {
 	msg, _ := r.message.Load().(string)
 	ma, mm := r.usage.avail()
 	return protocol.ClusterState{ID: r.id, Phase: r.phase.Load().(protocol.ClusterPhase), Synced: int(r.synced.Load()), Message: msg,
-		Metrics: ma, MetricsMessage: mm, VPA: r.vpaPods.Load(), Kinds: r.discGen.Load()}
+		Metrics: ma, MetricsMessage: mm, VPA: r.vpaPods.Load(), Kinds: r.discGen.Load(), Elevated: r.ctxID != r.id}
+}
+
+// classify is classify plus, while elevated, which identity was refused.
+func (r *runner) classify(err error) (protocol.ClusterPhase, string) {
+	p, msg := classify(err)
+	if p == protocol.PhaseAuthRequired && r.ctxID != r.id {
+		msg += " as " + r.ctxID + " (is its elevated session active?)"
+	}
+	return p, msg
 }
 
 func (r *runner) setPhase(p protocol.ClusterPhase, msg string) {
@@ -310,6 +325,9 @@ func (r *runner) module(gvr string) (*ingest.Module, *ingest.GenericSpec, error)
 
 // startLocked starts the watch for gvr. Caller holds r.mu.
 func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
+	if r.stopped {
+		return nil, ErrRunnerStopped
+	}
 	mod, spec, err := r.module(gvr)
 	if err != nil {
 		return nil, err
@@ -348,7 +366,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 				r.m.log.Debug("watch error", "cluster", r.id, "gvr", gvr, "err", err.Error())
 				return
 			}
-			p, msg := classify(err)
+			p, msg := r.classify(err)
 			if r.everOK.Load() && p == protocol.PhaseUnreachable {
 				p = protocol.PhaseReconnecting
 			} else if r.everOK.Load() && p != protocol.PhaseAuthRequired {
@@ -551,7 +569,7 @@ func (r *runner) stopLocked(w *watchEntry) {
 		w.part.Close()
 		return
 	}
-	r.m.eng.DetachKind(r.id, w.gvr)
+	r.m.eng.DetachKindIf(r.id, w.gvr, w.st)
 	if r.pe != nil {
 		r.pe.Detach(w.gvr)
 		r.pe.SetUnavailable(problems.GR(w.gvr), "")
@@ -586,6 +604,9 @@ func (r *runner) acquireBg(gvr string, bg bool) (release func(), err error) {
 func (r *runner) acquireKey(key string, linger time.Duration, bg bool, start func() (*watchEntry, error)) (release func(), err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.stopped {
+		return nil, ErrRunnerStopped
+	}
 	gvr := key
 	w := r.watches[gvr]
 	if w == nil {
@@ -747,6 +768,9 @@ func (r *runner) detachAll() {
 
 // stop ends every watch and releases memory.
 func (r *runner) stop() {
+	r.mu.Lock()
+	r.stopped = true
+	r.mu.Unlock()
 	r.cancel()
 	r.wg.Wait()
 	r.mu.Lock()

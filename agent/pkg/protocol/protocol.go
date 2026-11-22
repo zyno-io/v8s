@@ -56,6 +56,7 @@ type Hello struct {
 //
 //	"clusters.list"      → ClustersListResult (no params)
 //	"clusters.select"    ClustersSelectParams → ClusterStates
+//	"clusters.elevate"   ClustersElevateParams → ClusterStates
 //	"view.subscribe"     ViewSubscribeParams → ViewSubscribeResult
 //	"view.update"        ViewUpdateParams → (empty)
 //	"view.unsubscribe"   ViewUnsubscribeParams → (empty)
@@ -141,6 +142,13 @@ type ClustersSelectParams struct {
 	IDs []string `msgpack:"ids" json:"ids"`
 }
 
+// ClustersElevateParams runs a selected cluster as its linked write context (Elevated) or back as its read context.
+// Either way that cluster's watches, discovery, problems and usage restart cold; other clusters are untouched.
+type ClustersElevateParams struct {
+	ID       string `msgpack:"id" json:"id"`
+	Elevated bool   `msgpack:"elevated" json:"elevated"`
+}
+
 // ClusterPhase is the connection lifecycle state of one selected cluster.
 type ClusterPhase string
 
@@ -181,6 +189,9 @@ type ClusterState struct {
 	// Kinds is the cluster's discovery generation: it increases whenever the set of discovered resources changes
 	// (a CRD was installed or removed, an aggregated API came or went). The UI re-reads kinds.list when it changes.
 	Kinds uint64 `msgpack:"kinds,omitempty" json:"kinds,omitempty"`
+	// Elevated: the cluster runs as its linked write context (Cluster.WriteContext) for reads, watches and writes
+	// (clusters.elevate) until reverted, stopped after deselection, or the agent restarts. Not persisted.
+	Elevated bool `msgpack:"elevated,omitempty" json:"elevated,omitempty"`
 }
 
 type ClusterStates struct {

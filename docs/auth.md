@@ -31,7 +31,8 @@ To v8s a gateway is **transparent**: it is a Kubernetes endpoint with OIDC authe
 Many setups have two contexts per cluster: one read-only, one that can write (with Warpgate, two targets). v8s can **link** them so they behave as one cluster:
 
 - **Linking is optional and manual.** In the cluster selector, "Link a write context" pairs a second context with the cluster. v8s may suggest a pair when two context names differ only by a role suffix (`-operator` / `-cluster-admin`), but never links on its own. Unlinked contexts are simply separate clusters.
-- **Reads use the read context.** All watches, lists, views, and problems run on it.
+- **Reads use the read context** (unless the cluster is elevated). All watches, lists, views, and problems run on it.
+- **A cluster can be elevated.** An "Elevate" menu on the cluster's status chip and Overview card runs that one cluster entirely as its write context (reads, watches, problems, usage and writes) until reverted. It is held in memory per engine (never persisted, ended by deselecting the cluster, unlinking, or restarting v8s), and v8s adds no time limit of its own.
 - **Writes switch automatically.** When an action needs more than the read context allows (v8s knows from the RBAC check, or the request is rejected with 403), it runs through the write context instead. The confirm dialog says which context the action will use, and a small `write` tag marks the cluster while it is in use. The user can turn the automatic switch off and be asked instead.
 - **If the write context is not usable right now** (with Warpgate: no active elevated session), the action fails with a clear message and a link to Warpgate. The read context keeps working.
 - Elevation time limits and approvals are Warpgate's; v8s adds none.

@@ -74,7 +74,7 @@ async function refreshAccess(only?: string) {
 }
 let t: ReturnType<typeof setTimeout> | undefined;
 watch(
-    () => [props.gvr, props.targets],
+    () => [props.gvr, props.targets, clusters.elevatedKey],
     () => {
         clearTimeout(t);
         results.value = new Map();

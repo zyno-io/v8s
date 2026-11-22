@@ -55,6 +55,8 @@ In [hosted mode](/guide/hosted#sign-in-and-sign-out), a lapsed cluster token sho
 
 **Fix.** Start or renew the elevated session in the gateway, then retry. Reads keep working in the meantime. If the message is something else (an admission denial, a quota error), it is the cluster's answer, not an access problem, and the message says what.
 
+While a cluster is **elevated**, the same cause shows on the cluster's chip as `sign-in required as <write context> (is its elevated session active?)`: renew the session in the gateway, or use the arrow on the chip to **Revert** to the read context.
+
 Related messages:
 
 - **"This will run as the write context..."** is a prompt, not an error. It appears when you turned off the automatic switch. Confirm to proceed.

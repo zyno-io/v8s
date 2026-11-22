@@ -5,6 +5,7 @@ import { CapacityGVR } from '@v8s/client';
 import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import ClusterElevateMenu from '@/components/ClusterElevateMenu.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { capacityRow, capacityView } from '@/lib/capacity.ts';
 import {
@@ -162,6 +163,10 @@ function goHealth(h: Health, tones: number[]) {
             <span class="tag" :class="phase === 'ready' ? 'success' : phase === 'unreachable' || phase === 'auth-required' ? 'danger' : 'warning'">
                 <span class="dot" :style="{ background: phaseColor(phase) }"></span>{{ phaseLabel(phase) }}
             </span>
+            <span v-if="clusters.isElevated(id)" class="tag warning" :title="'Running as ' + clusters.writeContextOf(id)" data-testid="elevated-tag"
+                >elevated</span
+            >
+            <ClusterElevateMenu :id="id" />
             <span v-if="version" class="muted mono">{{ version }}</span>
             <span v-if="state?.message" class="muted msg" :title="state.message">{{ state.message }}</span>
         </header>

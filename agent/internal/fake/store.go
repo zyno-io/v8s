@@ -3,6 +3,7 @@ package fake
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -825,6 +826,9 @@ func (b *Backend) API(gvr string, m *ingest.Module) (ingest.API, error) {
 	if d == nil {
 		return nil, apierrors.NewNotFound(schemaGR(gvr), gvr)
 	}
+	if b.deny && gvr == "v1/secrets" { // the rbac=1 read context cannot read Secrets; its admin context can
+		return deniedAPI{err: apierrors.NewForbidden(schemaGR(gvr), "", errors.New("RBAC: this identity cannot list secrets on "+b.c.name))}, nil
+	}
 	return &kindAPI{w: b.w, d: d, mod: m}, nil
 }
 
@@ -834,6 +838,19 @@ func (b *Backend) Discover(ctx context.Context) ([]disco.Resource, error) {
 		d = slices.DeleteFunc(d, func(r disco.Resource) bool { return r.Group == "metrics.k8s.io" })
 	}
 	return d, nil
+}
+
+// Admin reports whether this is the linked write context ("<cluster>-admin").
+func (b *Backend) Admin() bool { return b.admin }
+
+// deniedAPI answers every list and watch with err.
+type deniedAPI struct{ err error }
+
+func (d deniedAPI) List(context.Context, metav1.ListOptions) (runtime.Object, error) {
+	return nil, d.err
+}
+func (d deniedAPI) Watch(context.Context, metav1.ListOptions) (watch.Interface, error) {
+	return nil, d.err
 }
 
 // World returns the cluster's object store (tests).

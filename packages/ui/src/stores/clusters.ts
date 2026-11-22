@@ -1,11 +1,13 @@
 import type { Cluster, ClusterState } from '@v8s/client';
 
 import { defineStore } from 'pinia';
-import { computed, ref, shallowRef } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 
+import { clearAccessCache } from '@/lib/access.ts';
 import { getAgent, refreshKinds } from '@/lib/agent.ts';
 import { KEY_SELECTION, parseSelection, readJson, resolveChecked, storeSelection, writeJson } from '@/lib/remember.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
+import { useUiStore } from '@/stores/ui.ts';
 
 export const useClustersStore = defineStore('clusters', () => {
     const list = shallowRef<Cluster[]>([]);
@@ -43,6 +45,37 @@ export const useClustersStore = defineStore('clusters', () => {
         const set = s.protectedClusters;
         return set.includes(id) || set.includes(s.links[id] ?? '') || set.some(p => s.links[p] === id);
     };
+
+    /** Clusters with an elevate/revert in flight (UI state only; the elevation itself is `ClusterState.elevated`). */
+    const elevating = shallowRef<ReadonlySet<string>>(new Set());
+    const isElevated = (id: string): boolean => stateById.value.get(id)?.elevated === true;
+    /** Changes whenever the set of elevated clusters does: watch it to re-read what depends on the identity (access checks). */
+    const elevatedKey = computed(() =>
+        states.value
+            .filter(s => s.elevated)
+            .map(s => s.id)
+            .join()
+    );
+    // Any change of who is elevated (this tab, another tab, an early state frame) invalidates cached access answers.
+    watch(elevatedKey, clearAccessCache);
+    const elevatedCount = computed(() => states.value.filter(s => s.elevated).length);
+
+    /** Runs the cluster as its linked write context (`on`) or back as its read context; its data reloads. */
+    async function setElevated(id: string, on: boolean) {
+        if (elevating.value.has(id)) return;
+        elevating.value = new Set(elevating.value).add(id);
+        try {
+            await getAgent().elevateCluster(id, on);
+            clearAccessCache();
+        } catch (e) {
+            const name = nameById.value.get(id) ?? id;
+            useUiStore().toast('danger', `${on ? 'Elevate' : 'Revert'} ${name}: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            const n = new Set(elevating.value);
+            n.delete(id);
+            elevating.value = n;
+        }
+    }
 
     /** Re-reads the list (groups and linked write contexts come from settings, so call this after changing them). */
     async function refreshList() {
@@ -129,6 +162,11 @@ export const useClustersStore = defineStore('clusters', () => {
         groupsOf,
         writeContextOf,
         isProtected,
+        elevating,
+        isElevated,
+        elevatedKey,
+        elevatedCount,
+        setElevated,
         refreshList,
         takeFocusTarget,
         load,

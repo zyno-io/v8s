@@ -145,6 +145,8 @@ type Link struct {
 	Close func()
 	// Dead reports that the connection is gone (the forward ended): the next acquire builds a new one.
 	Dead func() bool
+
+	key string // the link-cache entry it was built for (cluster + the identity it runs as)
 }
 
 // connect builds a Link: discovery, a port-forward tunnel through the cluster's credentials to a ready relay pod and a
@@ -220,13 +222,34 @@ type linkEntry struct {
 	idle *time.Timer
 }
 
+// linkKey keys the link cache by cluster and effective context.
+func (s *Service) linkKey(cluster string) string {
+	if s.cfg.Effective == nil {
+		return cluster
+	}
+	return cluster + "\x00" + s.cfg.Effective(cluster)
+}
+
 // acquire returns a Link for the cluster (shared, reference counted, closed after linkIdle without users).
 func (s *Service) acquire(ctx context.Context, cluster string) (*Link, func(), error) {
+	for range 3 {
+		l, rel, err := s.acquireKey(ctx, cluster, s.linkKey(cluster))
+		if !errors.Is(err, errIdentityChanged) {
+			return l, rel, err
+		}
+	}
+	return nil, nil, ops.NewError("unavailable", "cluster %q switched context while connecting to hubble-relay: retry", cluster)
+}
+
+// errIdentityChanged: the cluster was elevated or reverted while its link was being built.
+var errIdentityChanged = errors.New("identity changed")
+
+func (s *Service) acquireKey(ctx context.Context, cluster, key string) (*Link, func(), error) {
 	s.mu.Lock()
-	e := s.links[cluster]
+	e := s.links[key]
 	if e == nil {
 		e = &linkEntry{}
-		s.links[cluster] = e
+		s.links[key] = e
 	}
 	s.mu.Unlock()
 	e.mu.Lock()
@@ -240,6 +263,11 @@ func (s *Service) acquire(ctx context.Context, cluster string) (*Link, func(), e
 		if err != nil {
 			return nil, nil, err
 		}
+		if s.linkKey(cluster) != key { // built (partly) as the other identity: never file it under this key
+			l.Close()
+			return nil, nil, errIdentityChanged
+		}
+		l.key = key
 		e.link = l
 	}
 	if e.idle != nil {
@@ -274,8 +302,12 @@ func (s *Service) acquire(ctx context.Context, cluster string) (*Link, func(), e
 
 // invalidate closes the cluster's link after a failure so the next acquire reconnects.
 func (s *Service) invalidate(cluster string, l *Link) {
+	key := l.key // the entry it was acquired under, not the cluster's current identity
+	if key == "" {
+		key = s.linkKey(cluster)
+	}
 	s.mu.Lock()
-	e := s.links[cluster]
+	e := s.links[key]
 	s.mu.Unlock()
 	if e == nil {
 		return

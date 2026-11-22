@@ -73,7 +73,12 @@ const themeLabel = computed(() => ({ system: 'Theme: system', light: 'Theme: lig
             @click="clusters.popoverOpen ? clusters.close() : clusters.open()"
         >
             <span class="dot" :style="{ background: dotColor }"></span>{{ label
-            }}<ProtectedMark v-if="clusters.activeIds.length === 1" :cluster="clusters.activeIds[0]!" />
+            }}<ProtectedMark v-if="clusters.activeIds.length === 1" :cluster="clusters.activeIds[0]!" /><span
+                v-if="clusters.elevatedCount"
+                class="tag warning"
+                data-testid="elevated-topbar"
+                >{{ clusters.elevatedCount > 1 ? `${clusters.elevatedCount} elevated` : 'elevated' }}</span
+            >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                 <path d="M4 6l4 4 4-4" />
             </svg>

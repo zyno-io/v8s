@@ -4,6 +4,7 @@ import type { ObjectRef } from '@v8s/client';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import ActionBar from '@/components/ActionBar.vue';
+import ClusterElevateMenu from '@/components/ClusterElevateMenu.vue';
 import NamespaceMenu from '@/components/NamespaceMenu.vue';
 import ResourceTable from '@/components/ResourceTable.vue';
 import { getPodsAll, kinds } from '@/lib/agent.ts';
@@ -108,7 +109,16 @@ const syncTags = computed(() =>
         const syncing = s.phase === 'syncing' || s.phase === 'connecting';
         const text = s.phase === 'ready' ? 'synced' : syncing ? `${s.phase} · ${formatCount(s.synced)} rows` : s.phase;
         const tone = s.phase === 'ready' ? '' : s.phase === 'unreachable' || s.phase === 'auth-required' ? 'danger' : 'warning';
-        return { id: s.id, name, text, tone, color: phaseColor(s.phase), title: s.message ?? '' };
+        return {
+            id: s.id,
+            name,
+            text,
+            tone,
+            color: phaseColor(s.phase),
+            title: s.message ?? '',
+            elevated: s.elevated === true,
+            writeCtx: clusters.writeContextOf(s.id)
+        };
     })
 );
 
@@ -205,7 +215,12 @@ function star() {
             <div class="grow"></div>
             <span v-for="t in metricTags" :key="'m' + t.id" class="tag sync warning" :title="t.title" data-testid="metrics-tag">{{ t.text }}</span>
             <span v-for="t in syncTags" :key="t.id" class="tag sync" :class="t.tone" :title="t.title"
-                ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}</span
+                ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}<ClusterElevateMenu :id="t.id"
+            /></span>
+            <template v-for="t in syncTags" :key="'e' + t.id"
+                ><span v-if="t.elevated" class="tag sync warning" :title="'Running as ' + t.writeCtx" data-testid="elevated-tag"
+                    >{{ t.name }} elevated</span
+                ></template
             >
             <div class="colwrap opt" @keydown.esc.stop="colsOpen && (colsOpen = false)">
                 <button class="btn" type="button" :aria-expanded="colsOpen" aria-haspopup="dialog" @click="colsOpen = !colsOpen">Columns</button>

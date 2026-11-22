@@ -406,6 +406,7 @@ export interface Hello {
  * Request is a client call. Method names and their params/result types:
  * 	"clusters.list"      → ClustersListResult (no params)
  * 	"clusters.select"    ClustersSelectParams → ClusterStates
+ * 	"clusters.elevate"   ClustersElevateParams → ClusterStates
  * 	"view.subscribe"     ViewSubscribeParams → ViewSubscribeResult
  * 	"view.update"        ViewUpdateParams → (empty)
  * 	"view.unsubscribe"   ViewUnsubscribeParams → (empty)
@@ -497,6 +498,14 @@ export interface ClustersSelectParams {
   ids: string[];
 }
 /**
+ * ClustersElevateParams runs a selected cluster as its linked write context (Elevated) or back as its read context.
+ * Either way that cluster's watches, discovery, problems and usage restart cold; other clusters are untouched.
+ */
+export interface ClustersElevateParams {
+  id: string;
+  elevated: boolean;
+}
+/**
  * ClusterPhase is the connection lifecycle state of one selected cluster.
  */
 export type ClusterPhase = string;
@@ -537,6 +546,11 @@ export interface ClusterState {
    * (a CRD was installed or removed, an aggregated API came or went). The UI re-reads kinds.list when it changes.
    */
   kinds?: number /* uint64 */;
+  /**
+   * Elevated: the cluster runs as its linked write context (Cluster.WriteContext) for reads, watches and writes
+   * (clusters.elevate) until reverted, stopped after deselection, or the agent restarts. Not persisted.
+   */
+  elevated?: boolean;
 }
 export interface ClusterStates {
   states: ClusterState[];

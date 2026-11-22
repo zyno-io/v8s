@@ -44,6 +44,9 @@ type Router interface {
 type Config struct {
 	// Conn returns the connection of a context id (read context id == cluster id).
 	Conn func(contextID string) (kube.Conn, error)
+	// Effective returns the context a cluster currently runs as (its write context while elevated); relay links are
+	// cached per cluster and context, so a link opened under one identity is not reused under the other. Default: the cluster id.
+	Effective func(cluster string) string
 	// Router, when set, routes the port-forward (needs create pods/portforward); default: the read context.
 	Router Router
 	// Clusters lists the selected clusters (hubble.drops without an explicit list, the problem monitor).
