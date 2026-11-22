@@ -13,6 +13,7 @@ import (
 	"github.com/zyno-io/v8s/agent/internal/fake"
 	"github.com/zyno-io/v8s/agent/internal/problems"
 	"github.com/zyno-io/v8s/agent/internal/settings"
+	"github.com/zyno-io/v8s/agent/internal/store"
 	"github.com/zyno-io/v8s/agent/internal/view"
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
@@ -57,6 +58,12 @@ func runnerOf(m *Manager, id string) *runner {
 	return m.runners[id]
 }
 
+func podsStore(r *runner) *store.Store {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.watches["v1/pods"].st
+}
+
 func stateOf(m *Manager, id string) protocol.ClusterState {
 	for _, s := range m.States().States {
 		if s.ID == id {
@@ -69,7 +76,7 @@ func stateOf(m *Manager, id string) protocol.ClusterState {
 func TestElevateRestartsOneCluster(t *testing.T) {
 	m, _ := newElevateManager(t)
 	usBefore, euBefore := runnerOf(m, "prod-us"), runnerOf(m, "prod-eu")
-	usStore := usBefore.watches["v1/pods"].st
+	usStore := podsStore(usBefore)
 	peBefore := euBefore.pe
 
 	const secrets = "v1/secrets"
@@ -100,7 +107,7 @@ func TestElevateRestartsOneCluster(t *testing.T) {
 	if eu == euBefore || eu.ctxID != "prod-eu-admin" {
 		t.Fatal("prod-eu runner not replaced")
 	}
-	if runnerOf(m, "prod-us") != usBefore || usBefore.watches["v1/pods"].st != usStore {
+	if runnerOf(m, "prod-us") != usBefore || podsStore(usBefore) != usStore {
 		t.Fatal("prod-us was touched")
 	}
 	if eu.pe == nil || eu.pe == peBefore {
