@@ -116,4 +116,6 @@ JS workspaces (`packages/`):
 - User-facing changes get an entry under `## Unreleased` in `CHANGELOG.md` (the release workflow uses the matching version
   section as release notes) and an update to the relevant page in `docs/guide/`.
 - Releases are cut by tagging `vX.Y.Z`; every push to `main` also builds unsigned artifacts and `ghcr.io/zyno-io/v8s:main`.
+  Same-repo PRs build only the image (amd64) as `:pr-<n>` / `:pr-<n>-<sha7>` for staging tests; non-release images are pruned
+  after 14 days (`container-cleanup.yml`).
 - oxlint forbids `any` (`typescript/no-explicit-any`) and `@ts-` comments outside spec files.
