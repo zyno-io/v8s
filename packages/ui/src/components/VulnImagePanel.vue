@@ -101,7 +101,7 @@ async function rescan(it: ReportItem) {
     if (await rescanReport(it.ref, it.workload)) setTimeout(load, 1500);
 }
 
-const nameOf = (c: string) => clusters.nameById.get(c) ?? c;
+const nameOf = (c: string) => clusters.displayName(c);
 const sameRef = (a: ObjectRef, b: ObjectRef | null) => !!b && a.cluster === b.cluster && a.namespace === b.namespace && a.name === b.name;
 const sums = computed(() => {
     const t = [0, 0, 0, 0, 0];
@@ -149,8 +149,7 @@ const sums = computed(() => {
                                 >
                                 <span class="meta">
                                     <span v-if="clusters.activeIds.length > 1" class="tag"
-                                        ><span class="dot" :style="{ background: clusterColor(nameOf(it.cluster)) }"></span
-                                        >{{ nameOf(it.cluster) }}</span
+                                        ><span class="dot" :style="{ background: clusterColor(it.cluster) }"></span>{{ nameOf(it.cluster) }}</span
                                     >
                                     <span v-if="it.ref.namespace" class="muted small">{{ it.ref.namespace }}</span>
                                     <span v-for="(k, i) in SEVERITIES.slice(0, 4)" :key="k" class="tag" :class="it.counts[i] > 0 ? sevTone(k) : ''"

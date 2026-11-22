@@ -175,7 +175,7 @@ interface Item {
 const tick = shallowRef(0);
 let allOld = false;
 let nowMs = Date.now();
-const nameOf = (c: string) => clusters.nameById.get(c) ?? c;
+const nameOf = (c: string) => clusters.displayName(c);
 
 const groupLabel = (key: string): string => {
     const g = props.view.group.value;

@@ -125,7 +125,7 @@ function finish(action: string, ok: boolean) {
     emit('done', action, ok);
 }
 
-const nameOf = (c: string) => clusters.nameById.get(c) ?? c;
+const nameOf = (c: string) => clusters.displayName(c);
 
 function go(a: ActionDef) {
     open.value = false;

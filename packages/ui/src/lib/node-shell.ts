@@ -28,7 +28,7 @@ export function nodeShellNamespace(cluster: string): string {
 /** Confirms, then asks NodeShellHost to open the dock. */
 export async function openNodeShell(cluster: string, node: string): Promise<void> {
     const clusters = useClustersStore();
-    const name = clusters.nameById.get(cluster) ?? cluster;
+    const name = clusters.displayName(cluster);
     const namespace = nodeShellNamespace(cluster);
     let viaWrite = false;
     try {

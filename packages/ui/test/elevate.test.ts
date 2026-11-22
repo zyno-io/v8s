@@ -77,3 +77,14 @@ describe('clusters store elevation', () => {
         expect(t?.text).toBe('Revert Prod: no link');
     });
 });
+
+describe('displayName', () => {
+    it('names the write context while elevated, the cluster otherwise', () => {
+        const c = useClustersStore();
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0 }];
+        expect(c.displayName('prod')).toBe('Prod');
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
+        expect(c.displayName('prod')).toBe('prod-admin');
+        expect(c.displayName('other')).toBe('other');
+    });
+});

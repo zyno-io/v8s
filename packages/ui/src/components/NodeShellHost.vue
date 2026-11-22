@@ -9,7 +9,9 @@ import { nodeShellNamespace, nodeShellRequest } from '@/lib/node-shell.ts';
 import { createSessionSlot } from '@/lib/session-slot.ts';
 import { nodeShellParams, privilegedDenied } from '@/lib/shell.ts';
 import { withWriteConfirm } from '@/lib/write-confirm.ts';
+import { useClustersStore } from '@/stores/clusters.ts';
 
+const clusters = useClustersStore();
 const TerminalView = defineAsyncComponent(() => import('./TerminalView.vue'));
 
 const req = nodeShellRequest;
@@ -98,7 +100,7 @@ function dragKey(e: KeyboardEvent) {
         ></div>
         <header class="ns-head">
             <span class="tag">{{ req.node }}</span>
-            <span class="tag info">{{ req.cluster }}</span>
+            <span class="tag info">{{ clusters.displayName(req.cluster) }}</span>
             <span class="tag danger">privileged pod on {{ req.node }}</span>
             <span v-if="ready?.pod" class="muted mono">{{ ready.pod }}</span>
             <span v-if="ready?.attached !== undefined" class="muted">{{ ready.attached ? 'attached to first session' : 'new nsenter session' }}</span>

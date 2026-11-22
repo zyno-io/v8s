@@ -10,7 +10,9 @@ import { openObject } from '@/lib/drawer.ts';
 import { formatAge } from '@/lib/format.ts';
 import { canRun, relatedRef, runProblemAction } from '@/lib/problems-actions.ts';
 import { ACTION_LABEL, actionsForClass, severityTone, SNOOZE_PRESETS } from '@/lib/problems.ts';
+import { useClustersStore } from '@/stores/clusters.ts';
 
+const clusters = useClustersStore();
 const props = defineProps<{ row: ProblemRow; state: EvState | null; phone?: boolean }>();
 const emit = defineEmits<{ ack: [preset: SnoozePreset | null]; unack: [] }>();
 
@@ -37,7 +39,9 @@ const age = (t?: number) => (t ? formatAge(t, now) : '—');
     <section class="ev" :class="{ phone }" aria-label="Problem evidence" data-testid="problem-evidence">
         <header class="evh">
             <span class="tag" :class="severityTone(row.severity)">{{ row.severity }}</span>
-            <span class="tag"><span class="dot" :style="{ background: clusterColor(row.cluster) }"></span>{{ row.cluster }}</span>
+            <span class="tag"
+                ><span class="dot" :style="{ background: clusterColor(row.cluster) }"></span>{{ clusters.displayName(row.cluster) }}</span
+            >
             <span class="mono muted">{{ row.class }}</span>
             <b class="ttl">{{ ev?.title || row.title }}</b>
             <span v-if="row.message" class="muted msg">{{ row.message }}</span>

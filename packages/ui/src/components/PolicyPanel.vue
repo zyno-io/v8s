@@ -32,7 +32,7 @@ const settable = computed(() => canSetMode(props.target.gvr));
 const kindName = computed(() => {
     return kinds.value.find(x => x.gvr === props.target.gvr)?.kind ?? labelFromGvr(props.target.gvr);
 });
-const clusterName = computed(() => clusters.nameById.get(props.target.cluster) ?? props.target.cluster);
+const clusterName = computed(() => clusters.displayName(props.target.cluster));
 
 // ---- summary (the policy's table row) and YAML (object.get, which also yields the uid) ----
 const summary = shallowRef<Record<string, string>>({});
@@ -217,7 +217,7 @@ const facts = computed(() => [
                 <b class="ttl" :title="target.name">{{ target.name }}</b>
                 <span class="tag">{{ kindName }}</span>
                 <span v-if="clusters.activeIds.length > 1" class="tag"
-                    ><span class="dot" :style="{ background: clusterColor(clusterName) }"></span>{{ clusterName }}</span
+                    ><span class="dot" :style="{ background: clusterColor(props.target.cluster) }"></span>{{ clusterName }}</span
                 >
                 <span v-if="tag" class="tag" :class="tag.tone" data-testid="policy-mode">{{ tag.text }}</span>
                 <span v-if="legacy" class="tag" :title="LEGACY_HINT" data-testid="legacy-badge">Read-only</span>

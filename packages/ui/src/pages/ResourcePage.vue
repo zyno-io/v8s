@@ -85,7 +85,7 @@ const metricTags = computed(() =>
               .filter(s => s.metrics && s.metrics !== 'ok')
               .map(s => ({
                   id: s.id,
-                  text: `${clusters.nameById.get(s.id) ?? s.id} · ${s.metrics === 'absent' ? 'no metrics' : s.metrics === 'forbidden' ? 'metrics not allowed' : 'metrics unavailable'}`,
+                  text: `${clusters.displayName(s.id)} · ${s.metrics === 'absent' ? 'no metrics' : s.metrics === 'forbidden' ? 'metrics not allowed' : 'metrics unavailable'}`,
                   title: s.metricsMessage ?? ''
               }))
         : []

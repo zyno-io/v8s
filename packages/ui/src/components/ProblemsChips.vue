@@ -45,7 +45,7 @@ let pressTimer: ReturnType<typeof setTimeout> | undefined;
 let longPressed = false;
 
 function clusterNames(ids: string[]): string {
-    return ids.map(i => clusters.nameById.get(i) ?? i).join(', ');
+    return ids.map(i => clusters.displayName(i)).join(', ');
 }
 function onChip(c: FamilyChip) {
     if (longPressed) {

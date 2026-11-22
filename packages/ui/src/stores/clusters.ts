@@ -59,6 +59,19 @@ export const useClustersStore = defineStore('clusters', () => {
     // Any change of who is elevated (this tab, another tab, an early state frame) invalidates cached access answers.
     watch(elevatedKey, clearAccessCache);
     const elevatedCount = computed(() => states.value.filter(s => s.elevated).length);
+    /**
+     * The name to show for a cluster's data and actions: its linked write context while elevated (everything on it is
+     * loaded and written through that context), otherwise its own name. Lookups and colors stay keyed by the read id.
+     */
+    const displayById = computed(() => {
+        const m = new Map(nameById.value);
+        for (const s of states.value) {
+            const w = s.elevated ? writeContextOf(s.id) : '';
+            if (w) m.set(s.id, w);
+        }
+        return m;
+    });
+    const displayName = (id: string): string => displayById.value.get(id) ?? id;
 
     /** Runs the cluster as its linked write context (`on`) or back as its read context; its data reloads. */
     async function setElevated(id: string, on: boolean) {
@@ -166,6 +179,7 @@ export const useClustersStore = defineStore('clusters', () => {
         isElevated,
         elevatedKey,
         elevatedCount,
+        displayName,
         setElevated,
         refreshList,
         takeFocusTarget,

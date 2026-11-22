@@ -75,7 +75,7 @@ watch(options, () => {
 });
 
 const summary = computed(() => (pre.value ? preflightSummary(pre.value, options.value) : null));
-const clusterName = computed(() => clusters.nameById.get(props.cluster) ?? props.cluster);
+const clusterName = computed(() => clusters.displayName(props.cluster));
 const isProt = computed(() => clusters.isProtected(props.cluster));
 const needsTyped = computed(() => isProt.value || !!opts.disableEviction);
 const typedOk = computed(() => !needsTyped.value || typed.value.trim() === props.node);

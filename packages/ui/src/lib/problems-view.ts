@@ -181,7 +181,7 @@ export function useProblemsView() {
         return [...by.entries()].map(([cluster, kinds]) => ({
             cluster,
             keys: kinds.map(k => `${cluster}|${k}`),
-            text: `Some checks are unavailable in ${clusters.nameById.get(cluster) ?? cluster} (no permission to list ${kinds.join(', ')})`
+            text: `Some checks are unavailable in ${clusters.displayName(cluster)} (no permission to list ${kinds.join(', ')})`
         }));
     });
 

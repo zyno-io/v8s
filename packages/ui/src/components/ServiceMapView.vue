@@ -26,7 +26,7 @@ const integrations = useIntegrationsStore();
 const cluster = ref('');
 const namespace = ref('');
 const windowSec = ref(DEFAULT_MAP_WINDOW);
-const picks = computed(() => integrations.hubbleClusters.map(id => ({ id, name: clusters.nameById.get(id) ?? id })));
+const picks = computed(() => integrations.hubbleClusters.map(id => ({ id, name: clusters.displayName(id) })));
 watch(
     picks,
     p => {

@@ -191,7 +191,7 @@ watch(
     () => scroller.value?.scrollTo({ top: 0 })
 );
 
-const nameOf = (c: string) => clusters.nameById.get(c) ?? c;
+const nameOf = (c: string) => clusters.displayName(c);
 const keyOf = (i: ImageVulnSummary) => `${i.image}|${i.source}`;
 const isSel = (i: ImageVulnSummary) => !!props.selected && props.selected === keyOf(i);
 
@@ -398,7 +398,7 @@ function onScan() {
                                 <span class="c r" role="cell">{{ formatCount(view[vi.index].reports) }}</span>
                                 <span class="c ctags" role="cell">
                                     <span v-for="id in view[vi.index].clusters.slice(0, 2)" :key="id" class="tag"
-                                        ><span class="dot" :style="{ background: clusterColor(nameOf(id)) }"></span>{{ nameOf(id) }}</span
+                                        ><span class="dot" :style="{ background: clusterColor(id) }"></span>{{ nameOf(id) }}</span
                                     >
                                     <span v-if="view[vi.index].clusters.length > 2" class="muted">+{{ view[vi.index].clusters.length - 2 }}</span>
                                 </span>
