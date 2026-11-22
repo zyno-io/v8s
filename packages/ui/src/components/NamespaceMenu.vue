@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { getNamespacesView } from '@/lib/agent.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
@@ -24,11 +24,20 @@ const shown = computed(() => {
     return t ? all.value.filter(n => n.toLowerCase().includes(t)) : all.value;
 });
 
+function readNamespaces() {
+    all.value = namespaceNames(getNamespacesView(), ui.value.namespaces);
+}
+// While open, follow the namespaces view: a cluster that connects (or a namespace created) shows up without reopening. Cheap: one row
+// per namespace, and only while the menu is open.
+watch(
+    () => (open.value ? getNamespacesView().version.value : -1),
+    v => v >= 0 && readNamespaces()
+);
+
 async function toggleMenu() {
     open.value = !open.value;
     if (open.value) {
-        // Read the namespaces view once per open; the list is a convenience, the agent filter is authoritative.
-        all.value = namespaceNames(getNamespacesView(), ui.value.namespaces);
+        readNamespaces();
         q.value = '';
         await nextTick();
         searchEl.value?.focus();

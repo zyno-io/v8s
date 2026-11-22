@@ -35,7 +35,11 @@ const typeOptions = [{ value: BLANK, label: 'Blank (paste YAML)' }, ...TEMPLATES
 const clusterOptions = computed(() => clusters.activeIds.map(id => ({ value: id, label: clusters.displayName(id) })));
 const cluster = ref(prefill?.cluster && clusters.activeIds.includes(prefill.cluster) ? prefill.cluster : (clusters.activeIds[0] ?? ''));
 const namespace = ref(table.currentGvr ? (table.of(table.currentGvr).namespaces[0] ?? 'default') : 'default');
-const nsOptions = computed(() => namespaceNames(getNamespacesView()));
+const nsOptions = computed(() => {
+    const h = getNamespacesView();
+    void h.version.value; // rows are held non-reactively: follow the view as clusters connect
+    return namespaceNames(h);
+});
 const tpl = computed(() => templateFor(type.value));
 const initial = ref(prefill?.yaml ?? (tpl.value ? tpl.value.yaml(namespace.value) : '# Paste one or more manifests, or pick a template above.\n'));
 

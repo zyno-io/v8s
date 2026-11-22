@@ -48,11 +48,18 @@ watch(
             input.value = '';
             error.value = '';
             sel.value = 0;
-            namespaces.value = namespaceNames(getNamespacesView());
             await nextTick();
             inputEl.value?.focus();
         }
     }
+);
+// While open, follow the namespaces view (clusters connecting add namespaces); nothing is read while closed.
+watch(
+    () => (ui.commandBarOpen ? getNamespacesView().version.value : -1),
+    v => {
+        if (v >= 0) namespaces.value = namespaceNames(getNamespacesView());
+    },
+    { immediate: true }
 );
 watch(input, () => {
     sel.value = 0;

@@ -7,10 +7,11 @@ release notes when the tag has no annotation.
 
 ### Added
 
-- **Elevate a linked cluster.** A cluster with a linked write context has a small arrow on its status chip and its Overview card: **Elevate to `<write context>`** runs that cluster's reads, watches, Problems and writes as the write context without touching the other clusters; **Revert** goes back. The cluster's data reloads each time. Elevation lasts until you revert, deselect the cluster, or restart v8s.
+- **Elevate a linked cluster.** For a cluster with a linked write context, click its status chip above a table (or the button on its Overview card): **Elevate to `<write context>`** runs that cluster's reads, watches, Problems and writes as the write context without touching the other clusters; **Revert** goes back. The cluster's data reloads each time, and while elevated its chip and tags turn amber and name the write context. Elevation lasts until you revert, deselect the cluster, or restart v8s.
 
 ### Fixed
 
+- Namespace lists (the table's Namespace menu, the command bar, the Create dialog) update while open as clusters connect, instead of needing a close and reopen.
 - New custom resource types appear without a reconnect. The agent now tells the UI when a cluster's discovered types change (a CRD installed or removed), re-checks a few seconds after CRD activity to cover discovery lag, and polls every minute instead of every five when your context cannot list CRDs.
 
 ## 0.6.1 — 2026-11-20
