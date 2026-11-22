@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- New custom resource types appear without a reconnect. The agent now tells the UI when a cluster's discovered types change (a CRD installed or removed), re-checks a few seconds after CRD activity to cover discovery lag, and polls every minute instead of every five when your context cannot list CRDs.
+
 ## 0.6.1 — 2026-11-20
 
 ### Changed

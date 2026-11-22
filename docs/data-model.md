@@ -142,7 +142,7 @@ v8s shows which pods have their requests managed by VPA, and what VPA recommends
 
 ## Generic CRD support
 
-1. **Discovery** via aggregated discovery (`/apis` with `application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList`): one request for all groups, versions, resources, verbs, scope. Cached per cluster in the agent with ETag, refreshed on CRD/APIService watch events and every 5 minutes.
+1. **Discovery** via aggregated discovery (`/apis` with `application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList`): one request for all groups, versions, resources, verbs, scope. Cached per cluster in the agent with ETag, refreshed on CRD/APIService watch events (and 5 s later) and every 5 minutes, or every 60 s when CRDs cannot be watched.
 2. **Schema** from the CRD's `openAPIV3Schema` (or `/openapi/v3/apis/<group>/<version>` for aggregated APIs), fetched on demand when a create/edit form or YAML completion needs it.
 3. **Columns** from `additionalPrinterColumns`, computed by the API server: generic CRDs are watched in **server-side Table mode** (`Accept: application/json;as=Table;v=v1;g=meta.k8s.io` with `?includeObject=Metadata`, [performance.md §4](performance.md#ingest-modes)), so the agent never decodes unknown CRDs into maps. Without printer columns: name, namespace, age.
 4. **Status**: Table mode does not carry `status.conditions`. When the user enables the generic `crd.not-ready` problem class for a CRD group (off by default), the agent promotes that GVR to a typed-partial-JSON projection of `metadata` + `status.conditions` (mode B), which gives the generic view a `Ready`/`Available` tag.

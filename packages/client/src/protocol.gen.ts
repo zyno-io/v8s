@@ -532,6 +532,11 @@ export interface ClusterState {
    * UI shows the pods VPA column only then. A VPA that is installed but unused, or only in Off mode, leaves it false.
    */
   vpa?: boolean;
+  /**
+   * Kinds is the cluster's discovery generation: it increases whenever the set of discovered resources changes
+   * (a CRD was installed or removed, an aggregated API came or went). The UI re-reads kinds.list when it changes.
+   */
+  kinds?: number /* uint64 */;
 }
 export interface ClusterStates {
   states: ClusterState[];

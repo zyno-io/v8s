@@ -162,3 +162,5 @@ Secret values are never written to logs or the recent activity list.
 ## Custom resources
 
 CRDs are discovered per cluster. They appear under **Custom resources** in the sidebar, grouped by API group, and complete in the command bar (`:certificates`, `:ks`). A CRD's list uses its own printer columns. Flux, Kyverno, Trivy, Kubescape, and Cilium types have dedicated views instead; see their pages. The CustomResourceDefinition list shows group, versions, scope, and a jump to its instances.
+
+New CRDs show up on their own, usually within a few seconds of being installed, with no reconnect. If your context is not allowed to list CRDs, v8s re-checks discovery every minute instead, so they appear within about a minute.

@@ -23,7 +23,7 @@ The source of truth is [`agent/pkg/protocol/protocol.go`](../agent/pkg/protocol/
 | 4 Patch | agent → client | qid | `ViewPatch` |
 | 5 Ack | client → agent | 0 | none (`seq` = acked patch frame) |
 | 6 Dict | agent → client | 0 | `DictAdd` |
-| 7 ClusterState | agent → client | 0 | `ClusterStates` (each state also carries `metrics` and `metricsMessage`: [Views](#views) item 8) |
+| 7 ClusterState | agent → client | 0 | `ClusterStates` (each state also carries `metrics` and `metricsMessage`: [Views](#views) item 8, and `kinds`, the cluster's discovery generation: it increases when the set of discovered resources changes, and the client re-reads `kinds.list` when it does) |
 | 8 Object | agent → client | oid | `ObjectFrame` (not acknowledged) |
 | 9 Job | agent → client | 0 | `JobFrame`: the whole current state of one job (not acknowledged) |
 
@@ -208,7 +208,7 @@ The engine runs per agent instance and cluster over the tier-0 stores: a watch e
 - **Tier 0** starts when a cluster is selected and runs until it is deselected: pods, nodes, namespaces, deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs, services, endpointslices, ingresses, persistentvolumeclaims, Warning events, plus metadata-only watches of CustomResourceDefinitions and APIServices that invalidate discovery.
 - **Any other kind** is watched on demand: view subscriptions hold references, one watch per (cluster, kind) however many views or clusters-in-scope use it. When the last reference goes, the watch **lingers 5 minutes**; each cluster has a budget of **96 watches**, and a new watch beyond it evicts the least recently used lingering one (tier-0 and referenced watches are never evicted; if nothing can be evicted the kind simply shows no rows from that cluster).
 - **Object events**: an events view with `involved` holds a per-object events watch (key `v8s/v1/objectevents|<events namespace>|<Kind>|<namespace>|<name>`) with the same reference counting, but a **30 s** linger. It counts against the 96-watch budget and is LRU-evictable while lingering; a watch that fails (forbidden, timeout) is discarded at once instead of retrying during the linger.
-- **Discovery** (aggregated discovery with legacy fallback) is cached per cluster, refreshed every 5 minutes and when a CRD or APIService changes.
+- **Discovery** (aggregated discovery with legacy fallback) is cached per cluster, refreshed when a CRD or APIService changes (and once more 5 s later), every 5 minutes otherwise, or every 60 s while the cluster's CRD watch is unavailable (no RBAC to watch CRDs).
 - Rows appear **progressively** while a kind syncs: projected list pages and initial watch events are shown provisionally and reconciled by the reflector's final `Replace`. Fallback LISTs are paged (500).
 
 ## Hosted (`v8s server`)
