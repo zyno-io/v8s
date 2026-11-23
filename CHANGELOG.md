@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.9.0 — 2026-11-23
+
 ### Added
 
 - YAML tab: a **Wrap** toggle for long lines, remembered per browser.
