@@ -23,6 +23,7 @@ release notes when the tag has no annotation.
 
 - `e` puts the cursor in the YAML editor; before, editing started but the keyboard stayed outside it.
 - Logs: scrolling up always pauses following, even under a fast stream; scrolling back to the bottom (or `End`) resumes it; toggling Wrap or resizing keeps following.
+- The table's keyboard focus ring follows the card's rounded corners instead of being cut off at the bottom.
 
 ## 0.9.0 — 2026-11-23
 

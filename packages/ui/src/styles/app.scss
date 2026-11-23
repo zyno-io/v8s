@@ -376,6 +376,19 @@ h1 {
     box-shadow: inset 0 0 0 2px var(--bstrong);
 }
 
+// The inset ring follows the card's rounded corners (12px less its 1px border) instead of being clipped by them. Only corners that
+// touch the card's: a bar below the list (the bulk ActionBar) keeps its bottom square.
+.table-card > .scroller {
+    &:first-child {
+        border-top-left-radius: 11px;
+        border-top-right-radius: 11px;
+    }
+    &:last-child {
+        border-bottom-left-radius: 11px;
+        border-bottom-right-radius: 11px;
+    }
+}
+
 .sizer {
     position: relative;
     width: 100%;
