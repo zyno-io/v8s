@@ -57,6 +57,9 @@ type watchEntry struct {
 	cancel    context.CancelFunc
 	done      chan struct{} // closed when the current reflector run ends (replaced by each restart, guarded by r.mu)
 	invSynced atomic.Bool   // an invalidation watch finished its first list
+	errWarned atomic.Bool   // the first-list error streak was logged (reset when the first list completes)
+	listStart atomic.Int64  // unix nanos: when the current list attempt began (creation, a run start, or the last error)
+	listed    atomic.Bool   // the first list is done and settled (loadSettle later): the kind stops being "loading" (ClusterState.Loading)
 	refs      int
 	bgRefs    int          // of refs, those held by background scopes: they do not keep a failing watch retrying (parkIfUnheld)
 	errv      atomic.Value // listErr: the latest list/watch error, cleared by the next success
@@ -220,20 +223,119 @@ func (r *runner) discoveryPeriod() time.Duration {
 	return min(r.m.DiscoveryEvery, r.m.DiscoveryFallbackEvery)
 }
 
+// discGRs is the set of group-resources a discovery result serves (the problems engine's availability input).
+func discGRs(res []disco.Resource) map[string]bool {
+	grs := make(map[string]bool, len(res))
+	for i := range res {
+		if !res[i].Placeholder() {
+			grs[problems.GR(res[i].GVR())] = true
+		}
+	}
+	return grs
+}
+
+const (
+	// loadSettle is how long after a watch's first list the kind still counts as loading: states and patches are
+	// separate frames, so the rows patch lands before the "loaded" state does.
+	loadSettle = 500 * time.Millisecond
+	// slowFirstList is the first-list duration above which it is logged at Info.
+	slowFirstList = 5 * time.Second
+)
+
+// noteErr records a list/watch error (nil: success) on w and signals the clients when that flips the watch into
+// or out of the refused state (a refused list is not "loading").
+func (r *runner) noteErr(w *watchEntry, err error) {
+	was := terminalListErr(w.lastErr())
+	if err != nil {
+		w.listStart.Store(time.Now().UnixNano()) // the next attempt starts now
+	}
+	w.setErr(err)
+	if terminalListErr(err) != was {
+		r.m.kick()
+	}
+}
+
+// loading lists the kinds open views wait for on this cluster (protocol.ClusterState.Loading); pend are the
+// foreground scopes, consulted only while discovery is pending. Called per states frame: refs are checked
+// before anything else and nothing is allocated when nothing loads.
+func (r *runner) loading(pend []*Scope) []string {
+	if r.be == nil {
+		return nil
+	}
+	var out []string
+	r.mu.Lock()
+	for gvr, w := range r.watches {
+		if w.refs <= w.bgRefs || w.part != nil || w.parked || w.listed.Load() || terminalListErr(w.lastErr()) {
+			continue
+		}
+		out = append(out, gvr)
+	}
+	r.mu.Unlock()
+	if len(pend) > 0 && r.disc.Load() == nil {
+		for _, s := range pend {
+			if len(s.clusters) > 0 && !contains(s.clusters, r.id) {
+				continue
+			}
+			if m := ingest.Lookup(s.gvr); m != nil && m.Synthetic {
+				continue
+			}
+			if _, ok := r.serves(s.gvr); !ok && !contains(out, s.gvr) {
+				out = append(out, s.gvr)
+			}
+		}
+	}
+	if len(out) > 1 {
+		sort.Strings(out)
+	}
+	return out
+}
+
+// probeTimeout bounds the schema probe of a generic kind.
+const probeTimeout = 15 * time.Second
+
+// slowDiscovery is the duration above which a successful discovery is logged at Info.
+const slowDiscovery = 3 * time.Second
+
 func (r *runner) discoverLoop() {
 	defer r.wg.Done()
 	var sig uint64
 	var haveSig, followUp bool
+	if d := r.disc.Load(); d != nil { // seeded by startOn: an unchanged discovery must not bump the generation
+		sig, haveSig = discSig(d.list), true
+	}
+	fails := 0
+	slowLogged := false
 	for {
 		wait := r.discoveryPeriod()
+		began := time.Now()
 		res, err := r.be.Discover(r.ctx)
 		if r.ctx.Err() != nil {
 			return
 		}
+		took := time.Since(began).Round(time.Millisecond)
 		if err != nil {
-			r.m.log.Debug("discovery failed", "cluster", r.id, "err", err)
+			fails++
+			if fails == 1 { // one Warn per streak; the retries are Debug
+				r.m.log.Warn("discovery failed", "cluster", r.id, "context", r.ctxID, "took", took, "err", err)
+			} else {
+				r.m.log.Debug("discovery failed", "cluster", r.id, "context", r.ctxID, "took", took, "fails", fails, "err", err)
+			}
 			wait = min(wait, 30*time.Second)
+			if r.disc.Load() == nil { // views wait on it: retry quickly at first
+				wait = min(wait, time.Second<<min(fails-1, 5))
+			}
 		} else {
+			fails = 0
+			if took > slowDiscovery { // one Info per slow streak; the repeats are Debug
+				if slowLogged {
+					r.m.log.Debug("slow discovery", "cluster", r.id, "context", r.ctxID, "took", took)
+				} else {
+					r.m.log.Info("slow discovery", "cluster", r.id, "context", r.ctxID, "took", took)
+				}
+				slowLogged = true
+			} else {
+				slowLogged = false
+			}
 			d := &discState{list: res, byG: make(map[string]*disco.Resource, len(res))}
 			for i := range d.list {
 				if !d.list[i].Placeholder() { // a group-version listed but not answering has no resource
@@ -246,16 +348,10 @@ func (r *runner) discoverLoop() {
 				r.discGen.Add(1)
 			}
 			if r.pe != nil {
-				grs := make(map[string]bool, len(res))
-				for i := range res {
-					if !res[i].Placeholder() {
-						grs[problems.GR(res[i].GVR())] = true
-					}
-				}
-				r.pe.SetDiscovery(grs)
+				r.pe.SetDiscovery(discGRs(res))
 			}
+			r.m.reconcileAll() // acquires what open views wait for, so no frame shows discovery done but the watch not started
 			r.m.kick()
-			r.m.reconcileAll()
 			r.usage.kickNow()
 		}
 		if followUp {
@@ -340,7 +436,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 	hooks := ingest.Hooks{
 		OnRows: w.st.Provisional,
 		OnOK: func() {
-			w.setErr(nil)
+			r.noteErr(w, nil)
 			if r.pe != nil {
 				r.pe.SetUnavailable(problems.GR(gvr), "")
 			}
@@ -352,7 +448,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			if c := w.cur.Load(); c == nil || (*c).Err() != nil || apierrors.IsResourceExpired(err) || apierrors.IsGone(err) {
 				return // a routine relist, not a cluster problem
 			}
-			w.setErr(err)
+			r.noteErr(w, err)
 			if r.pe != nil && r.pe.Interested(gvr) {
 				if reason := unavailableReason(gvr, err); reason != "" {
 					r.pe.SetUnavailable(problems.GR(gvr), reason)
@@ -362,6 +458,14 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 				r.parkIfUnheld(w)
 			}
 			primary := gvr == ingest.PodsGVR
+			if !primary && !terminalListErr(err) && !w.listed.Load() && !w.errWarned.Load() {
+				r.mu.Lock()
+				held := w.refs > w.bgRefs
+				r.mu.Unlock()
+				if held && !w.errWarned.Swap(true) { // a view waits on this list: say why it is not arriving (once per streak)
+					r.m.log.Warn("first list failing", "cluster", r.id, "context", r.ctxID, "gvr", gvr, "err", err.Error())
+				}
+			}
 			if !primary && !apierrors.IsUnauthorized(err) {
 				r.m.log.Debug("watch error", "cluster", r.id, "gvr", gvr, "err", err.Error())
 				return
@@ -385,7 +489,7 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			r.m.kickThrottled()
 		}
 		hooks.OnOK = func() {
-			w.setErr(nil)
+			r.noteErr(w, nil)
 			if r.pe != nil {
 				r.pe.SetUnavailable(problems.GR(gvr), "")
 			}
@@ -425,12 +529,61 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 			}
 		}
 	}
+	// The first completed list settles the kind (ClusterState.Loading). Wraps the hooks above; later relists change nothing.
+	w.listStart.Store(time.Now().UnixNano())
+	prev := w.st.OnReplace
+	var first atomic.Bool
+	w.st.OnReplace = func(n int) {
+		isFirst := !first.Swap(true)
+		if isFirst && gvr == ingest.PodsGVR {
+			w.listed.Store(true) // before prev: it sets the phase ready and kicks, and a frame in between must not list pods as loading
+		}
+		if prev != nil {
+			prev(n)
+		}
+		if !isFirst {
+			return
+		}
+		w.errWarned.Store(false) // the first-list error streak (if any) is over
+		if took := time.Since(time.Unix(0, w.listStart.Load())); took > slowFirstList {
+			r.m.log.Info("slow first list", "cluster", r.id, "context", r.ctxID, "gvr", gvr, "rows", n, "took", took.Round(time.Millisecond))
+		}
+		if gvr == ingest.PodsGVR {
+			return
+		}
+		time.AfterFunc(loadSettle, func() {
+			r.mu.Lock()
+			cur := r.watches[gvr] == w && r.ctx.Err() == nil
+			held := w.refs > w.bgRefs
+			if cur {
+				w.listed.Store(true) // under r.mu: an acquire after this sees it and does not kick
+			}
+			r.mu.Unlock()
+			if !cur {
+				return
+			}
+			if held {
+				r.m.kick()
+			}
+		})
+	}
 	w.lw = &ingest.ListerWatcher{API: api, Mod: mod, Generic: spec, Hooks: hooks}
 	r.watches[gvr] = w
 	if r.pe != nil {
 		r.pe.Attach(gvr, w.st)
 	}
 	r.runLocked(w)
+	if spec != nil {
+		// A generic kind's schema otherwise arrives with the first page of its full list, which on a big kind
+		// (Helm release Secrets) can take long; one row is enough to serve views.
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			ctx, cancel := context.WithTimeout(r.ctx, probeTimeout)
+			defer cancel()
+			w.lw.ProbeSchema(ctx)
+		}()
+	}
 	if r.attached {
 		r.m.eng.AttachKind(r.id, gvr, w.st)
 	}
@@ -442,6 +595,7 @@ func (r *runner) runLocked(w *watchEntry) {
 	wctx, cancel := context.WithCancel(r.ctx)
 	w.cancel = cancel
 	w.cur.Store(&wctx)
+	w.listStart.Store(time.Now().UnixNano())
 	w.parked = false
 	w.invSynced.Store(false) // every run lists again (discoveryPeriod polls faster until it has)
 	done := make(chan struct{})
@@ -621,6 +775,9 @@ func (r *runner) acquireKey(key string, linger time.Duration, bg bool, start fun
 		w.bgRefs++
 	} else {
 		r.unparkLocked(w) // a view wants it now: try again at once
+		if w.refs-w.bgRefs == 1 && w.part == nil && !w.listed.Load() {
+			r.m.kick() // the kind now counts as loading here (kick only takes lmu)
+		}
 	}
 	if w.linger != nil {
 		w.linger.Stop()
@@ -637,6 +794,8 @@ func (r *runner) acquireKey(key string, linger time.Duration, bg bool, start fun
 			w.refs--
 			if bg {
 				w.bgRefs--
+			} else if w.refs == w.bgRefs && w.part == nil && !w.listed.Load() {
+				r.m.kick() // no view waits on it any more
 			}
 			w.lastUse = time.Now()
 			if w.refs == 0 && !w.tier0 {

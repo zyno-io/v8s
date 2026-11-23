@@ -60,7 +60,7 @@ clusters connect only when you press Connect; kubeconfig loads like `kubectl` in
 read and write contexts for access gateways such as Warpgate; RBAC-aware actions; k9s-style command bar
 (`:ctx`, `:ns`, `:po`, `:pb`), search palette, shortcuts (`l` logs, `s` shell, `e` edit YAML, `d` describe);
 virtualized tables; detail drawer; YAML edit with server-side dry run and diff; scale, restart, rollback,
-cordon, drain, CronJob trigger; secrets never watched in full, values only on Reveal all; logs, pod and node
+cordon, drain, CronJob trigger; secrets never watched in full, values only on Reveal; logs, pod and node
 shell, port-forward; Problems view with acknowledge and snooze; Flux (reconcile, suspend, inventory,
 dependency graph); Helm (history, revision diff, rollback, Flux-managed guard); Kyverno (Audit/Enforce);
 Trivy Operator and Kubescape findings by image; Hubble flows, drops, service map; hosted mode with OIDC,

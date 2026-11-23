@@ -15,3 +15,12 @@ export function elevateItem(name: string, writeCtx: string, elevated: boolean): 
         elevate: true
     };
 }
+
+/**
+ * The word for a switch in flight: `target` is the state the user asked for (undefined: none requested), `elevated` the state the
+ * agent reports. Empty once the agent reports the target, so the busy look ends the moment the cluster flips.
+ */
+export function switchingWord(target: boolean | undefined, elevated: boolean): '' | 'elevating' | 'reverting' {
+    if (target === undefined || target === elevated) return '';
+    return target ? 'elevating' : 'reverting';
+}

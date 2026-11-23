@@ -364,3 +364,55 @@ func TestListResetsStreak(t *testing.T) {
 		t.Fatalf("streak %d after LIST", n)
 	}
 }
+
+// tableOnce answers every List with a one-column Table (or an error) and records the limit it was asked for.
+type tableOnce struct {
+	err   error
+	limit atomic.Int64
+	lists atomic.Int32
+}
+
+func (a *tableOnce) List(_ context.Context, o metav1.ListOptions) (runtime.Object, error) {
+	a.lists.Add(1)
+	a.limit.Store(o.Limit)
+	if a.err != nil {
+		return nil, a.err
+	}
+	return &TableResult{Cols: []TableCol{{Name: "Name", Type: "string"}, {Name: "Data", Type: "integer"}}, RV: "1"}, nil
+}
+
+func (a *tableOnce) Watch(context.Context, metav1.ListOptions) (watch.Interface, error) {
+	return watch.NewRaceFreeFake(), nil
+}
+
+func TestProbeSchemaLearnsModuleFromOneRow(t *testing.T) {
+	const gvr = "probe.example.io/v1/widgets"
+	defer Unregister(gvr)()
+	api := &tableOnce{}
+	l := &ListerWatcher{API: api, Generic: &GenericSpec{GVR: gvr, Kind: "Widget", Namespaced: true}}
+	l.ProbeSchema(context.Background())
+	if l.Mod == nil || l.Mod.GVR != gvr || api.limit.Load() != 1 {
+		t.Fatalf("module %v after a limit-%d probe", l.Mod, api.limit.Load())
+	}
+	l.ProbeSchema(context.Background()) // known now: no second request
+	if n := api.lists.Load(); n != 1 {
+		t.Fatalf("%d probe lists, want 1", n)
+	}
+}
+
+func TestProbeSchemaIgnoresErrorsAndKnownModules(t *testing.T) {
+	const gvr = "probe.example.io/v1/gadgets"
+	defer Unregister(gvr)()
+	api := &tableOnce{err: errors.New("boom")}
+	l := &ListerWatcher{API: api, Generic: &GenericSpec{GVR: gvr, Kind: "Gadget"}}
+	l.ProbeSchema(context.Background())
+	if l.Mod != nil {
+		t.Fatal("module set after a failed probe")
+	}
+	// A curated kind (Mod set, no Generic) is never probed.
+	api2 := &tableOnce{}
+	(&ListerWatcher{API: api2, Mod: Lookup(PodsGVR)}).ProbeSchema(context.Background())
+	if api2.lists.Load() != 0 {
+		t.Fatal("probed a kind that already has a module")
+	}
+}

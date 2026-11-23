@@ -551,6 +551,12 @@ export interface ClusterState {
    * (clusters.elevate) until reverted, stopped after deselection, or the agent restarts. Not persisted.
    */
   elevated?: boolean;
+  /**
+   * Loading lists the kinds open views wait for on this cluster: a watch a view holds whose first list has not
+   * finished (rows still arriving), and, until the cluster's first discovery, a kind an open view asks for that it
+   * cannot place yet. A refused (Forbidden, NotFound) or parked watch is not loading. Sorted; omitted when empty.
+   */
+  loading?: string[];
 }
 export interface ClusterStates {
   states: ClusterState[];
