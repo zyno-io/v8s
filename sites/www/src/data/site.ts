@@ -48,7 +48,8 @@ export const doc = {
 
 /**
  * Release links, fixed at build time for the version in src/data/release.ts (the newest CHANGELOG section). The
- * site is published from the release tag, so these always name assets that exist; nothing is looked up in the browser.
+ * production site is deployed by release.yml after the GitHub release is published, so these always name assets that
+ * exist; nothing is looked up in the browser.
  */
 export const releasePage = (version: string) => `${repo}/releases/tag/v${version}`;
 export const assetUrl = (version: string, name: string) => `${repo}/releases/download/v${version}/${name}`;

@@ -2,8 +2,10 @@ name: Website
 
 # Builds the Astro marketing site in sites/www/ and publishes it to ZynoHosting.
 #   - www-staging.v8s.io (alpha cluster): automatically on every push to main.
-#   - v8s.io (production): on every release tag (v*, the same tags release.yml builds; the site is built from
-#     the tagged commit), or manually: Actions > Website > Run workflow > target = production (main only).
+#   - v8s.io (production): only by workflow_dispatch with target = production, from main or a stable release tag
+#     (vX.Y.Z, no suffix). release.yml dispatches it on the tag as its last step, once the GitHub release is published, so the
+#     download links and release.json (read by the update check) never name a release that does not exist yet. A manual run
+#     works too (Actions > Website > Run workflow), and the deploy job refuses a version without a published release.
 # Pull requests only build the site; they never deploy.
 #
 # Each deploy job reads ZYNOHOSTING_DEPLOY_TOKEN from its GitHub environment (www-staging, www-production).
@@ -15,9 +17,6 @@ name: Website
 on:
   push:
     branches: [main]
-    # Path filters do not apply to tag pushes: every release tag publishes v8s.io. Release candidates (v0.8.0-rc.1)
-    # never do: their CHANGELOG section already names the unreleased version.
-    tags: ['v*', '!v*-*']
     # CHANGELOG.md: the site reads the released version and date from it (src/data/release.ts).
     paths:
       - 'sites/www/**'
@@ -42,7 +41,7 @@ permissions:
 # One run per ref and target: a newer push supersedes a queued staging deploy (so staging never ends up on an
 # older commit), and never cancels a pending production dispatch. PR runs cancel their stale builds.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('www-pr-{0}', github.ref) || format('www-{0}-{1}', github.ref, inputs.target || (github.ref_type == 'tag' && 'production' || 'staging')) }}
+  group: ${{ github.event_name == 'pull_request' && format('www-pr-{0}', github.ref) || format('www-{0}-{1}', github.ref, inputs.target || 'staging') }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -115,8 +114,8 @@ jobs:
     name: deploy (v8s.io)
     needs: build
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) ||
-      (github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.target == 'production')
+      github.event_name == 'workflow_dispatch' && inputs.target == 'production' &&
+      (github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')))
     runs-on: ubuntu-latest
     environment:
       name: www-production
@@ -141,6 +140,31 @@ jobs:
         with:
           name: www-dist
           path: dist
+      # Never announce a version that is not the current release: the built release.json names the newest CHANGELOG
+      # section, which can be ahead of the tag (a CHANGELOG cut before tagging, a manual run from main) or behind it (a
+      # tag whose CHANGELOG section was never cut, or an old tag dispatched again). It must be the newest published (not
+      # draft, not prerelease) GitHub release, and on a tag ref also that tag. The repository is public, so the default
+      # token is enough.
+      - name: Require a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./dist/release.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::dist/release.json has no stable version ($version)"; exit 1; }
+          state=$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') || {
+            echo "::error::no GitHub release v$version; refusing to publish it on v8s.io"; exit 1; }
+          if [[ "$state" != "false false" ]]; then
+            echo "::error::release v$version is not published (draft/prerelease: $state)"; exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == tag && "v$version" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::dist/release.json says v$version but this is $GITHUB_REF_NAME (was the CHANGELOG section cut?)"; exit 1
+          fi
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [[ "v$version" != "$latest" ]]; then
+            echo "::error::v$version is not the latest release ($latest); refusing to roll v8s.io back"; exit 1
+          fi
+          echo "release v$version is published and the latest"
       - name: Deploy
         env:
           ZYNOHOSTING_DEPLOY_TOKEN: ${{ secrets.ZYNOHOSTING_DEPLOY_TOKEN }}

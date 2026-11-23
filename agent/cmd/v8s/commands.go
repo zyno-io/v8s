@@ -71,7 +71,7 @@ func runServe(args []string) error {
 	port := fs.Int("port", 7931, "port to listen on (loopback only)")
 	noBrowser := fs.Bool("no-browser", false, "print the URL without opening a browser")
 	kubeconfig := fs.String("kubeconfig", "", "kubeconfig path (default: client-go loading rules, $KUBECONFIG merged)")
-	noUpdateCheck := fs.Bool("no-update-check", false, "do not check GitHub for a newer release (also: V8S_UPDATE_CHECK=off)")
+	noUpdateCheck := fs.Bool("no-update-check", false, "do not check v8s.io for a newer release (also: V8S_UPDATE_CHECK=off)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

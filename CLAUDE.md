@@ -63,7 +63,8 @@ UI vitest, UI build, docs build. Lefthook pre-commit runs oxlint --fix and oxfmt
 
 The marketing site (v8s.io) is a separate Astro project in `sites/www/`, npm (not Yarn), Node 24, outside the Yarn
 workspaces and ignored by the root oxlint/oxfmt (own 2-space style). `.github/workflows/www.yml` deploys it to ZynoHosting
-(staging on push to main, production on `v*` tags); `release.yml` skips site-only pushes. Its version and date come from
+(staging on push to main; production is dispatched by `release.yml` after a stable release is published, and serves
+`release.json`, which agents poll for updates); `release.yml` skips site-only pushes. Its version and date come from
 `CHANGELOG.md` at build time. See `sites/www/README.md`.
 
 ```sh

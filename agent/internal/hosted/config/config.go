@@ -89,11 +89,11 @@ type Config struct {
 	Limits      Limits      `json:"limits"`
 	// CorrelationKey keys the HMAC of the session id sent in the User-Agent (default: random per start).
 	CorrelationKey SecretRef `json:"correlationKey,omitempty"`
-	// UpdateCheck turns the daily GitHub release check off when false (nil = on).
+	// UpdateCheck turns the v8s.io release check off when false (nil = on).
 	UpdateCheck *bool `json:"updateCheck,omitempty"`
 }
 
-// UpdateCheckOn reports whether the server checks GitHub for a newer release.
+// UpdateCheckOn reports whether the server checks v8s.io for a newer release.
 func (c *Config) UpdateCheckOn() bool { return c.UpdateCheck == nil || *c.UpdateCheck }
 
 type Session struct {

@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -270,6 +271,34 @@ func parseSet(raw []byte) *fieldpath.Set {
 		return fieldpath.NewSet()
 	}
 	return s
+}
+
+// foldStringData returns sub with a Secret's stringData merged into data as base64 (stringData wins on a key collision, as in the
+// API server) so a draft written in decoded form compares with the live object like with like. sub itself is not modified.
+func foldStringData(sub map[string]any) map[string]any {
+	sd, ok := sub["stringData"].(map[string]any)
+	if !ok || sub["kind"] != "Secret" || sub["apiVersion"] != "v1" {
+		return sub
+	}
+	out := make(map[string]any, len(sub))
+	for k, v := range sub {
+		if k != "stringData" {
+			out[k] = v
+		}
+	}
+	data := map[string]any{}
+	if d, ok := sub["data"].(map[string]any); ok {
+		for k, v := range d {
+			data[k] = v
+		}
+	}
+	for k, v := range sd {
+		if str, ok := v.(string); ok {
+			data[k] = base64.StdEncoding.EncodeToString([]byte(str))
+		}
+	}
+	out["data"] = data
+	return out
 }
 
 // conflictsFor reports, for each changed path, every other manager owning it, a prefix of it or a child of it.

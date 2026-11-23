@@ -6,21 +6,12 @@ import { useRouter } from 'vue-router';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
-import { resolveKind } from '@/lib/kinds.ts';
+import { ownerTarget } from '@/lib/row-keys.ts';
 
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload }>();
 const router = useRouter();
 
-function gvrOfKind(kind: string): string | null {
-    return resolveKind(kinds.value, kind)?.gvr ?? null;
-}
-
-const owners = computed(() => (props.payload.owners ?? []).map(o => ({ ...o, gvr: gvrOfKind(o.kind) })));
-
-function openOwner(o: { kind: string; name: string; gvr: string | null }) {
-    if (!o.gvr) return;
-    void openObject(router, { cluster: props.target.cluster, gvr: o.gvr, namespace: props.target.namespace, name: o.name });
-}
+const owners = computed(() => (props.payload.owners ?? []).map(o => ({ ...o, to: ownerTarget(props.target, o, kinds.value) })));
 
 // Owned objects, for the two parent kinds whose children expose an `owner` column.
 const OWNED: Record<string, { gvr: string; label: string }> = {
@@ -70,7 +61,7 @@ function openOwned(name: string) {
                 <li v-for="o in owners" :key="o.kind + o.name">
                     <span class="tag">{{ o.kind }}</span>
                     <span class="mono">{{ o.name }}</span>
-                    <button v-if="o.gvr" class="btn sm" type="button" @click="openOwner(o)">Open</button>
+                    <button v-if="o.to" class="btn sm" type="button" @click="openObject(router, o.to)">Open</button>
                 </li>
             </ul>
         </section>

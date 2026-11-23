@@ -8,6 +8,7 @@ package fake
 // client to the objects API, so edits and actions made in fake mode show up in the views.
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -485,6 +486,20 @@ func (w *World) generate(c *Cluster) {
 		data := map[string]any{"config.yaml": "key: value", "app.env": "A=1"}
 		w.putLocked("v1/configmaps", map[string]any{"metadata": objMeta(teamNS(i), "config-"+strconv.Itoa(i), nil), "data": data})
 	}
+	// Fixtures for the YAML pane's Pretty view: compact JSON, a double-encoded JSON string and a multi-line file in a ConfigMap, and a Secret
+	// whose values are base64 JSON, text and binary.
+	w.putLocked("v1/configmaps", map[string]any{"metadata": objMeta(teamNS(0), "json-config", nil), "data": map[string]any{
+		"settings.json": `{"name":"demo","retries":3,"endpoints":["a","b"],"nested":{"on":true}}`,
+		"list.json":     `[{"id":1},{"id":2}]`,
+		"encoded.json":  `"{\"double\":\"encoded\",\"n\":1}"`,
+		"app.conf":      "listen 8080;\nworkers 4;\n# comment\n",
+		"plain":         "just text",
+	}})
+	w.putLocked("v1/secrets", map[string]any{"metadata": objMeta(teamNS(0), "json-secret", nil), "type": "Opaque", "data": map[string]any{
+		"credentials.json": base64.StdEncoding.EncodeToString([]byte(`{"user":"demo","password":"hunter2"}`)),
+		"token":            base64.StdEncoding.EncodeToString([]byte("abc123")),
+		"blob":             base64.StdEncoding.EncodeToString([]byte{0xff, 0xfe, 0x00, 0x01}),
+	}})
 	for i := 0; i < 80; i++ {
 		t := "Opaque"
 		if i%4 == 0 {
