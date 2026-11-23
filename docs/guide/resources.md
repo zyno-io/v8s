@@ -50,7 +50,7 @@ The **VerticalPodAutoscaler** list shows each VPA's target, update mode, status 
 
 ## The detail drawer
 
-Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page. Opening another row while the drawer is open keeps the tab you are on (Logs, YAML, …) when that object has it; `Esc` closes the drawer.
+Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page. Opening another row while the drawer is open keeps the tab you are on (Logs, YAML, …) when that object has it; `Esc` closes the drawer. The drawer takes keyboard focus when it opens, and closing it returns focus to the same row in the list.
 
 | Tab       | What it shows                                                                                                              |
 | --------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +68,7 @@ Press `Enter` on a row, or click it, to open the drawer. The URL changes with it
 
 The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 
-Tabs appear in that order, and only those that apply to the type and, for Security and Flows, to the clusters you selected. Use the arrow keys, `Home`, and `End` to move between tabs. `l`, `s`, `e`, and `d` jump to Logs, Shell, YAML (in edit mode), and Overview from a table. See [Navigation](/guide/navigation#keyboard-shortcuts).
+Tabs appear in that order, and only those that apply to the type and, for Security and Flows, to the clusters you selected. On a tab button, `←` `→` `Home` and `End` move between tabs; `↑` `↓` `PgUp` `PgDn` move into the tab's content to scroll it. `l`, `s`, `e`, and `d` jump to Logs, Shell, YAML (in edit mode), and Overview from a table. See [Navigation](/guide/navigation#keyboard-shortcuts).
 
 ## Edit YAML
 

@@ -424,7 +424,7 @@ defineExpose({ startEdit, reloadLive, mode });
                 <b>Review changes</b>
                 <span class="muted small">against live resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
             </div>
-            <div class="scroll">
+            <div class="scroll" tabindex="-1" data-drawer-scroll>
                 <div v-if="review.busy" class="notice" role="status">Running a server-side dry run…</div>
                 <div v-if="conflict && conflictMasked" class="notice warn" role="note" data-testid="conflict-masked">
                     The server copy's values could not be revealed, so they show as masked below. Reload to continue from the live object.

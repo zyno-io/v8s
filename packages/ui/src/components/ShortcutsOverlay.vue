@@ -12,8 +12,8 @@ const groups: { title: string; rows: [string, string][] }[] = [
         rows: [
             [':', 'open the command bar'],
             ['/', 'focus the filter'],
-            ['j / k', 'move focus down / up'],
-            ['Enter', 'open the focused row'],
+            ['j / k', 'move focus down / up in the list'],
+            ['Enter', 'open the focused row (focus moves into the drawer)'],
             ['x', 'select the focused row'],
             ['l', 'open logs of the focused pod or workload'],
             ['s', 'open a shell in the focused pod'],
@@ -21,12 +21,23 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['d', 'describe: open the focused object, Overview tab'],
             ['y', 'open the focused object on its YAML tab'],
             ['Enter', 'in the filter: move focus to the results'],
-            ['Esc', 'clear filter, then selection, then close the drawer'],
+            ['Esc', 'close the drawer, else clear the filter, then the selection'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
             ['0', 'all namespaces'],
             ['1 – 9', 'recent namespace sets'],
             ['[', 'pin or unpin the sidebar'],
             ['?', 'show this list']
+        ]
+    },
+    {
+        title: 'Drawer',
+        rows: [
+            ['↑ ↓ PgUp PgDn', 'scroll the tab (focus moves into it)'],
+            ['← →', 'switch tabs on a tab button; else scroll sideways'],
+            ['Home / End', 'first / last tab on a tab button; else top / bottom'],
+            ['End (logs)', 'follow the log tail again'],
+            ['e d y l s', 'act on the open object'],
+            ['Esc / ✕', 'close the drawer, focus returns to the same row']
         ]
     },
     {

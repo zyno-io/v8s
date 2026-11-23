@@ -1,3 +1,5 @@
+import type { ObjectRef } from '@v8s/client';
+
 import { ProblemsGVR } from '@v8s/client';
 import { nextTick } from 'vue';
 
@@ -11,8 +13,10 @@ import { kinds } from './agent.ts';
 import { closeDrawer, isDrawerOpen } from './drawer.ts';
 import { recentNamespaces, sameSet } from './recent-namespaces.ts';
 
+/** Where a key was pressed: the list (or no drawer), or the drawer (which owns the keyboard while shown). */
+export type KeyScope = 'list' | 'drawer';
 /** A page may claim j/k/x/Enter. Returns true when it handled the key. */
-type PageKeyHandler = (e: KeyboardEvent) => boolean;
+type PageKeyHandler = (e: KeyboardEvent, scope: KeyScope) => boolean;
 let pageHandler: PageKeyHandler | null = null;
 
 export function setPageKeyHandler(h: PageKeyHandler | null) {
@@ -31,6 +35,8 @@ export interface ListNav {
     /** The page's filter text, when it lives outside the table store. */
     filterText?(): string;
     clearFilter?(): void;
+    /** Hand focus back to the list after the drawer closes: the remembered row, else the closed object's row when loaded. */
+    restoreFocus?(ref: ObjectRef | null): void;
 }
 let listNav: ListNav | null = null;
 
@@ -38,9 +44,35 @@ export function setListNav(n: ListNav | null) {
     listNav = n;
 }
 
+/** The drawer registers itself so keys pressed outside the list belong to it while it is shown. */
+export interface DrawerNav {
+    open(): boolean;
+    /** Redirects a scroll key from the drawer's chrome into the active tab's scroller. True when it handled the key. */
+    scrollKey(e: KeyboardEvent): boolean;
+    /** Moves focus into the drawer (a list key opened the object already shown, so no object change takes it there). */
+    focus(): void;
+}
+let drawerNav: DrawerNav | null = null;
+
+export function setDrawerNav(n: DrawerNav | null) {
+    drawerNav = n;
+}
+export function currentDrawerNav(): DrawerNav | null {
+    return drawerNav;
+}
+export function focusDrawer(): void {
+    drawerNav?.focus();
+}
+
+const keyScope = (t: EventTarget | null): KeyScope => (drawerNav?.open() && !listNav?.owns(t) ? 'drawer' : 'list');
+
+export function restoreListFocus(ref: ObjectRef | null) {
+    listNav?.restoreFocus?.(ref);
+}
+
 const FILTER_ID = 'pods-filter';
 
-function isEditable(t: EventTarget | null): boolean {
+export function isEditable(t: EventTarget | null): boolean {
     if (!(t instanceof HTMLElement)) return false;
     if (t.isContentEditable) return true;
     const tag = t.tagName;
@@ -129,9 +161,11 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             if (ui.dialog || ui.paletteOpen || ui.createOpen) return; // those own Esc
             // So do native <dialog> modals the store does not track (port-forward, drain, Helm): Esc closes only them.
             if (e.target instanceof HTMLElement && e.target.closest('dialog[open]')) return;
-            // Esc inside the YAML editor only leaves the editor; it must never close the drawer over unsaved edits.
-            if (e.target instanceof HTMLElement && e.target.closest('.cm-editor')) {
-                e.target.blur();
+            // Esc inside an editable YAML editor only leaves the editor; it must never close the drawer over unsaved edits.
+            // A read-only editor falls through to the normal Esc order.
+            const cm = e.target instanceof HTMLElement ? e.target.closest('.cm-editor') : null;
+            if (cm && cm.querySelector('.cm-content[contenteditable="true"]')) {
+                (e.target as HTMLElement).blur();
                 return;
             }
             if (ui.commandBarOpen) {
@@ -172,7 +206,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             !clusters.popoverOpen
         ) {
             // Ctrl+D is k9s' Delete; the page decides (and the browser must not bookmark either way while a list is on screen).
-            if (pageHandler?.(e)) e.preventDefault();
+            if (pageHandler?.(e, keyScope(e.target))) e.preventDefault();
             return;
         }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
@@ -213,7 +247,13 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             return;
         }
         if (clusters.popoverOpen) return;
-        if (pageHandler?.(e) || namespaceKey(e)) e.preventDefault();
+        const scope = keyScope(e.target);
+        if (scope === 'drawer') {
+            // Digits do nothing here: the namespace keys belong to the list.
+            if (drawerNav!.scrollKey(e) || pageHandler?.(e, 'drawer')) e.preventDefault();
+            return;
+        }
+        if (pageHandler?.(e, 'list') || namespaceKey(e)) e.preventDefault();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);

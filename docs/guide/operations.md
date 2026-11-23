@@ -6,16 +6,17 @@ This page covers the things you do to a running cluster: read logs, open shells,
 
 Open a pod's detail drawer and choose the **Logs** tab. The same tab exists on Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
 
-| Control    | What it does                                                     |
-| ---------- | ---------------------------------------------------------------- |
-| Container  | Choose a container, or all pods and containers merged            |
-| Follow     | Stream new lines as they arrive. Scrolling up pauses following   |
-| Timestamps | Show the line timestamps                                         |
-| Wrap       | Wrap long lines                                                  |
-| Previous   | Show the previous container instance (useful after a crash loop) |
-| Search     | Highlight matches and jump between them, with match case         |
-| Download   | Save the full log to a file                                      |
+| Control    | What it does                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| Container  | Choose a container, or all pods and containers merged                                         |
+| Follow     | Stream new lines as they arrive. Scrolling up pauses following; back at the bottom it resumes |
+| Timestamps | Show the line timestamps                                                                      |
+| Wrap       | Wrap long lines                                                                               |
+| Previous   | Show the previous container instance (useful after a crash loop)                              |
+| Search     | Highlight matches and jump between them, with match case                                      |
+| Download   | Save the full log to a file                                                                   |
 
+- **Keyboard.** `↑`, `PgUp` and `Home` pause following; `End`, or `↓`/`PgDn` once you are at the bottom, resume it. `←` `→` scroll sideways when Wrap is off.
 - **Start.** v8s loads the last 1,000 lines by default, then follows. Choose 1,000, 5,000, or 10,000 in **Tail lines**.
 - **Merged workload logs.** Open Logs on a Deployment (or another workload, or a selector) to see every pod's output merged by timestamp. Merging happens in the agent, so it stays smooth. Merged logs are best on a desktop screen.
 - **Bounded memory.** The view keeps a ring buffer (about 50,000 lines on desktop, 5,000 on a phone). When older lines fall off, the view says "N earlier lines dropped, download full log".

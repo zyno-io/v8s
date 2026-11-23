@@ -4,6 +4,7 @@ import type { LogLineView, LogStreamHandle } from '@v8s/client';
 import { useVirtualizer } from '@tanstack/vue-virtual';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import { FollowTracker } from '@/lib/follow.ts';
 import {
     centerScrollTop,
     formatNewLines,
@@ -13,8 +14,6 @@ import {
     rowHeight,
     runStyle,
     shortTimestamp,
-    shouldPauseFollow,
-    isAtBottom,
     splitRuns,
     sourceVar,
     viewRange,
@@ -54,6 +53,8 @@ const virt = useVirtualizer(
 const totalSize = computed(() => virt.value.getTotalSize());
 watch(rowH, () => {
     virt.value.measure();
+    // Wrap toggle while following: the bottom moved, so pin to it again.
+    if (props.follow) pin = true;
     schedule(true);
 });
 
@@ -99,6 +100,7 @@ function frame() {
         pin = false;
         setTop(el.scrollHeight);
     }
+    ft.painted(el);
     const visible = Math.ceil(el.clientHeight / rowH.value) + 1;
     let range: { first: number; count: number } | null = null;
     if (props.follow) {
@@ -116,33 +118,35 @@ function frame() {
 
 // ---- scrolling ----
 
-let lastTop = 0;
-let expect = -1;
-let expectAt = 0;
+const ft = new FollowTracker();
 /** Programmatic scroll write; the resulting scroll event must not be mistaken for the user. */
 function setTop(top: number) {
     const el = scroller.value;
-    if (!el) return;
-    el.scrollTop = top;
-    expect = el.scrollTop;
-    expectAt = performance.now();
-    lastTop = expect;
+    if (el) ft.setTop(el, top);
+}
+
+function apply(c: 'pause' | 'resume' | null) {
+    if (c === 'pause') emit('update:follow', false);
+    else if (c === 'resume') resume();
 }
 
 function onScroll() {
     const el = scroller.value;
     if (!el) return;
-    const top = el.scrollTop;
-    const mine = performance.now() - expectAt < 150 && Math.abs(top - expect) < 1;
-    if (!mine) {
-        if (props.follow && shouldPauseFollow(lastTop, top, el.clientHeight, el.scrollHeight)) emit('update:follow', false);
-        else if (!props.follow && top > lastTop && isAtBottom(top, el.clientHeight, el.scrollHeight)) {
-            emit('update:follow', true);
-            pin = true;
-        }
+    const c = ft.onScroll(el, props.follow, rowH.value);
+    if (c === 'pause') emit('update:follow', false);
+    else if (c === 'resume') {
+        emit('update:follow', true);
+        pin = true;
     }
-    lastTop = top;
     schedule();
+}
+
+// The wheel and keys decide before the browser scrolls, so the next frame's pin does not cancel the user's scroll.
+function onWheel(e: WheelEvent) {
+    const el = scroller.value;
+    if (!el || e.ctrlKey) return;
+    apply(ft.onWheel(el, e.deltaX, e.deltaY, props.follow, rowH.value));
 }
 
 function resume() {
@@ -152,10 +156,16 @@ function resume() {
 }
 
 function onKey(e: KeyboardEvent) {
-    if (e.key === 'End' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
+    const el = scroller.value;
+    if (!el || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.shiftKey && e.key !== ' ') return;
+    // Space belongs to a focused button (download full log) unless the scroller itself has focus.
+    if (e.key === ' ' && e.target !== el) return;
+    const c = ft.onKey(el, e.key, e.shiftKey, props.follow, rowH.value);
+    if (c === 'resume') {
+        if (e.key === 'End') e.preventDefault();
         resume();
-    }
+    } else if (c === 'pause') emit('update:follow', false);
 }
 
 // New data: pin to the bottom while following (one write per frame via the frame loop).
@@ -210,6 +220,7 @@ watch(
 watch(
     () => props.handle,
     h => {
+        ft.reset();
         prevFirst = h.first.value;
         pausedAt.value = h.total.value;
         h.setPaused(document.hidden);
@@ -236,6 +247,7 @@ onMounted(() => {
     if (typeof ResizeObserver === 'function' && scroller.value) {
         ro = new ResizeObserver(() => {
             viewH.value = scroller.value?.clientHeight ?? 0;
+            if (props.follow) pin = true;
             schedule(true);
         });
         ro.observe(scroller.value);
@@ -264,7 +276,9 @@ const levelWord = (l: 2 | 3 | 0) => (l === 3 ? 'error' : l === 2 ? 'warning' : '
             aria-live="off"
             aria-label="Log output"
             data-testid="logs-viewer"
+            data-drawer-scroll
             @scroll.passive="onScroll"
+            @wheel.passive="onWheel"
             @keydown="onKey"
         >
             <div class="sizer" :style="{ height: totalSize + 'px' }">

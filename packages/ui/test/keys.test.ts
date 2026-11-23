@@ -13,7 +13,16 @@ vi.mock('../src/lib/drawer.ts', () => ({
 }));
 
 import { kinds } from '../src/lib/agent.ts';
-import { escapeChain, installGlobalKeys, setListNav, setPageKeyHandler, type ListNav } from '../src/lib/keys.ts';
+import {
+    escapeChain,
+    installGlobalKeys,
+    restoreListFocus,
+    setDrawerNav,
+    setListNav,
+    setPageKeyHandler,
+    type DrawerNav,
+    type ListNav
+} from '../src/lib/keys.ts';
 import { recordRecentNamespaces, setRecentKey } from '../src/lib/recent-namespaces.ts';
 import { useTableStore } from '../src/stores/table.ts';
 
@@ -84,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
     uninstall();
     setListNav(null);
+    setDrawerNav(null);
     setPageKeyHandler(null);
     vi.unstubAllGlobals();
 });
@@ -301,5 +311,99 @@ describe('namespace digits', () => {
         table.currentGvr = 'v1/nodes';
         expect(key('1', body).preventDefault).not.toHaveBeenCalled();
         expect(table.of('v1/nodes').namespaces).toEqual([]);
+    });
+});
+
+describe('drawer scope', () => {
+    let dn: DrawerNav & { scrollKey: ReturnType<typeof vi.fn> };
+    const openNav = (scrollKey = vi.fn(() => false)) => {
+        dn = { open: () => true, scrollKey, focus: vi.fn() } as typeof dn;
+        setDrawerNav(dn);
+    };
+
+    it('routes list keys from the drawer and the body to the handler as drawer scope, unconsumed', () => {
+        openNav();
+        setListNav(nav());
+        const h = vi.fn(() => false);
+        setPageKeyHandler(h);
+        const inDrawer = new FakeEl('DIV');
+        for (const k of ['j', 'ArrowDown', 'x', 'Enter']) {
+            for (const t of [inDrawer, body]) {
+                const e = key(k, t);
+                expect(h).toHaveBeenLastCalledWith(e, 'drawer');
+                expect(e.preventDefault).not.toHaveBeenCalled();
+            }
+        }
+    });
+
+    it('routes the same keys from the list as list scope', () => {
+        openNav();
+        setListNav(nav());
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const e = key('ArrowDown', list);
+        expect(h).toHaveBeenCalledWith(e, 'list');
+        expect(e.preventDefault).toHaveBeenCalled();
+    });
+
+    it('a scroll key the drawer takes is consumed and never reaches the page', () => {
+        openNav(vi.fn(() => true));
+        setListNav(nav());
+        const h = vi.fn(() => false);
+        setPageKeyHandler(h);
+        const e = key('ArrowDown', body);
+        expect(e.preventDefault).toHaveBeenCalled();
+        expect(h).not.toHaveBeenCalled();
+    });
+
+    it('Ctrl+D from the drawer is drawer scope', () => {
+        openNav();
+        setListNav(nav());
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const e = key('d', body, { ctrlKey: true });
+        expect(h).toHaveBeenCalledWith(e, 'drawer');
+    });
+
+    it('digits do nothing from the drawer; the namespaces stay', () => {
+        openNav();
+        setListNav(nav());
+        const st = useTableStore();
+        st.currentGvr = 'v1/pods';
+        st.of('v1/pods').namespaces = ['keep'];
+        key('0', body);
+        expect(st.of('v1/pods').namespaces).toEqual(['keep']);
+    });
+
+    it('a closed drawer behaves as the list', () => {
+        setDrawerNav({ open: () => false, scrollKey: vi.fn(() => false), focus: vi.fn() });
+        setListNav(nav());
+        const h = vi.fn(() => true);
+        setPageKeyHandler(h);
+        const e = key('j', body);
+        expect(h).toHaveBeenCalledWith(e, 'list');
+    });
+
+    it('Esc in a read-only editor closes the drawer; in an editable one it only blurs', () => {
+        setListNav(nav());
+        drawer.open = true;
+        const ro = new FakeEl('DIV');
+        ro.closest = (sel?: string) => (sel === '.cm-editor' ? ({ querySelector: () => null } as never) : null);
+        key('Escape', ro);
+        expect(drawer.close).toHaveBeenCalledTimes(1);
+        drawer.open = true;
+        const rw = new FakeEl('DIV');
+        rw.closest = (sel?: string) => (sel === '.cm-editor' ? ({ querySelector: () => ({}) } as never) : null);
+        key('Escape', rw);
+        expect(rw.blur).toHaveBeenCalled();
+        expect(drawer.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('restoreListFocus forwards the ref to the list', () => {
+        const restoreFocus = vi.fn();
+        setListNav(nav({ restoreFocus }));
+        const ref = { cluster: 'c', gvr: 'v1/pods', name: 'p' };
+        restoreListFocus(ref);
+        expect(restoreFocus).toHaveBeenCalledWith(ref);
     });
 });
