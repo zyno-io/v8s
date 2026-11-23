@@ -13,6 +13,7 @@ import { phaseColor } from '@/lib/colors.ts';
 import { guessUsage, planColumns } from '@/lib/columns.ts';
 import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
+import { kindLoading } from '@/lib/loading.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
 import { keyAction } from '@/lib/row-keys.ts';
@@ -115,30 +116,41 @@ const syncTags = computed(() =>
         const writeCtx = clusters.writeContextOf(s.id);
         const name = elevated && writeCtx ? writeCtx : readName;
         const syncing = s.phase === 'syncing' || s.phase === 'connecting';
-        const text = s.phase === 'ready' ? 'synced' : syncing ? `${s.phase} · ${formatCount(s.synced)} rows` : s.phase;
+        // Pods have synced, but this kind's list is still arriving (a big Secrets list, or right after an elevate).
+        const kl = s.phase === 'ready' && kindLoading(s, props.gvr);
+        const text = kl
+            ? `loading ${title.value.toLowerCase()}…`
+            : s.phase === 'ready'
+              ? 'synced'
+              : syncing
+                ? `${s.phase} · ${formatCount(s.synced)} rows`
+                : s.phase;
         const sw = clusters.switching(s.id);
         const tone = sw
             ? 'warning'
-            : s.phase === 'ready'
-              ? elevated
-                  ? 'warning'
-                  : ''
-              : s.phase === 'unreachable' || s.phase === 'auth-required'
-                ? 'danger'
-                : 'warning';
+            : kl
+              ? 'warning'
+              : s.phase === 'ready'
+                ? elevated
+                    ? 'warning'
+                    : ''
+                : s.phase === 'unreachable' || s.phase === 'auth-required'
+                  ? 'danger'
+                  : 'warning';
         return {
             id: s.id,
             name,
             text: sw ? `${sw}…` : text,
             tone,
             busy: !!sw,
-            color: phaseColor(s.phase),
+            color: phaseColor(kl ? 'syncing' : s.phase),
             title: [
                 sw === 'elevating'
                     ? `Elevating to ${writeCtx}: checking the link, then reloading this cluster's data`
                     : sw === 'reverting'
                       ? `Reverting to ${readName}: reloading this cluster's data`
                       : '',
+                kl ? `${title.value} are still loading from this cluster` : '',
                 elevated ? `Elevated: running as ${name} instead of ${readName}` : '',
                 s.message ?? ''
             ]

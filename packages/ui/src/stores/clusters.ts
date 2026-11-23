@@ -6,9 +6,12 @@ import { computed, ref, shallowRef, watch } from 'vue';
 import { clearAccessCache } from '@/lib/access.ts';
 import { getAgent, refreshKinds } from '@/lib/agent.ts';
 import { switchingWord } from '@/lib/elevate.ts';
+import { kindLoading } from '@/lib/loading.ts';
 import { KEY_SELECTION, parseSelection, readJson, resolveChecked, storeSelection, writeJson } from '@/lib/remember.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
+
+const NONE: string[] = [];
 
 export const useClustersStore = defineStore('clusters', () => {
     const list = shallowRef<Cluster[]>([]);
@@ -79,6 +82,13 @@ export const useClustersStore = defineStore('clusters', () => {
 
     /** The word for a switch in flight on this cluster, empty when none or once the agent reports the requested state. */
     const switching = (id: string): '' | 'elevating' | 'reverting' => switchingWord(elevating.value.get(id), isElevated(id));
+
+    /** Ids of the clusters still loading `gvr` (its first list has not finished there). Empty (a shared constant) when none: cheap to read per render. */
+    const loadingOf = (gvr: string): string[] => {
+        let out: string[] | undefined;
+        for (const s of states.value) if (kindLoading(s, gvr)) (out ??= []).push(s.id);
+        return out ?? NONE;
+    };
 
     /** Runs the cluster as its linked write context (`on`) or back as its read context; its data reloads. */
     async function setElevated(id: string, on: boolean) {
@@ -184,6 +194,7 @@ export const useClustersStore = defineStore('clusters', () => {
         isProtected,
         elevating,
         switching,
+        loadingOf,
         isElevated,
         elevatedKey,
         elevatedCount,

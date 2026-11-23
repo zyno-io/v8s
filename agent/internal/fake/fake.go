@@ -37,7 +37,8 @@ type Config struct {
 	RBAC bool
 	// NoMetrics removes metrics.k8s.io from discovery (and answers NotFound), for the metrics-server-absent state.
 	NoMetrics bool
-	// ListDelay delays every Table-mode LIST (generic kinds: Secrets, ConfigMaps, CRDs), like a slow API server.
+	// ListDelay delays every Table-mode LIST of more than one row (ConfigMaps, Secrets, StorageClasses…; not the
+	// mode-B custom resources, and not the one-row schema probe), like a slow API server.
 	ListDelay time.Duration
 	// DiscoveryDelay delays every discovery call.
 	DiscoveryDelay time.Duration

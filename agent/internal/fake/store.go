@@ -280,7 +280,7 @@ func (a *kindAPI) List(ctx context.Context, opts metav1.ListOptions) (runtime.Ob
 	if err != nil {
 		return nil, err
 	}
-	if a.table() && a.delay > 0 {
+	if a.table() && a.delay > 0 && opts.Limit != 1 { // the schema probe (Limit 1) is one row: it stays fast
 		t := time.NewTimer(a.delay)
 		select {
 		case <-t.C:

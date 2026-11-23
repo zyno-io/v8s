@@ -25,6 +25,19 @@ func newElevateManager(t *testing.T) (*Manager, *settings.Store) {
 
 func newElevateManagerCfg(t *testing.T, cfg fake.Config) (*Manager, *settings.Store) {
 	t.Helper()
+	m, set := newElevateManagerRaw(t, cfg)
+	for _, id := range []string{"prod-us", "prod-eu"} {
+		waitFor(t, id+" ready", func() bool {
+			r := runnerOf(m, id)
+			return r != nil && r.phase.Load() == protocol.PhaseReady && r.disc.Load() != nil
+		})
+	}
+	return m, set
+}
+
+// newElevateManagerRaw is newElevateManagerCfg without waiting for the clusters to be ready.
+func newElevateManagerRaw(t *testing.T, cfg fake.Config) (*Manager, *settings.Store) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	eng := view.NewEngine()
@@ -44,14 +57,6 @@ func newElevateManagerCfg(t *testing.T, cfg fake.Config) (*Manager, *settings.St
 	m.Linger = time.Minute
 	if _, err := m.Select([]string{"prod-us", "prod-eu"}); err != nil {
 		t.Fatal(err)
-	}
-	for _, id := range []string{"prod-us", "prod-eu"} {
-		waitFor(t, id+" ready", func() bool {
-			m.mu.Lock()
-			r := m.runners[id]
-			m.mu.Unlock()
-			return r != nil && r.phase.Load() == protocol.PhaseReady && r.disc.Load() != nil
-		})
 	}
 	return m, set
 }
@@ -276,6 +281,7 @@ func TestElevateReacquiresBeforeDiscovery(t *testing.T) {
 		if _, err := m.Elevate("prod-eu", step.on, step.ctx); err != nil {
 			t.Fatal(err)
 		}
+		seed := runnerOf(m, "prod-eu").disc.Load()
 		// No waiting: the new runner's discovery is still 1.5 s away, so only the seed can have placed the watch.
 		w, ok := watchOf(m, "prod-eu", cms)
 		if !ok || w.Refs != 1 {
@@ -285,6 +291,10 @@ func TestElevateReacquiresBeforeDiscovery(t *testing.T) {
 			t.Fatalf("elevate(%v): discovery generation %d -> %d on an unchanged discovery", step.on, kinds, got)
 		}
 		waitFor(t, "configmaps synced on the new runner", func() bool { return m.KindSynced("prod-eu", cms) })
+		waitFor(t, "the new runner's own discovery landed", func() bool { return runnerOf(m, "prod-eu").disc.Load() != seed })
+		if got := runnerOf(m, "prod-eu").discGen.Load(); got != kinds {
+			t.Fatalf("elevate(%v): discovery generation %d -> %d after the refresh of an unchanged discovery", step.on, kinds, got)
+		}
 		waitFor(t, "ready, discovery generation unchanged", func() bool {
 			r := runnerOf(m, "prod-eu")
 			return r.phase.Load() == protocol.PhaseReady && r.discGen.Load() == kinds

@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -185,4 +186,93 @@ func TestElevateRetriesRefusedView(t *testing.T) {
 	waitTotal(false)
 	c.call("clusters.elevate", protocol.ClustersElevateParams{ID: "prod-eu", Elevated: true}, observe)
 	waitTotal(true)
+}
+
+// While a list the user opened is still arriving after an elevate, no state frame may show the cluster ready without
+// that kind in `loading` unless rows have already been patched in: the UI would say "No secrets." in that gap.
+func TestElevateReportsLoading(t *testing.T) {
+	t.Cleanup(ingest.Unregister("v1/secrets"))
+	e := startEnv(t, fake.Config{Clusters: 2, Pods: 100, RBAC: true, ListDelay: 500 * time.Millisecond}, nil)
+	c, _, err := e.dial(t, nil, protocol.Subprotocol, "token."+testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, ok := c.next(5 * time.Second); !ok || h.kind != protocol.KindHello {
+		t.Fatal("no hello")
+	}
+	var set protocol.Settings
+	decodeResult(t, c.call("settings.set", protocol.SettingsSetParams{Patch: map[string]any{"links": map[string]any{"prod-eu": "prod-eu-admin"}}}, nil), &set)
+	decodeResult(t, c.call("clusters.select", protocol.ClustersSelectParams{IDs: []string{"prod-eu"}}, nil), &protocol.ClusterStates{})
+	c.waitReady(1)
+
+	const secrets = "v1/secrets"
+	var (
+		total      int
+		elevated   bool
+		loading    bool // the latest prod-eu state lists secrets as loading
+		armed      bool // the view is subscribed: the invariant applies
+		sawLoading bool
+		violations int
+	)
+	observe := func(f frame) {
+		switch f.kind {
+		case protocol.KindPatch:
+			c.ack(f.seq)
+			if f.channel == 1 {
+				var vp protocol.ViewPatch
+				_ = msgpack.Unmarshal(f.payload, &vp)
+				total = vp.Total
+			}
+		case protocol.KindClusterState:
+			var st protocol.ClusterStates
+			_ = msgpack.Unmarshal(f.payload, &st)
+			for _, s := range st.States {
+				if s.ID != "prod-eu" {
+					continue
+				}
+				elevated = s.Elevated
+				loading = slices.Contains(s.Loading, secrets)
+				sawLoading = sawLoading || (loading && s.Phase == protocol.PhaseReady)
+				if armed && s.Elevated && s.Phase == protocol.PhaseReady && total == 0 && !loading {
+					violations++
+				}
+			}
+		}
+	}
+	pump := func(what string, done func() bool) {
+		t.Helper()
+		for end := time.Now().Add(20 * time.Second); time.Now().Before(end); {
+			if done() {
+				return
+			}
+			if f, ok := c.next(100 * time.Millisecond); ok {
+				observe(f)
+			}
+		}
+		t.Fatalf("timeout: %s (total=%d elevated=%v loading=%v)", what, total, elevated, loading)
+	}
+	sub := protocol.ViewSubscribeParams{QID: 1, Gen: 1, Query: protocol.ViewQuery{GVR: secrets}, Window: protocol.Window{Limit: 50}}
+	if err := c.call("view.subscribe", sub, observe).Error; err == nil || err.Code != "forbidden" {
+		t.Fatalf("read context: want forbidden, got %+v", err)
+	}
+
+	for round := 0; round < 2; round++ {
+		total, sawLoading, armed = 0, false, false
+		c.nextID++
+		c.send(protocol.KindRequest, c.nextID, 0, protocol.Request{Method: "clusters.elevate", Params: protocol.ClustersElevateParams{ID: "prod-eu", Elevated: true}})
+		pump("elevated", func() bool { return elevated })
+		if round == 0 { // later rounds reuse the live subscription, as the UI's view does
+			if r := c.call("view.subscribe", sub, observe); r.Error != nil {
+				t.Fatalf("subscribe: %+v", r.Error)
+			}
+		}
+		armed = true
+		pump("rows and loading cleared", func() bool { return total > 0 && !loading && sawLoading })
+		if violations > 0 {
+			t.Fatalf("round %d: %d state frames showed prod-eu ready, no rows yet, secrets not loading", round, violations)
+		}
+		armed = false
+		c.call("clusters.elevate", protocol.ClustersElevateParams{ID: "prod-eu", Elevated: false}, observe)
+		pump("emptied after revert", func() bool { return total == 0 && !elevated && !loading })
+	}
 }
