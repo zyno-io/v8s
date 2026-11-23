@@ -12,7 +12,7 @@ import { editRequest } from '@/lib/drawer.ts';
 import { callMutating, errorText, isCancelled, newWriteDecision, runAs } from '@/lib/mutations.ts';
 import { GITOPS_LABEL } from '@/lib/overview.ts';
 import { PRETTY_MAX, prettyKind, prettyYaml } from '@/lib/pretty-yaml.ts';
-import { KEY_YAML_PRETTY, KEY_YAML_WRAP, readFlag, writeFlag } from '@/lib/remember.ts';
+import { KEY_YAML_PRETTY, KEY_YAML_SECRET_DECODED, KEY_YAML_WRAP, readFlag, readFlagDefaultOn, writeFlag } from '@/lib/remember.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 // CodeMirror and the diff view are lazy chunks: nothing here loads until the YAML tab is opened.
@@ -37,13 +37,22 @@ const tooLarge = computed(() => props.payload.yaml.length > LARGE);
 // ---- display options, remembered per browser ----
 const wrap = ref(readFlag(KEY_YAML_WRAP));
 const pretty = ref(readFlag(KEY_YAML_PRETTY));
+// Secrets have their own toggle, "Decoded" (values as text), which is on by default.
+const decoded = ref(readFlagDefaultOn(KEY_YAML_SECRET_DECODED));
 watch(wrap, v => writeFlag(KEY_YAML_WRAP, v));
 watch(pretty, v => writeFlag(KEY_YAML_PRETTY, v));
+watch(decoded, v => writeFlag(KEY_YAML_SECRET_DECODED, v));
 
 const kind = computed(() => prettyKind(props.target.gvr));
 const isMaskedSecret = computed(() => kind.value === 'secret' && !!props.masked);
 const prettyTooBig = computed(() => props.payload.yaml.length > PRETTY_MAX);
-const prettyOn = computed(() => pretty.value && !!kind.value && !prettyTooBig.value);
+const toggleOn = computed(() => (kind.value === 'secret' ? decoded.value : pretty.value));
+// A masked Secret has only placeholders: nothing to decode, so it shows as is.
+const prettyOn = computed(() => toggleOn.value && !!kind.value && !prettyTooBig.value && !isMaskedSecret.value);
+function toggleDisplay() {
+    if (kind.value === 'secret') decoded.value = !decoded.value;
+    else pretty.value = !pretty.value;
+}
 
 // The view-mode text with Pretty applied. `src` ties it to the YAML it was made from, so a newer payload never shows a stale rendering.
 const prettyView = shallowRef<{ src: string; out: string } | null>(null);
@@ -78,7 +87,7 @@ watch(
 onBeforeUnmount(() => clearTimeout(prettyTimer));
 const viewText = computed(() => (prettyView.value ? prettyView.value.out : props.payload.yaml));
 
-// "Mask again" drops the values: nothing decoded or revealed stays here.
+// "Mask" drops the values: nothing decoded or revealed stays here.
 watch(
     () => props.masked,
     masked => {
@@ -340,37 +349,44 @@ defineExpose({ startEdit, reloadLive, mode });
         <div v-show="mode !== 'review'" class="pane">
             <div class="toolbar">
                 <template v-if="mode === 'view'">
-                    <span class="tag">read-only</span>
+                    <slot name="status"></slot>
                     <span v-if="justUpdated" class="tag info" role="status">updated from server</span>
-                    <span class="muted small">resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
+                    <span class="muted small" title="resourceVersion">rv <span class="mono">{{ payload.resourceVersion }}</span></span>
                     <div class="grow"></div>
-                    <span v-if="kind && prettyTooBig" class="muted small">Pretty is skipped for documents over 256 KB</span>
+                    <span v-if="kind && prettyTooBig" class="muted small">
+                        {{ kind === 'secret' ? 'Decoded' : 'Pretty' }} is skipped for documents over 256 KB
+                    </span>
                     <button
                         v-if="kind"
                         class="btn sm"
                         type="button"
-                        :aria-pressed="pretty"
-                        data-testid="yaml-pretty"
+                        :aria-pressed="toggleOn"
+                        :data-testid="kind === 'secret' ? 'yaml-decoded' : 'yaml-pretty'"
                         :title="
-                            kind === 'secret' ? 'Decode base64 values and indent JSON' : 'Indent JSON values and show multi-line values as blocks'
+                            kind === 'secret'
+                                ? 'Show values as text (stringData), with JSON indented'
+                                : 'Indent JSON values and show multi-line values as blocks'
                         "
-                        @click="pretty = !pretty"
+                        @click="toggleDisplay"
                     >
-                        Pretty
+                        {{ kind === 'secret' ? 'Decoded' : 'Pretty' }}
                     </button>
                     <button class="btn sm" type="button" :aria-pressed="wrap" data-testid="yaml-wrap" @click="wrap = !wrap">Wrap</button>
                     <button class="btn sm" type="button" @click="copy">Copy</button>
+                    <slot name="actions"></slot>
                     <button class="btn sm primary" type="button" :disabled="tooLarge || deleted" data-testid="edit-yaml" @click="editClicked">
                         {{ isMaskedSecret ? 'Reveal and edit' : 'Edit' }}
                     </button>
                 </template>
                 <template v-else>
+                    <slot name="status"></slot>
                     <span class="tag warning">editing</span>
                     <span class="muted small">opened at <span class="mono">{{ openedRV }}</span></span>
                     <span v-if="prettyOn && kind === 'configmap'" class="muted small" data-testid="edit-hint">Editing the raw YAML</span>
                     <span v-else-if="decodedEdit" class="muted small" data-testid="edit-hint">Editing decoded values</span>
                     <div class="grow"></div>
                     <button class="btn sm" type="button" :aria-pressed="wrap" data-testid="yaml-wrap" @click="wrap = !wrap">Wrap</button>
+                    <slot name="actions"></slot>
                     <button class="btn sm" type="button" @click="discard">Discard</button>
                     <button class="btn sm primary" type="button" :disabled="!dirty" data-testid="review" @click="startReview">Review changes</button>
                 </template>
@@ -400,6 +416,7 @@ defineExpose({ startEdit, reloadLive, mode });
 
         <div v-if="mode === 'review' && review" class="pane review" data-testid="review-pane">
             <div class="toolbar">
+                <slot name="status"></slot>
                 <b>Review changes</b>
                 <span class="muted small">against live resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
             </div>

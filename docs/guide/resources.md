@@ -83,18 +83,18 @@ Applying is a normal update of the object you opened, like `kubectl edit`. Only 
 Documents over 1 MB open read-only, and so do objects deleted on the server.
 :::
 
-### Wrap and Pretty
+### Wrap, Pretty and Decoded
 
 **Wrap** wraps long lines in the YAML editor. It works in view and edit mode and is remembered in your browser.
 
-**Pretty** appears for ConfigMaps and Secrets and is also remembered. It makes the document readable without changing the object:
+**Pretty** (ConfigMaps) and **Decoded** (Secrets) are also remembered. They make the document readable without changing the object. Pretty is off by default; Decoded is on by default:
 
 - ConfigMap: JSON values (including JSON that was encoded as a string) are indented, and every multi-line value is shown as a block (`|`) instead of a quoted string with `\n`. Lines are not folded. Values that contain a carriage return (Windows line endings), or whose first line starts with a tab, stay quoted, because a block cannot hold them faithfully. Invalid JSON is left alone.
-- Secret: once the values are revealed, base64 values that decode to text are shown as text under `stringData`. Binary values stay in `data`.
+- Secret (**Decoded**): once the values are revealed, base64 values that decode to text are shown as text under `stringData`, with JSON indented. Binary values stay in `data`. Turn Decoded off to see the stored base64. While values are masked there is nothing to decode.
 
-JSON formatting is for viewing only, because it would change the stored bytes, so it never goes into an edit. **Copy** copies what is shown. Pretty is skipped for documents over 256 KB.
+JSON formatting is for viewing only, because it would change the stored bytes, so it never goes into an edit. **Copy** copies what is shown. Pretty and Decoded are skipped for documents over 256 KB.
 
-With Pretty on, a ConfigMap still opens for edit as its raw YAML. A revealed Secret opens in decoded form: you edit values as text, and the API server turns `stringData` back into `data` when you apply. The review diff compares against the live object in the same form, and after a conflict the server copy is fetched revealed so the comparison is meaningful.
+A ConfigMap still opens for edit as its raw YAML. With Decoded on, a revealed Secret opens in decoded form: you edit values as text, and the API server turns `stringData` back into `data` when you apply. The review diff compares against the live object in the same form, and after a conflict the server copy is fetched revealed so the comparison is meaningful.
 
 Only the `data` and `stringData` blocks are rewritten; the rest of the document is shown exactly as the server sent it.
 
@@ -170,7 +170,7 @@ On a phone, destructive actions use hold-to-confirm. See [On a phone](/guide/mob
 
 Secret lists never download values: v8s watches Secrets as metadata only, so you see names, types, and ages. Opening a Secret does not fetch it either. The Overview tab says so, and the YAML tab loads the masked manifest on demand, tagged **values masked**.
 
-Revealing is for the whole object, not per key. **Reveal all** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**. It needs the `get` permission on that Secret. **Mask again** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
+Revealing is for the whole object, not per key. **Reveal** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**; with Decoded on (the default) they show as text. The Secret's YAML tab has a single toolbar: the values tag on the left, and Decoded, Wrap, Copy, Reveal or Mask, and Edit on the right. It needs the `get` permission on that Secret. **Mask** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
 
 Editing a masked Secret would mean editing placeholders, so the button reads **Reveal and edit** (and `e` does the same): it reveals the values, then opens the editor. If the reveal fails, the error is shown and nothing opens.
 

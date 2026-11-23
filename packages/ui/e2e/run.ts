@@ -462,19 +462,46 @@ async function main() {
             await page.locator('.cm-content').waitFor();
             const edit = page.getByTestId('edit-yaml');
             assert.equal((await edit.innerText()).trim(), 'Reveal and edit');
-            await edit.click();
+            // One toolbar row: the values tag, Decoded, Reveal and the edit button share one element.
+            const sameToolbar = () =>
+                page.evaluate(() => {
+                    const tb = document.querySelector('[data-testid="edit-yaml"]')?.closest('.toolbar');
+                    const q = (id: string) => document.querySelector(`[data-testid="${id}"]`);
+                    const btn = q('reveal') ?? q('mask');
+                    return (
+                        !!tb &&
+                        !!btn &&
+                        tb.contains(btn) &&
+                        tb.contains(q('yaml-decoded')) &&
+                        tb.textContent!.includes('values ') &&
+                        document.querySelectorAll('.drawer .toolbar').length === 1
+                    );
+                });
+            assert.equal(await sameToolbar(), true);
+            assert.equal(await pressed('yaml-decoded'), 'true');
+            // Reveal with the default (Decoded on) lands on readable string data
+            await page.getByTestId('reveal').click();
             await page.getByText('values revealed').waitFor({ timeout: 10000 });
+            await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('stringData:'), null, { timeout: 10000 });
+            assert.match(await page.locator('.cm-content').innerText(), /hunter2/);
+            assert.equal(await sameToolbar(), true);
+            assert.equal((await edit.innerText()).trim(), 'Edit');
+            // Decoded off shows the stored base64
+            await page.getByTestId('yaml-decoded').click();
+            await page.waitForFunction(() => !document.querySelector('.cm-content')?.textContent?.includes('stringData:'), null, { timeout: 10000 });
+            // Edit opens the raw document, with no decoded hint
+            await edit.click();
             await page.getByTestId('review').waitFor();
+            assert.equal(await page.getByTestId('edit-hint').count(), 0);
             await page.getByRole('button', { name: 'Discard' }).click();
-            // Pretty on: a revealed Secret opens decoded (text in stringData), JSON still compact
-            await page.getByTestId('yaml-pretty').click();
+            // Decoded on: Edit opens decoded (text in stringData), JSON still compact
+            await page.getByTestId('yaml-decoded').click();
             await page.getByTestId('edit-yaml').click();
             await page.getByTestId('edit-hint').waitFor();
             const decoded = await page.locator('.cm-content').innerText();
             assert.match(decoded, /stringData:/);
             assert.match(decoded, /"password":"hunter2"/);
             await page.getByRole('button', { name: 'Discard' }).click();
-            await page.getByTestId('yaml-pretty').click();
             await page.getByTestId('mask').click();
             await page.getByText('values masked').waitFor();
             await page.getByTestId('drawer-close').click();
