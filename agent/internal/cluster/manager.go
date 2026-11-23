@@ -207,12 +207,26 @@ func (m *Manager) kickThrottled() {
 // States returns the state of every currently selected cluster.
 func (m *Manager) States() protocol.ClusterStates {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	out := protocol.ClusterStates{States: make([]protocol.ClusterState, 0, len(m.selected))}
+	rs := make([]*runner, 0, len(m.selected))
+	var pend []*Scope // foreground scopes: only needed while some cluster has no discovery yet
 	for _, id := range m.selected {
 		if r := m.runners[id]; r != nil {
+			rs = append(rs, r)
 			out.States = append(out.States, r.state())
+			if pend == nil && r.be != nil && r.disc.Load() == nil {
+				pend = make([]*Scope, 0, len(m.scopes))
+				for s := range m.scopes {
+					if !s.bg && s.ev == nil {
+						pend = append(pend, s)
+					}
+				}
+			}
 		}
+	}
+	m.mu.Unlock()
+	for i, r := range rs { // outside m.mu: loading takes the runner's lock
+		out.States[i].Loading = r.loading(pend)
 	}
 	return out
 }
@@ -264,7 +278,7 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 			}
 			continue
 		}
-		nr, err := m.startOn(id, id)
+		nr, err := m.startOn(id, id, nil, 0)
 		if err != nil {
 			m.log.Warn("cluster start failed", "cluster", id, "err", err)
 			nr = m.failed(id, id, err)
@@ -273,8 +287,7 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 	}
 	m.selected = list
 	m.mu.Unlock()
-	for _, s := range swapped {
-		s.old.stop()
+	for _, s := range swapped { // re-acquire on the new runners before the old ones stop (see Elevate)
 		m.dropHeld(s.id)
 	}
 	if m.set != nil {
@@ -283,6 +296,9 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 		}
 	}
 	m.reconcileAll()
+	for _, s := range swapped {
+		s.old.stop()
+	}
 	m.reconcileUsage()
 	m.kick()
 	return m.States(), nil
@@ -359,7 +375,7 @@ func (m *Manager) swapLocked(id string, old *runner, ctxID string) {
 	if m.problems != nil {
 		m.problems.Drop(id)
 	}
-	nr, err := m.startOn(id, ctxID)
+	nr, err := m.startOn(id, ctxID, old.disc.Load(), old.discGen.Load())
 	if err != nil {
 		m.log.Warn("cluster restart failed", "cluster", id, "context", ctxID, "err", err)
 		nr = m.failed(id, ctxID, err)
@@ -400,9 +416,12 @@ func (m *Manager) Elevate(id string, on bool, w string) (protocol.ClusterStates,
 	}
 	m.swapLocked(id, old, target)
 	m.mu.Unlock()
-	old.stop() // outside m.mu: the old discovery loop may be inside reconcileAll, which takes m.mu
+	m.kick() // the page sees the new identity and "connecting" at once, not after old.stop()
+	// Re-acquire open views' watches on the new runner before old.stop() (which can take a while): otherwise the new
+	// runner's pods may report ready before the views' kinds are held, and a list would read "No …" instead of loading.
 	m.dropHeld(id)
 	m.reconcileAll()
+	old.stop() // outside m.mu: the old discovery loop may be inside reconcileAll, which takes m.mu
 	m.reconcileUsage()
 	m.kick()
 	return m.States(), nil
@@ -444,7 +463,10 @@ func (m *Manager) failed(id, ctxID string, err error) *runner {
 }
 
 // startOn starts ingest for cluster id running as context ctxID (id itself, or its write context while elevated).
-func (m *Manager) startOn(id, ctxID string) (*runner, error) {
+// seed, when set, is the replaced runner's discovery (the same cluster by configuration, the linked write context; discovery is not filtered by RBAC)
+// and seedGen its generation: the new runner starts with it so open views re-list at once instead of waiting for its
+// first discovery. discState is immutable once stored, so sharing it is safe; the new runner's own discovery refreshes it right away.
+func (m *Manager) startOn(id, ctxID string, seed *discState, seedGen uint64) (*runner, error) {
 	be, err := m.src.Backend(ctxID)
 	if err != nil {
 		return nil, err
@@ -463,6 +485,13 @@ func (m *Manager) startOn(id, ctxID string) (*runner, error) {
 	r.capStore = store.New()
 	_ = r.capStore.Replace(nil, "") // synced and empty until the first capacity scan
 	m.eng.AttachKind(id, protocol.CapacityGVR, r.capStore)
+	if seed != nil {
+		r.disc.Store(seed)
+		r.discGen.Store(seedGen)
+		if r.pe != nil {
+			r.pe.SetDiscovery(discGRs(seed.list))
+		}
+	}
 	r.usage = newUsageState(r) // before startTier0: the discovery loop kicks it
 	r.startTier0()
 	r.wg.Add(1)
@@ -667,6 +696,9 @@ func (m *Manager) openScope(gvr string, clusters []string, bg bool) *Scope {
 	m.scopes[s] = struct{}{}
 	m.mu.Unlock()
 	m.reconcile(s)
+	if !bg && m.discoveryPending() {
+		m.kick() // the kind may now count as loading (no discovery to place it yet)
+	}
 	return s
 }
 
@@ -682,6 +714,19 @@ func (s *Scope) Close() {
 		rel()
 		delete(s.held, id)
 	}
+	if !s.bg && s.ev == nil && s.m.discoveryPending() {
+		s.m.kick()
+	}
+}
+
+// discoveryPending reports whether some selected cluster has not completed its first discovery.
+func (m *Manager) discoveryPending() bool {
+	for _, r := range m.selectedRunners() {
+		if r.disc.Load() == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) reconcileAll() {

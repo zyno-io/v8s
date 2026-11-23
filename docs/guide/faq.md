@@ -52,6 +52,10 @@ Kyverno's CEL policies (`policies.kyverno.io`) are supported. From Kyverno 1.20,
 
 The first rows arrive as soon as they are loaded, and the count updates until the cluster has been read in full. You can work in the view meanwhile. See [Connection states](/guide/clusters#connection-states).
 
+## Why does a chip say "loading secrets…"?
+
+The cluster itself has synced, but the list you have open (Secrets here) has not finished its first load. Secrets and CRD-backed lists are read in pages, and a cluster with many large Helm release Secrets can take a while. If it stays for long, the API server is slow to list that type, or the list keeps failing; the agent log says which (`slow discovery`, `discovery failed`, `first list failing` with the error, `slow first list`).
+
 ## Can I use v8s without a cluster?
 
 Yes, in demo mode: `v8s agent --fake clusters=3,pods=50000`. See [Getting started](/guide/getting-started#try-it-without-a-cluster-demo-mode).
