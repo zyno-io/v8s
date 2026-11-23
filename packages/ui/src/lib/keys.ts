@@ -1,3 +1,4 @@
+import { ProblemsGVR } from '@v8s/client';
 import { nextTick } from 'vue';
 
 import router from '@/router.ts';
@@ -6,7 +7,9 @@ import { useSidebarStore } from '@/stores/sidebar.ts';
 import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
+import { kinds } from './agent.ts';
 import { closeDrawer, isDrawerOpen } from './drawer.ts';
+import { recentNamespaces, sameSet } from './recent-namespaces.ts';
 
 /** A page may claim j/k/x/Enter. Returns true when it handled the key. */
 type PageKeyHandler = (e: KeyboardEvent) => boolean;
@@ -91,6 +94,25 @@ function escapeStep(target: EventTarget | null): 'filter' | 'other' | null {
         return 'other';
     }
     return null;
+}
+
+/**
+ * k9s-style namespace keys on the list on screen: 0 clears the namespace filter, 1–9 apply the recent sets (most recent first) without
+ * reordering them. Not on cluster-scoped kinds; a digit with no set behind it does nothing.
+ */
+function namespaceKey(e: KeyboardEvent): boolean {
+    const key = e.key;
+    if (key.length !== 1 || key < '0' || key > '9') return false;
+    const table = useTableStore();
+    const gvr = table.currentGvr;
+    // Problems has no namespace menu on screen, so a filter set there would be invisible.
+    if (!gvr || gvr === ProblemsGVR || kinds.value.find(k => k.gvr === gvr)?.namespaced === false) return false;
+    if (e.repeat) return true;
+    const st = table.of(gvr);
+    const next = key === '0' ? [] : recentNamespaces()[Number(key) - 1];
+    // Unchanged: no new array, which would reset the selection and re-query the view.
+    if (next && !sameSet(next, st.namespaces)) st.namespaces = [...next];
+    return true;
 }
 
 export function installGlobalKeys(focusFilter: () => void): () => void {
@@ -191,7 +213,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
             return;
         }
         if (clusters.popoverOpen) return;
-        if (pageHandler?.(e)) e.preventDefault();
+        if (pageHandler?.(e) || namespaceKey(e)) e.preventDefault();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);

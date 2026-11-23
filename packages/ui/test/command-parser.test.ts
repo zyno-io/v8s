@@ -88,7 +88,7 @@ describe('parseCommand', () => {
     });
 
     it('accepts a namespace and ns/name', () => {
-        expect(parseCommand('po payments', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespace: 'payments' });
+        expect(parseCommand('po payments', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespaces: ['payments'] });
         expect(parseCommand('po payments/api-1', ctx)).toEqual({
             type: 'open-kind',
             gvr: 'v1/pods',
@@ -96,7 +96,9 @@ describe('parseCommand', () => {
             namespace: 'payments',
             name: 'api-1'
         });
-        expect(parseCommand('po all', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods' });
+        expect(parseCommand('po all', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespaces: [] });
+        expect(parseCommand('po *', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespaces: [] });
+        expect(parseCommand('po', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods' }); // keeps the filter
         expect(parseCommand('po /x', ctx).type).toBe('error');
     });
 
@@ -140,6 +142,8 @@ describe('parseCommand', () => {
     it(':ns and problems', () => {
         expect(parseCommand('ns payments', ctx)).toEqual({ type: 'ns', namespaces: ['payments'] });
         expect(parseCommand('ns all', ctx)).toEqual({ type: 'ns', namespaces: null });
+        expect(parseCommand('ns *', ctx)).toEqual({ type: 'ns', namespaces: null });
+        expect(parseCommand('ns *,shop', ctx).type).toBe('error');
     });
     it(':ns takes comma lists and * patterns', () => {
         const c: CommandContext = {
@@ -158,6 +162,27 @@ describe('parseCommand', () => {
         expect(parseCommand('ns +pay*,new', c)).toEqual({ type: 'ns-delta', add: ['payments', 'pay-api', 'new'], remove: [] });
         expect(parseCommand('ns -kube-*', c)).toEqual({ type: 'ns-delta', add: [], remove: ['kube-system'] }); // - matches the filter
         expect(parseCommand('ns -pay*', c)).toEqual({ type: 'error', message: 'no namespace in the filter matches "pay*"' });
+    });
+    it(':<type> takes namespaces like :ns', () => {
+        const c: CommandContext = { ...ctx, namespaces: ['payments', 'pay-api', 'shop'] };
+        const pods = { type: 'open-kind', gvr: 'v1/pods', plural: 'pods' };
+        expect(parseCommand('po pay*', c)).toEqual({ ...pods, namespaces: ['payments', 'pay-api'] });
+        expect(parseCommand('po shop,pay*', c)).toEqual({ ...pods, namespaces: ['shop', 'payments', 'pay-api'] });
+        expect(parseCommand('po zz*', c)).toEqual({ type: 'error', message: 'no namespace matches "zz*"' });
+        expect(parseCommand('po all,shop', c).type).toBe('error');
+        expect(parseCommand('po * shop', c).type).toBe('error');
+        expect(parseCommand('po shop, pay*', c)).toEqual({ ...pods, namespaces: ['shop', 'payments', 'pay-api'] });
+        expect(parseCommand('po shop new', c)).toEqual({ ...pods, namespaces: ['shop', 'new'] });
+        expect(complete('po shop,*', c)).toEqual([]);
+        expect(complete('ns shop *', c)).toEqual([]);
+        expect(complete('ns +*', c)[0].detail).toMatch(/^matches 3/);
+        expect(
+            complete('po shop,pa', c)
+                .map(x => x.insert)
+                .sort()
+        ).toEqual(['po shop,pay-api', 'po shop,payments']);
+        expect(complete('po pay*', c)).toEqual([{ label: 'pay*', detail: 'matches 2: payments, pay-api', insert: 'po pay*' }]);
+        expect(complete('po *', c)).toEqual([{ label: '*', detail: 'all namespaces', insert: 'po *' }]);
     });
     it(':ns completes after the last comma and counts what a pattern matches', () => {
         const c: CommandContext = { ...ctx, namespaces: ['payments', 'pay-api', 'shop'], filter: ['shop'] };
@@ -231,6 +256,7 @@ describe('parseCommand', () => {
         };
         expect(parseCommand('nodes x', nodes)).toEqual({ type: 'open-kind', gvr: 'v1/nodes', plural: 'nodes', name: 'x' });
         expect(complete('nodes ', nodes)).toEqual([]);
+        expect(parseCommand('nodes *', nodes)).toEqual({ type: 'open-kind', gvr: 'v1/nodes', plural: 'nodes' });
         expect(parseCommand('nodes', nodes)).toMatchObject({ type: 'open-kind', gvr: 'v1/nodes' });
     });
 });
@@ -245,8 +271,8 @@ describe('IP commands', () => {
         expect(parseCommand('po 10.42.', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', text: '10.42.' });
         expect(parseCommand('pods 10.0.0.0/16', ctx)).toMatchObject({ type: 'open-kind', text: '10.0.0.0/16' });
     });
-    it(':<type> <namespace> is unchanged', () => {
-        expect(parseCommand('po payments', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespace: 'payments' });
+    it(':<type> <namespace> still parses after an IP check', () => {
+        expect(parseCommand('po payments', ctx)).toEqual({ type: 'open-kind', gvr: 'v1/pods', plural: 'pods', namespaces: ['payments'] });
         expect(parseCommand('po payments/api-1', ctx)).toMatchObject({ namespace: 'payments', name: 'api-1' });
     });
     it('completes no namespaces for an IP argument, and lists :ip', () => {

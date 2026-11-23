@@ -1,3 +1,4 @@
+import { ProblemsGVR } from '@v8s/client';
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +12,9 @@ vi.mock('../src/lib/drawer.ts', () => ({
     }
 }));
 
+import { kinds } from '../src/lib/agent.ts';
 import { escapeChain, installGlobalKeys, setListNav, setPageKeyHandler, type ListNav } from '../src/lib/keys.ts';
+import { recordRecentNamespaces, setRecentKey } from '../src/lib/recent-namespaces.ts';
 import { useTableStore } from '../src/stores/table.ts';
 
 // Node has no DOM: the smallest stand-ins the key handler touches.
@@ -244,5 +247,59 @@ describe('Esc', () => {
         expect(st.selected.size).toBe(0);
         expect(escapeChain(filterTarget)).toBe(true);
         expect(drawer.close).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('namespace digits', () => {
+    beforeEach(() => {
+        const mem = new Map<string, string>();
+        vi.stubGlobal('localStorage', { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => mem.set(k, v) });
+        setRecentKey('c1');
+        recordRecentNamespaces(['a']);
+        recordRecentNamespaces(['b', 'c']);
+        useTableStore().currentGvr = 'v1/pods';
+    });
+    afterEach(() => {
+        setRecentKey('');
+        kinds.value = [];
+    });
+
+    it('1–9 apply the recent sets without reordering them; 0 clears the filter', () => {
+        const st = useTableStore().of('v1/pods');
+        for (const [k, want] of [
+            ['1', ['b', 'c']],
+            ['2', ['a']],
+            ['1', ['b', 'c']],
+            ['2', ['a']],
+            ['0', []],
+            ['2', ['a']]
+        ] as const) {
+            expect(key(k, body).preventDefault).toHaveBeenCalled();
+            expect(st.namespaces).toEqual(want);
+        }
+        key('9', body); // nothing there: no change
+        expect(st.namespaces).toEqual(['a']);
+        const same = st.namespaces;
+        key('2', body); // already applied: the same array, so the selection and view are left alone
+        expect(st.namespaces).toBe(same);
+        expect(key('1', body, { repeat: true }).preventDefault).toHaveBeenCalled(); // auto-repeat is swallowed
+        expect(st.namespaces).toBe(same);
+    });
+
+    it('does nothing on Problems, which shows no namespace menu', () => {
+        const table = useTableStore();
+        table.currentGvr = ProblemsGVR;
+        expect(key('1', body).preventDefault).not.toHaveBeenCalled();
+        expect(table.of(ProblemsGVR).namespaces).toEqual([]);
+    });
+
+    it('leaves cluster-scoped kinds and typing alone', () => {
+        const table = useTableStore();
+        key('1', filter);
+        expect(table.of('v1/pods').namespaces).toEqual([]);
+        kinds.value = [{ gvr: 'v1/nodes', namespaced: false } as never];
+        table.currentGvr = 'v1/nodes';
+        expect(key('1', body).preventDefault).not.toHaveBeenCalled();
+        expect(table.of('v1/nodes').namespaces).toEqual([]);
     });
 });

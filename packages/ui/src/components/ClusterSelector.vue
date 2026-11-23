@@ -9,6 +9,7 @@ import { phaseColor } from '@/lib/colors.ts';
 import { formatCount } from '@/lib/format.ts';
 import { suggestLinks } from '@/lib/link-suggest.ts';
 import { errorText } from '@/lib/mutations.ts';
+import { moveStoredRecent } from '@/lib/recent-namespaces.ts';
 import { renameStoredGroup } from '@/lib/remember.ts';
 import { deleteGroupPatch, dismissedLinks, groupList, groupPatch, renameGroupPatch } from '@/lib/settings.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -117,8 +118,9 @@ function doRename() {
     const to = renameTo.value.trim();
     renaming.value = '';
     if (!to || to === from) return;
-    // Its remembered namespace filters follow the new name (also when it is not connected now).
+    // Its remembered namespace filters and recent namespaces follow the new name (also when it is not connected now).
     renameStoredGroup(from, to);
+    moveStoredRecent('g:' + from, 'g:' + to);
     void guard(() => settings.patch(renameGroupPatch(settings.groups, from, to)));
 }
 function setMembers(g: string) {
