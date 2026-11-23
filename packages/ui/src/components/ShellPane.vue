@@ -6,7 +6,16 @@ import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch
 import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
 import { errorText, isCancelled } from '@/lib/mutations.ts';
-import { connectBlocker, containerChoice, DEBUG_IMAGE_KEY, DEFAULT_DEBUG_IMAGE, debugParams, execParams, looksLikeNoShell } from '@/lib/shell.ts';
+import {
+    connectBlocker,
+    connectNote,
+    containerChoice,
+    DEBUG_IMAGE_KEY,
+    DEFAULT_DEBUG_IMAGE,
+    debugParams,
+    execParams,
+    looksLikeNoShell
+} from '@/lib/shell.ts';
 import { listOptions } from '@/lib/smart-select.ts';
 import { isPhone } from '@/lib/viewport.ts';
 import { withWriteConfirm } from '@/lib/write-confirm.ts';
@@ -19,6 +28,7 @@ type Kind = 'exec' | 'debug';
 
 const choice = computed(() => containerChoice(props.parsed));
 const blocker = computed(() => connectBlocker(props.parsed));
+const note = computed(() => connectNote(props.parsed));
 const container = ref(choice.value.initial);
 const containerOptions = computed(() => listOptions(choice.value.names));
 
@@ -157,6 +167,7 @@ function offerDebug() {
             </button>
             <button v-if="handle && !ended" type="button" class="btn" @click="disconnect">Disconnect</button>
             <span v-if="blocker" class="muted" role="note">{{ blocker }}</span>
+            <span v-else-if="note" class="tag warning" role="note" data-testid="shell-note">{{ note }}</span>
             <span class="grow"></span>
             <span v-if="connected && ready?.shell" class="tag info">{{ ready.shell }}</span>
             <span v-if="connected && ready?.container" class="tag">{{ ready.container }}</span>
