@@ -44,6 +44,14 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
             if (!here) return 'open a resource list first';
             table.of(here).namespaces = cmd.namespace ? [cmd.namespace] : [];
             return null;
+        case 'ns-delta': {
+            if (!here) return 'open a resource list first';
+            const st = table.of(here);
+            const next = st.namespaces.filter(n => !cmd.remove.includes(n));
+            for (const n of cmd.add) if (!next.includes(n)) next.push(n);
+            st.namespaces = next;
+            return null;
+        }
         case 'problems':
             await router.push('/problems');
             return null;

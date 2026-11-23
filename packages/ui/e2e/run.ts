@@ -372,6 +372,38 @@ async function main() {
             await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
         });
 
+        await step('namespace menu: the selection stays visible below the list whatever the search', async () => {
+            await page.getByRole('button', { name: /Namespace: payments/ }).click();
+            const menu = page.getByRole('dialog', { name: 'Namespace filter' });
+            const search = menu.getByLabel('Search namespaces');
+            const chip = menu.getByRole('button', { name: 'Remove payments' });
+            await search.fill('no-such-namespace');
+            await menu.getByText('No matches').waitFor();
+            await chip.click();
+            await page.getByRole('button', { name: /Namespace: all/ }).waitFor();
+            assert.equal(await menu.getByTestId('selected-chips').count(), 0);
+            assert.ok(await search.evaluate(el => el === document.activeElement), 'focus moves to the search field');
+            await search.fill('payments');
+            await menu.getByRole('checkbox').first().check();
+            await chip.waitFor();
+            await menu.getByRole('button', { name: 'Done' }).click();
+            await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
+        });
+
+        await step('command bar: :ns +name adds to the filter, :ns -name removes', async () => {
+            const run = async (cmd: string) => {
+                await page.keyboard.press(':');
+                await page.getByLabel('Command', { exact: true }).fill(cmd);
+                await page.getByLabel('Command', { exact: true }).press('Enter');
+            };
+            await run('ns +kube-system');
+            await page.getByRole('button', { name: /Namespace: 2 selected/ }).waitFor();
+            await run('ns -payments');
+            await page.getByRole('button', { name: /Namespace: kube-system/ }).waitFor();
+            await run('ns payments');
+            await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
+        });
+
         await step('global search opens the object drawer', async () => {
             await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
             const input = page.getByTestId('palette-input');

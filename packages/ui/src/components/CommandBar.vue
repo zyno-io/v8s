@@ -7,13 +7,16 @@ import type { CommandContext } from '@/lib/command-parser.ts';
 import { getNamespacesView, kinds } from '@/lib/agent.ts';
 import { complete, findKind, parseCommand } from '@/lib/command-parser.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
+import { gvrFromRoute } from '@/lib/route.ts';
 import { runCommand } from '@/lib/run-command.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
+import { useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 const ui = useUiStore();
 const clusters = useClustersStore();
 const router = useRouter();
+const table = useTableStore();
 
 const input = ref('');
 const sel = ref(0);
@@ -26,8 +29,15 @@ const ctx = computed<CommandContext>(() => ({
     kinds: kinds.value,
     namespaces: namespaces.value,
     clusters: clusters.list.map(c => ({ id: c.id, name: c.name, groups: c.groups })),
-    selected: clusters.activeIds
+    selected: clusters.activeIds,
+    filter: currentFilter()
 }));
+
+function currentFilter(): readonly string[] {
+    const r = router.currentRoute.value;
+    const gvr = gvrFromRoute(r.path, r.params);
+    return gvr ? table.of(gvr).namespaces : [];
+}
 
 const items = computed(() => complete(input.value, ctx.value));
 

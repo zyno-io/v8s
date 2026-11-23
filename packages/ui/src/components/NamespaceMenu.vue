@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
+import SelectedChips from '@/components/SelectedChips.vue';
 import { getNamespacesView } from '@/lib/agent.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
 import { useTableStore } from '@/stores/table.ts';
@@ -23,6 +24,8 @@ const shown = computed(() => {
     const t = q.value.trim().toLowerCase();
     return t ? all.value.filter(n => n.toLowerCase().includes(t)) : all.value;
 });
+
+const picked = computed(() => ui.value.namespaces.map(ns => ({ key: ns, label: ns })));
 
 function readNamespaces() {
     all.value = namespaceNames(getNamespacesView(), ui.value.namespaces);
@@ -75,6 +78,7 @@ function toggle(ns: string) {
                     </li>
                     <li v-if="!shown.length" class="muted none">{{ all.length ? 'No matches' : 'No namespaces loaded yet' }}</li>
                 </ul>
+                <SelectedChips :items="picked" label="Selected" @remove="toggle" />
                 <div class="foot">
                     <button class="btn ghost sm" type="button" :disabled="!ui.namespaces.length" @click="ui.namespaces = []">Clear</button>
                     <div class="grow"></div>
@@ -133,5 +137,6 @@ ul {
 .foot {
     display: flex;
     align-items: center;
+    margin-top: 8px;
 }
 </style>
