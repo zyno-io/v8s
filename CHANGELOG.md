@@ -5,10 +5,6 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
-### Fixed
-
-- The table's keyboard focus ring follows the card's rounded corners instead of being cut off at the bottom.
-
 ### Added
 
 - Keyboard scrolling in drawer tabs: `↑` `↓` `PgUp` `PgDn` (and `←` `→` `Home` `End`) scroll Logs, YAML and the other tabs without clicking into them first.
@@ -27,6 +23,7 @@ release notes when the tag has no annotation.
 
 - `e` puts the cursor in the YAML editor; before, editing started but the keyboard stayed outside it.
 - Logs: scrolling up always pauses following, even under a fast stream; scrolling back to the bottom (or `End`) resumes it; toggling Wrap or resizing keeps following.
+- The table's keyboard focus ring follows the card's rounded corners instead of being cut off at the bottom.
 
 ## 0.9.0 — 2026-11-23
 
