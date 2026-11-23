@@ -25,7 +25,7 @@ Every resource list is the same component, so the controls work everywhere.
 - **Cluster column.** The cluster column (a short tag with the cluster name) appears only when more than one cluster is selected.
 - **Namespace filter.** Set it from the namespace menu or with `:ns`. The menu lists the namespaces you picked under **Selected**, below the scrolling list, so they stay in view while you search; click one there to remove it.
 - **Selection.** Select rows with `x` or the checkboxes. A bulk action bar appears at the bottom with the actions that apply to every selected row, such as Restart or Delete.
-- **Syncing.** While a cluster is still loading, its rows stream in and the toolbar shows a progress tag such as `syncing prod-eu · 4,210`. There is no full-table spinner.
+- **Syncing.** While a cluster is still loading, its rows stream in and the toolbar shows a progress tag such as `syncing prod-eu · 4,210`. There is no full-table spinner. A list that has not finished loading on a cluster says so instead of "No …": the table reads `Loading secrets from prod-eu…` and that cluster's chip reads `loading secrets…` until the rows arrive.
 
 ## Keyboard shortcuts
 

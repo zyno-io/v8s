@@ -5,6 +5,7 @@ import { CapacityGVR } from '@v8s/client';
 import { computed, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import BusySpinner from '@/components/BusySpinner.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { capacityRow, capacityView } from '@/lib/capacity.ts';
 import {
@@ -175,11 +176,15 @@ function goHealth(h: Health, tones: number[]) {
                 class="btn sm"
                 type="button"
                 :disabled="clusters.elevating.has(id)"
+                :aria-busy="clusters.elevating.has(id) || undefined"
                 :title="elevate.hint"
                 :data-testid="`elevate-btn-${id}`"
                 @click="clusters.setElevated(id, elevate.elevate)"
             >
-                {{ clusters.elevating.has(id) ? 'Switching…' : elevate.label }}
+                <template v-if="clusters.elevating.has(id)"
+                    ><BusySpinner :size="12" /> {{ clusters.elevating.get(id) ? 'Elevating…' : 'Reverting…' }}</template
+                >
+                <template v-else>{{ elevate.label }}</template>
             </button>
             <span v-if="version" class="muted mono">{{ version }}</span>
             <span v-if="state?.message" class="muted msg" :title="state.message">{{ state.message }}</span>

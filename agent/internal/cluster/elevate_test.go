@@ -20,12 +20,29 @@ import (
 
 // newElevateManager: prod-us (no link), prod-eu (read-only rbac context) linked to prod-eu-admin, both selected.
 func newElevateManager(t *testing.T) (*Manager, *settings.Store) {
+	return newElevateManagerCfg(t, fake.Config{Clusters: 2, Pods: 100, RBAC: true})
+}
+
+func newElevateManagerCfg(t *testing.T, cfg fake.Config) (*Manager, *settings.Store) {
+	t.Helper()
+	m, set := newElevateManagerRaw(t, cfg)
+	for _, id := range []string{"prod-us", "prod-eu"} {
+		waitFor(t, id+" ready", func() bool {
+			r := runnerOf(m, id)
+			return r != nil && r.phase.Load() == protocol.PhaseReady && r.disc.Load() != nil
+		})
+	}
+	return m, set
+}
+
+// newElevateManagerRaw is newElevateManagerCfg without waiting for the clusters to be ready.
+func newElevateManagerRaw(t *testing.T, cfg fake.Config) (*Manager, *settings.Store) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	eng := view.NewEngine()
 	go eng.Run(ctx)
-	m := NewManager(ctx, fake.NewSource(fake.Config{Clusters: 2, Pods: 100, RBAC: true}), eng, nil)
+	m := NewManager(ctx, fake.NewSource(cfg), eng, nil)
 	t.Cleanup(m.Close)
 	set, err := settings.Open(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
@@ -40,14 +57,6 @@ func newElevateManager(t *testing.T) (*Manager, *settings.Store) {
 	m.Linger = time.Minute
 	if _, err := m.Select([]string{"prod-us", "prod-eu"}); err != nil {
 		t.Fatal(err)
-	}
-	for _, id := range []string{"prod-us", "prod-eu"} {
-		waitFor(t, id+" ready", func() bool {
-			m.mu.Lock()
-			r := m.runners[id]
-			m.mu.Unlock()
-			return r != nil && r.phase.Load() == protocol.PhaseReady && r.disc.Load() != nil
-		})
 	}
 	return m, set
 }
@@ -249,5 +258,46 @@ func TestElevateRefusesChangedLink(t *testing.T) {
 	}
 	if m.Elevated("prod-eu") != "" {
 		t.Fatal("elevated to an unverified context")
+	}
+}
+
+// The replaced runner starts from the old one's discovery, so an open Table-mode list re-acquires its watch at once
+// instead of waiting for the new runner's own (here deliberately slow) discovery.
+func TestElevateReacquiresBeforeDiscovery(t *testing.T) {
+	m, _ := newElevateManagerCfg(t, fake.Config{Clusters: 2, Pods: 100, RBAC: true, DiscoveryDelay: 1500 * time.Millisecond})
+	const cms = "v1/configmaps"
+	sc := m.OpenScope(cms, []string{"prod-eu"})
+	defer sc.Close()
+	waitFor(t, "configmaps synced", func() bool { return m.KindSynced("prod-eu", cms) })
+	kinds := stateOf(m, "prod-eu").Kinds
+	if kinds == 0 {
+		t.Fatal("no discovery generation before the swap")
+	}
+
+	for _, step := range []struct {
+		on  bool
+		ctx string
+	}{{true, "prod-eu-admin"}, {false, ""}} {
+		if _, err := m.Elevate("prod-eu", step.on, step.ctx); err != nil {
+			t.Fatal(err)
+		}
+		seed := runnerOf(m, "prod-eu").disc.Load()
+		// No waiting: the new runner's discovery is still 1.5 s away, so only the seed can have placed the watch.
+		w, ok := watchOf(m, "prod-eu", cms)
+		if !ok || w.Refs != 1 {
+			t.Fatalf("elevate(%v): configmaps watch %+v (exists %v) right after the swap", step.on, w, ok)
+		}
+		if got := stateOf(m, "prod-eu").Kinds; got != kinds {
+			t.Fatalf("elevate(%v): discovery generation %d -> %d on an unchanged discovery", step.on, kinds, got)
+		}
+		waitFor(t, "configmaps synced on the new runner", func() bool { return m.KindSynced("prod-eu", cms) })
+		waitFor(t, "the new runner's own discovery landed", func() bool { return runnerOf(m, "prod-eu").disc.Load() != seed })
+		if got := runnerOf(m, "prod-eu").discGen.Load(); got != kinds {
+			t.Fatalf("elevate(%v): discovery generation %d -> %d after the refresh of an unchanged discovery", step.on, kinds, got)
+		}
+		waitFor(t, "ready, discovery generation unchanged", func() bool {
+			r := runnerOf(m, "prod-eu")
+			return r.phase.Load() == protocol.PhaseReady && r.discGen.Load() == kinds
+		})
 	}
 }

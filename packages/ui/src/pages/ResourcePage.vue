@@ -4,6 +4,7 @@ import type { ObjectRef } from '@v8s/client';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import ActionBar from '@/components/ActionBar.vue';
+import BusySpinner from '@/components/BusySpinner.vue';
 import ClusterElevateMenu from '@/components/ClusterElevateMenu.vue';
 import NamespaceMenu from '@/components/NamespaceMenu.vue';
 import ResourceTable from '@/components/ResourceTable.vue';
@@ -12,6 +13,7 @@ import { phaseColor } from '@/lib/colors.ts';
 import { guessUsage, planColumns } from '@/lib/columns.ts';
 import { formatCount } from '@/lib/format.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
+import { kindLoading } from '@/lib/loading.ts';
 import { useResourceView } from '@/lib/resource-view.ts';
 import { PODS_GVR } from '@/lib/route.ts';
 import { keyAction } from '@/lib/row-keys.ts';
@@ -91,6 +93,9 @@ const metricTags = computed(() =>
         : []
 );
 const unavailable = computed(() => handle.columns.value !== null && handle.columns.value.length === 0);
+/** The agent refused the list (RBAC), as opposed to no selected cluster serving the type. */
+const refused = computed(() => handle.error.value?.code === 'forbidden');
+const canElevate = computed(() => clusters.states.some(s => !s.elevated && !!clusters.writeContextOf(s.id)));
 
 const filtered = computed(() => isFiltered(state));
 const summary = computed(() => {
@@ -111,16 +116,46 @@ const syncTags = computed(() =>
         const writeCtx = clusters.writeContextOf(s.id);
         const name = elevated && writeCtx ? writeCtx : readName;
         const syncing = s.phase === 'syncing' || s.phase === 'connecting';
-        const text = s.phase === 'ready' ? 'synced' : syncing ? `${s.phase} · ${formatCount(s.synced)} rows` : s.phase;
-        const tone =
-            s.phase === 'ready' ? (elevated ? 'warning' : '') : s.phase === 'unreachable' || s.phase === 'auth-required' ? 'danger' : 'warning';
+        // Pods have synced, but this kind's list is still arriving (a big Secrets list, or right after an elevate).
+        const kl = s.phase === 'ready' && kindLoading(s, props.gvr);
+        const text = kl
+            ? `loading ${title.value.toLowerCase()}…`
+            : s.phase === 'ready'
+              ? 'synced'
+              : syncing
+                ? `${s.phase} · ${formatCount(s.synced)} rows`
+                : s.phase;
+        const sw = clusters.switching(s.id);
+        const tone = sw
+            ? 'warning'
+            : kl
+              ? 'warning'
+              : s.phase === 'ready'
+                ? elevated
+                    ? 'warning'
+                    : ''
+                : s.phase === 'unreachable' || s.phase === 'auth-required'
+                  ? 'danger'
+                  : 'warning';
         return {
             id: s.id,
             name,
-            text,
+            text: sw ? `${sw}…` : text,
             tone,
-            color: phaseColor(s.phase),
-            title: [elevated ? `Elevated: running as ${name} instead of ${readName}` : '', s.message ?? ''].filter(Boolean).join('\n'),
+            busy: !!sw,
+            color: phaseColor(kl ? 'syncing' : s.phase),
+            title: [
+                sw === 'elevating'
+                    ? `Elevating to ${writeCtx}: checking the link, then reloading this cluster's data`
+                    : sw === 'reverting'
+                      ? `Reverting to ${readName}: reloading this cluster's data`
+                      : '',
+                kl ? `${title.value} are still loading from this cluster` : '',
+                elevated ? `Elevated: running as ${name} instead of ${readName}` : '',
+                s.message ?? ''
+            ]
+                .filter(Boolean)
+                .join('\n'),
             elevated
         };
     })
@@ -226,7 +261,9 @@ function star() {
                 :class="t.tone"
                 :title="t.title"
                 :data-testid="t.elevated ? 'elevated-tag' : `sync-${t.id}`"
-                ><span class="dot" :style="{ background: t.color }"></span>{{ t.name }} {{ t.text }}</ClusterElevateMenu
+                :aria-busy="t.busy || undefined"
+                ><BusySpinner v-if="t.busy" /><span v-else class="dot" :style="{ background: t.color }"></span>{{ t.name }}
+                {{ t.text }}</ClusterElevateMenu
             >
             <div class="colwrap opt" @keydown.esc.stop="colsOpen && (colsOpen = false)">
                 <button class="btn" type="button" :aria-expanded="colsOpen" aria-haspopup="dialog" @click="colsOpen = !colsOpen">Columns</button>
@@ -277,9 +314,21 @@ function star() {
             <span class="muted sortlabel">{{ sortLabel }}</span>
         </div>
         <div class="card table-card">
-            <div v-if="unavailable" class="unavail" role="status">
-                <p>None of the selected clusters serves <b>{{ title }}</b>.</p>
-                <p class="muted">Pick other clusters from the selector, or choose another type.</p>
+            <div v-if="unavailable" class="unavail" role="status" data-testid="unavailable">
+                <template v-if="refused">
+                    <p>You are not allowed to list <b>{{ title }}</b> on the selected clusters.</p>
+                    <p class="muted">
+                        {{
+                            canElevate
+                                ? 'Elevate a cluster (its status chip, or its Overview card) to read them as its write context.'
+                                : 'Pick other clusters from the selector, or ask for list access.'
+                        }}
+                    </p>
+                </template>
+                <template v-else>
+                    <p>None of the selected clusters serves <b>{{ title }}</b>.</p>
+                    <p class="muted">Pick other clusters from the selector, or choose another type.</p>
+                </template>
             </div>
             <ResourceTable
                 v-else

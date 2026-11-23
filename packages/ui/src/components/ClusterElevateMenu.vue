@@ -80,7 +80,7 @@ function run() {
                 @keydown.esc.stop="close"
             >
                 <button class="cem-item" type="button" role="menuitem" :disabled="busy" data-testid="elevate-item" @click="run">
-                    <span class="cem-l">{{ busy ? 'Switching…' : item.label }}</span>
+                    <span class="cem-l">{{ busy ? (clusters.elevating.get(id) ? 'Elevating…' : 'Reverting…') : item.label }}</span>
                     <span v-if="!busy" class="cem-hint muted">{{ item.hint }}</span>
                 </button>
             </div>
