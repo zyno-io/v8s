@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- `:ns +<namespace>` and `:ns -<namespace>` add a namespace to, or remove one from, the current view's namespace filter instead of replacing it. Several can be combined (`:ns +shop -payments`), and `-` completes from the namespaces in the filter.
+
 ### Changed
 
 - The Namespace menu and the cluster selector show what you have picked under **Selected**, below the list, so the picks stay in view while you search or scroll. Click one there to remove it.

@@ -95,6 +95,8 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 | -------------------- | ------------------------------------------------ |
 | `:ns`                | Open the Namespaces list (same as `:namespaces`) |
 | `:ns payments`       | Filter the current view to a namespace           |
+| `:ns +shop`          | Add `shop` to the namespace filter               |
+| `:ns -shop`          | Remove `shop` from the namespace filter          |
 | `:ns all`            | Clear the namespace filter                       |
 | `:pb` or `:problems` | Open the [Problems view](/guide/problems)        |
 | `:star` / `:unstar`  | Star or unstar the current resource type         |

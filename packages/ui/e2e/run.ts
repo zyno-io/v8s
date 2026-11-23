@@ -390,6 +390,20 @@ async function main() {
             await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
         });
 
+        await step('command bar: :ns +name adds to the filter, :ns -name removes', async () => {
+            const run = async (cmd: string) => {
+                await page.keyboard.press(':');
+                await page.getByLabel('Command', { exact: true }).fill(cmd);
+                await page.getByLabel('Command', { exact: true }).press('Enter');
+            };
+            await run('ns +kube-system');
+            await page.getByRole('button', { name: /Namespace: 2 selected/ }).waitFor();
+            await run('ns -payments');
+            await page.getByRole('button', { name: /Namespace: kube-system/ }).waitFor();
+            await run('ns payments');
+            await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
+        });
+
         await step('global search opens the object drawer', async () => {
             await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
             const input = page.getByTestId('palette-input');

@@ -17,6 +17,8 @@ export interface CommandContext {
     clusters: readonly ClusterRef[];
     /** Cluster ids currently connected. */
     selected: readonly string[];
+    /** The current view's namespace filter (completes `:ns -<namespace>`). */
+    filter?: readonly string[];
 }
 
 export type Command =
@@ -27,6 +29,7 @@ export type Command =
     | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string; text?: string }
     | { type: 'ip'; text: string }
     | { type: 'ns'; namespace: string | null }
+    | { type: 'ns-delta'; add: string[]; remove: string[] }
     | { type: 'problems' }
     | { type: 'star'; on: boolean }
     | { type: 'quit' }
@@ -43,12 +46,14 @@ export interface Completion {
 const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: string }[] = [
     { name: 'ctx', aliases: ['context'], takesArgs: true, detail: 'choose clusters' },
     { name: 'ip', aliases: [], takesArgs: true, detail: 'find objects by IP' },
-    { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'namespaces, or set the filter: ns <name> | all' },
+    { name: 'ns', aliases: ['namespace'], takesArgs: true, detail: 'namespaces, or set the filter: ns <name> | +<name> | -<name> | all' },
     { name: 'pb', aliases: ['problems'], takesArgs: false, detail: 'open problems' },
     { name: 'star', aliases: [], takesArgs: false, detail: 'star the current type' },
     { name: 'unstar', aliases: [], takesArgs: false, detail: 'unstar the current type' },
     { name: 'q', aliases: ['quit'], takesArgs: false, detail: 'close the bar' }
 ];
+
+const NS_USAGE = 'usage: :ns <namespace> | +<namespace> | -<namespace> | all';
 
 function tokenize(input: string): string[] {
     return input.trim().split(/\s+/).filter(Boolean);
@@ -131,9 +136,22 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
             // Bare `:ns` (no trailing space: `ns ` is still choosing a namespace) opens the Namespaces list, like `:namespaces`.
             const k = findKind('namespaces', ctx.kinds);
             if (k && 'kind' in k && k.kind.available) return { type: 'open-kind', gvr: k.kind.gvr, plural: k.kind.plural };
-            return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
+            return { type: 'error', message: NS_USAGE };
         }
-        if (args.length !== 1) return { type: 'error', message: 'usage: :ns <namespace> | :ns all' };
+        // `:ns +a -b …` adds to and removes from the filter instead of replacing it, like `:ctx +name / -name`.
+        const deltas = args.filter(a => a[0] === '+' || a[0] === '-');
+        if (deltas.length) {
+            if (deltas.length !== args.length) return { type: 'error', message: 'cannot mix names with +namespace / -namespace' };
+            const add: string[] = [];
+            const remove: string[] = [];
+            for (const a of deltas) {
+                const name = a.slice(1);
+                if (!name) return { type: 'error', message: NS_USAGE };
+                (a[0] === '+' ? add : remove).push(name);
+            }
+            return { type: 'ns-delta', add, remove };
+        }
+        if (args.length !== 1) return { type: 'error', message: NS_USAGE };
         return { type: 'ns', namespace: args[0].toLowerCase() === 'all' ? null : args[0] };
     }
     if (cmd?.name === 'pb') return { type: 'problems' };
@@ -219,6 +237,18 @@ export function complete(input: string, ctx: CommandContext, limit = 8): Complet
     if (cmd?.name === 'ip') return [];
     if (cmd?.name !== 'ns' && lastIdx === 1 && looksLikeIP(typed)) return [];
     const isNsCmd = cmd?.name === 'ns';
+    const sign = typed[0] === '+' || typed[0] === '-' ? typed[0] : '';
+    if (isNsCmd && sign) {
+        // `+` offers namespaces not in the filter yet, `-` the ones in it; neither repeats one already typed.
+        const used = new Set(tokens.slice(1, lastIdx).map(t => t.replace(/^[+-]/, '')));
+        const inFilter = new Set(ctx.filter ?? []);
+        const names = sign === '-' ? [...inFilter] : ctx.namespaces.filter(n => !inFilter.has(n));
+        const pool: Completion[] = [];
+        for (const ns of names) {
+            if (!used.has(ns)) pool.push({ label: sign + ns, detail: sign === '-' ? 'in the filter' : 'namespace', insert: before + sign + ns });
+        }
+        return rank(typed.slice(1), pool, e => e.label.slice(1)).slice(0, limit);
+    }
     const kindHit = !cmd ? findKind(head, ctx.kinds) : null;
     if ((isNsCmd || (kindHit && 'kind' in kindHit && kindHit.kind.namespaced)) && lastIdx === 1) {
         const pool: Completion[] = [];

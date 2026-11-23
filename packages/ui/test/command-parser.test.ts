@@ -142,6 +142,20 @@ describe('parseCommand', () => {
         expect(parseCommand('ns all', ctx)).toEqual({ type: 'ns', namespace: null });
         expect(parseCommand('ns a b', ctx).type).toBe('error');
     });
+    it(':ns +name / -name add to and remove from the filter', () => {
+        expect(parseCommand('ns +payments', ctx)).toEqual({ type: 'ns-delta', add: ['payments'], remove: [] });
+        expect(parseCommand('ns +a -b +c', ctx)).toEqual({ type: 'ns-delta', add: ['a', 'c'], remove: ['b'] });
+        expect(parseCommand('namespace -kube-system', ctx)).toEqual({ type: 'ns-delta', add: [], remove: ['kube-system'] });
+        expect(parseCommand('ns a +b', ctx).type).toBe('error');
+        expect(parseCommand('ns +', ctx).type).toBe('error');
+    });
+    it(':ns completes +name from namespaces outside the filter and -name from the filter', () => {
+        const c: CommandContext = { ...ctx, namespaces: ['payments', 'platform', 'shop'], filter: ['shop'] };
+        expect(complete('ns +p', c).map(x => x.label)).toEqual(['+payments', '+platform']);
+        expect(complete('ns +', c).map(x => x.label)).not.toContain('+shop');
+        expect(complete('ns -', c)).toEqual([{ label: '-shop', detail: 'in the filter', insert: 'ns -shop' }]);
+        expect(complete('ns +payments +', c).map(x => x.label)).toEqual(['+platform']);
+    });
     it('bare :ns and :namespace open the Namespaces list', () => {
         const withNs: CommandContext = {
             ...ctx,
