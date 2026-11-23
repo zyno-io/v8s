@@ -345,3 +345,91 @@ describe('DataCore objects and errors', () => {
         expect(h.of('response')[0].error).toMatchObject({ code: 'conflict', live: { resourceVersion: '9' } });
     });
 });
+
+describe('DataCore refused views', () => {
+    const ST = { id: 'a', phase: 'ready', synced: 5 };
+    const subs = (h: ReturnType<typeof harness>) =>
+        h.sent.filter(s => s.kind === KindRequest && (s.payload as { method: string }).method === 'view.subscribe');
+    const methods = (h: ReturnType<typeof harness>, m: string) =>
+        h.sent.filter(s => s.kind === KindRequest && (s.payload as { method: string }).method === m);
+    /** Hello, a state frame, and a subscribe the agent answers with `code`. */
+    function refused(code = 'forbidden') {
+        const h = harness();
+        h.frame(KindHello, 0, 1, { version: 1, agentVersion: 't', mode: 'fake' });
+        h.frame(KindClusterState, 0, 2, { states: [ST] });
+        h.main({ t: 'subscribe', qid: 1, gen: 1, query: QUERY, window: { offset: 0, limit: 10 } });
+        h.frame(KindResponse, subs(h)[0].channel, 3, { error: { code, message: 'no' } });
+        return h;
+    }
+
+    it('does nothing for a state frame that changes nothing', () => {
+        const h = refused();
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, synced: 9 }] });
+        expect(subs(h)).toHaveLength(1);
+    });
+
+    it('subscribes a refused view again, same qid and gen, when a cluster is elevated; later frames do not retry', () => {
+        const h = refused();
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, elevated: true }] });
+        expect(subs(h)).toHaveLength(2);
+        expect(subs(h)[1].payload).toMatchObject({ params: { qid: 1, gen: 1, query: QUERY, window: { offset: 0, limit: 10 } } });
+        expect(h.of('columns').at(-1)).toEqual({ t: 'columns', qid: 1, columns: null });
+        h.frame(KindResponse, subs(h)[1].channel, 5, { result: { columns: COLUMNS } });
+        expect(h.of('columns').at(-1)).toMatchObject({ qid: 1, columns: COLUMNS });
+        h.frame(KindClusterState, 0, 6, { states: [{ ...ST, elevated: false }] });
+        h.frame(KindClusterState, 0, 7, { states: [{ ...ST, elevated: true }] });
+        expect(subs(h)).toHaveLength(2);
+    });
+
+    it('sends one retry while one is in flight', () => {
+        const h = refused();
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, elevated: true }] });
+        h.frame(KindClusterState, 0, 5, { states: [{ ...ST, elevated: false }] });
+        expect(subs(h)).toHaveLength(2);
+    });
+
+    it('retries again after another refusal and a later change', () => {
+        const h = refused();
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, elevated: true }] });
+        h.frame(KindResponse, subs(h)[1].channel, 5, { error: { code: 'not_found', message: 'no' } });
+        h.frame(KindClusterState, 0, 6, { states: [{ ...ST, elevated: true, kinds: 2 }] });
+        expect(subs(h)).toHaveLength(3);
+    });
+
+    it('retries a view refused while its cluster was down once it is back up', () => {
+        const h = refused('unavailable');
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, phase: 'unreachable' }] });
+        expect(subs(h)).toHaveLength(2); // up → down is a change too; refused again while down
+        h.frame(KindResponse, subs(h)[1].channel, 5, { error: { code: 'unavailable', message: 'timeout' } });
+        h.frame(KindClusterState, 0, 6, { states: [{ ...ST, phase: 'reconnecting' }] });
+        expect(subs(h)).toHaveLength(2); // still down: no retry
+        h.frame(KindClusterState, 0, 7, { states: [ST] });
+        expect(subs(h)).toHaveLength(3);
+    });
+
+    it('never retries a bad_request', () => {
+        const h = refused('bad_request');
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, elevated: true }] });
+        expect(subs(h)).toHaveLength(1);
+    });
+
+    it('re-sends an update made while a subscribe was pending, once, after it is accepted', () => {
+        const h = refused();
+        h.frame(KindClusterState, 0, 4, { states: [{ ...ST, elevated: true }] });
+        const q2 = { ...QUERY, text: 'x' };
+        h.main({ t: 'update', qid: 1, gen: 2, query: q2, window: { offset: 5, limit: 20 } });
+        expect(methods(h, 'view.update')).toHaveLength(1); // the one sent live, which the agent may refuse
+        h.frame(KindResponse, subs(h)[1].channel, 5, { result: { columns: COLUMNS } });
+        const ups = methods(h, 'view.update');
+        expect(ups).toHaveLength(2);
+        expect(ups[1].payload).toMatchObject({ params: { qid: 1, gen: 2, query: q2, window: { offset: 5, limit: 20 } } });
+    });
+
+    it('does not double-send after a reconnect restore', () => {
+        const h = refused();
+        h.core.handleClosed('bye');
+        h.frame(KindHello, 0, 8, { version: 1, agentVersion: 't', mode: 'fake' });
+        h.frame(KindClusterState, 0, 9, { states: [{ ...ST, elevated: true }] });
+        expect(subs(h)).toHaveLength(2);
+    });
+});

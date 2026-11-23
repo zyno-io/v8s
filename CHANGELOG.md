@@ -5,6 +5,11 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- A list that could not load now loads on its own when that can change: Secrets your read context may not list appear as soon as you elevate the cluster, and a type none of the selected clusters served appears once you select one that does (or its CRD is installed), instead of staying empty until you leave the page. A list you are not allowed to read now says so instead of "None of the selected clusters serves …".
+- Elevating or reverting a cluster shows on its status chip at once (a spinner and `elevating…` / `reverting…`) until the cluster switches.
+
 ## 0.8.0 — 2026-11-22
 
 ### Added

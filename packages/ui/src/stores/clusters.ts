@@ -5,6 +5,7 @@ import { computed, ref, shallowRef, watch } from 'vue';
 
 import { clearAccessCache } from '@/lib/access.ts';
 import { getAgent, refreshKinds } from '@/lib/agent.ts';
+import { switchingWord } from '@/lib/elevate.ts';
 import { KEY_SELECTION, parseSelection, readJson, resolveChecked, storeSelection, writeJson } from '@/lib/remember.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
 import { useUiStore } from '@/stores/ui.ts';
@@ -47,7 +48,8 @@ export const useClustersStore = defineStore('clusters', () => {
     };
 
     /** Clusters with an elevate/revert in flight (UI state only; the elevation itself is `ClusterState.elevated`). */
-    const elevating = shallowRef<ReadonlySet<string>>(new Set());
+    /** Cluster id to the state a switch in flight is moving it to (true: elevating). */
+    const elevating = shallowRef<ReadonlyMap<string, boolean>>(new Map());
     const isElevated = (id: string): boolean => stateById.value.get(id)?.elevated === true;
     /** Changes whenever the set of elevated clusters does: watch it to re-read what depends on the identity (access checks). */
     const elevatedKey = computed(() =>
@@ -75,10 +77,13 @@ export const useClustersStore = defineStore('clusters', () => {
     /** Cluster tags of an elevated cluster wear the warning tone, like its status chip. Their dot stays the cluster's identity hue. */
     const tagTone = (id: string): string => (isElevated(id) ? 'warning' : '');
 
+    /** The word for a switch in flight on this cluster, empty when none or once the agent reports the requested state. */
+    const switching = (id: string): '' | 'elevating' | 'reverting' => switchingWord(elevating.value.get(id), isElevated(id));
+
     /** Runs the cluster as its linked write context (`on`) or back as its read context; its data reloads. */
     async function setElevated(id: string, on: boolean) {
         if (elevating.value.has(id)) return;
-        elevating.value = new Set(elevating.value).add(id);
+        elevating.value = new Map(elevating.value).set(id, on);
         try {
             await getAgent().elevateCluster(id, on);
             clearAccessCache();
@@ -86,7 +91,7 @@ export const useClustersStore = defineStore('clusters', () => {
             const name = nameById.value.get(id) ?? id;
             useUiStore().toast('danger', `${on ? 'Elevate' : 'Revert'} ${name}: ${e instanceof Error ? e.message : String(e)}`);
         } finally {
-            const n = new Set(elevating.value);
+            const n = new Map(elevating.value);
             n.delete(id);
             elevating.value = n;
         }
@@ -178,6 +183,7 @@ export const useClustersStore = defineStore('clusters', () => {
         writeContextOf,
         isProtected,
         elevating,
+        switching,
         isElevated,
         elevatedKey,
         elevatedCount,
