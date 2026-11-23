@@ -42,7 +42,7 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
         }
         case 'ns':
             if (!here) return 'open a resource list first';
-            table.of(here).namespaces = cmd.namespace ? [cmd.namespace] : [];
+            table.of(here).namespaces = cmd.namespaces ?? [];
             return null;
         case 'ns-delta': {
             if (!here) return 'open a resource list first';

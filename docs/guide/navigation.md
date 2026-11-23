@@ -91,18 +91,22 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 
 ### Other commands
 
-| Command              | Effect                                           |
-| -------------------- | ------------------------------------------------ |
-| `:ns`                | Open the Namespaces list (same as `:namespaces`) |
-| `:ns payments`       | Filter the current view to a namespace           |
-| `:ns +shop`          | Add `shop` to the namespace filter               |
-| `:ns -shop`          | Remove `shop` from the namespace filter          |
-| `:ns all`            | Clear the namespace filter                       |
-| `:pb` or `:problems` | Open the [Problems view](/guide/problems)        |
-| `:star` / `:unstar`  | Star or unstar the current resource type         |
-| `:q`                 | Close the bar (`Esc` does the same)              |
+| Command              | Effect                                                 |
+| -------------------- | ------------------------------------------------------ |
+| `:ns`                | Open the Namespaces list (same as `:namespaces`)       |
+| `:ns payments`       | Filter the current view to a namespace                 |
+| `:ns shop,pay*`      | Filter to several namespaces; `*` matches any text     |
+| `:ns +shop`          | Add `shop` to the namespace filter                     |
+| `:ns -shop`          | Remove `shop` from the namespace filter                |
+| `:ns -kube-*`        | Remove every namespace in the filter matching `kube-*` |
+| `:ns all`            | Clear the namespace filter                             |
+| `:pb` or `:problems` | Open the [Problems view](/guide/problems)              |
+| `:star` / `:unstar`  | Star or unstar the current resource type               |
+| `:q`                 | Close the bar (`Esc` does the same)                    |
 
 Aliases: `:context` for `:ctx`, `:namespace` for `:ns`.
+
+`:ns` takes comma-separated lists (`:ns a,b,c`) and `*` patterns anywhere in a name (`:ns pay*`, `:ns *-api`, `:ns a,b*,c`), also after `+` and `-`. A pattern is expanded once, against the namespaces v8s knows when you run the command, so a namespace created later is not added; a pattern that matches nothing is an error. `+` patterns match all known namespaces and `-` patterns the ones in the filter. Completion works on the part after the last comma, and a pattern shows how many namespaces it matches.
 
 ## Search palette
 
