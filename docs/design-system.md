@@ -71,7 +71,7 @@ The core component. It is not built from PixelCI's `list-row` (14px × 18px padd
 - **Bulk action bar** appears at the bottom of the table, in the decision-bar style (Desk Grey strip, hairline top), when rows are selected: "3 selected · Delete · Restart · Suspend". One primary action at most.
 - **Keyboard**: `j`/`k` move focus, `Enter` opens detail, `x` toggles selection, `/` focuses filter, `e` edit YAML, `l` logs, `s` shell, `d` describe. Shown in a legend like PixelCI's shortcut legend.
 - **Busy.** `BusySpinner`: a 10–12 px ring in `currentColor`, always beside a word that says what is happening, standing still under reduced motion, never alone.
-- **Empty, loading, partial** states: an empty filtered result says what filter hid what. While a cluster is still syncing, its rows stream in and the toolbar shows "syncing prod-eu · 4,210 rows" (desktop) or "syncing prod-eu · 35%" (hosted, where totals are never unfiltered). A list still loading on a cluster says `Loading <type> from <cluster>…` in the empty state instead of "No <type>.", and that cluster's chip reads `loading <type>…` (warning tone, syncing dot) once the cluster itself has synced. Never a full-table spinner.
+- **Empty, loading, partial** states: an empty filtered result says what filter hid what. While a cluster is still syncing, its rows stream in and the toolbar shows "syncing prod-eu · 4,210 rows" (desktop) or "syncing prod-eu · 35%" (hosted, where totals are never unfiltered). A list still loading on a cluster says `Loading <type> from <cluster>…` in the empty state instead of `No <type>.`, and that cluster's chip reads `loading <type>…` (warning tone, syncing dot) once the cluster itself has synced. Never a full-table spinner.
 
 ### Command bar (k9s-style)
 
