@@ -5,6 +5,11 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Changed
+
+- With the object drawer open, `Esc` closes it and keeps your search; only `Esc` in the search field clears the search.
+- Opening another object while the drawer is open keeps the tab you were on (Logs, YAML, …) when that object has it.
+
 ## 0.8.0 — 2026-11-22
 
 ### Added

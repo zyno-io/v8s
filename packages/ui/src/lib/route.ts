@@ -86,6 +86,16 @@ export function drawerQuery(ref: Pick<ObjectRef, 'cluster' | 'namespace' | 'name
 
 const first = (v: LocationQuery[string]): string => (Array.isArray(v) ? (v[0] ?? '') : (v ?? '')) || '';
 
+/**
+ * The tab to keep when another object opens in an open drawer without asking for one: the current tab, if the new object's type
+ * has it (Logs stays Logs from pod to pod; a ReplicaSet opened from a pod's Shell tab falls back to Overview).
+ */
+export function carriedTab(query: LocationQuery, gvr: string): DrawerTab | undefined {
+    if (!first(query.c) || !first(query.n)) return undefined;
+    const tab = first(query.tab) as DrawerTab;
+    return tab && DRAWER_TABS.includes(tab) && tabsFor(gvr).includes(tab) ? tab : undefined;
+}
+
 export function parseDrawer(gvr: string | null, query: LocationQuery): DrawerTarget | null {
     if (!gvr) return null;
     const cluster = first(query.c);

@@ -51,7 +51,7 @@ Press `?` for the same list in the app.
 | `r`                   | Restart the focused workload, or the selected workloads (asks first)           |
 | `Ctrl+D`              | Delete the focused row, or the selected rows                                   |
 | `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys        |
-| `Esc`                 | Clear the filter, then the selection, then close the drawer                    |
+| `Esc`                 | Close the drawer; with no drawer, clear the filter, then the selection         |
 | `Ctrl+K` / `Cmd+K`    | Open the search palette                                                        |
 | `[`                   | Pin or unpin the sidebar                                                       |
 | `?`                   | Show the shortcut list                                                         |
@@ -60,7 +60,7 @@ Press `?` for the same list in the app.
 
 `l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).
 
-In a filter, `Enter` hands focus to the list, with the first row focused. `Esc` from the list clears the filter and keeps focus on the list; `Esc` again continues the order below. `Esc` works in order, so repeated presses unwind your view one layer at a time. Inside the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits. Apart from `Ctrl+D` and `Ctrl+K`, v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs (`Cmd+D` still bookmarks on macOS). Shortcuts are off while you type in a text field.
+In a filter, `Enter` hands focus to the list, with the first row focused. `Esc` from the list clears the filter and keeps focus on the list; `Esc` again continues the order below. `Esc` works in order, so repeated presses unwind your view one layer at a time. With the drawer open, `Esc` closes it and leaves your search as it is; only `Esc` in the search field itself clears the search (`/` still focuses it). Inside the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits. Apart from `Ctrl+D` and `Ctrl+K`, v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs (`Cmd+D` still bookmarks on macOS). Shortcuts are off while you type in a text field.
 
 ## The command bar
 
