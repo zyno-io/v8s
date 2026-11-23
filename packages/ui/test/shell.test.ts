@@ -4,6 +4,7 @@ import {
     ACCESSORY_KEYS,
     applyCtrl,
     connectBlocker,
+    connectNote,
     containerChoice,
     ctrlCode,
     debugParams,
@@ -42,7 +43,12 @@ describe('connectBlocker', () => {
     it('blocks others', () => {
         expect(connectBlocker(pod({ status: { phase: 'Pending' } }))).toMatch(/Pending/);
         expect(connectBlocker(null)).not.toBe('');
-        expect(connectBlocker(pod({ metadata: { deletionTimestamp: 'x' } }))).toMatch(/terminating/);
+    });
+    it('allows a terminating pod that is still running, with a note', () => {
+        const t = pod({ metadata: { deletionTimestamp: 'x' } });
+        expect(connectBlocker(t)).toBe('');
+        expect(connectNote(t)).toMatch(/terminating/);
+        expect(connectNote(pod())).toBe('');
     });
 });
 

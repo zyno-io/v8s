@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- You can open a shell in a terminating pod again (its containers usually still run, and that is often how you find out why it is stuck). The Shell tab notes that the shell ends when the containers stop.
+
 ## 0.8.0 — 2026-11-22
 
 ### Added
