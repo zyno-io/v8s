@@ -5,6 +5,15 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- YAML tab: a **Wrap** toggle for long lines, remembered per browser.
+- YAML tab: a **Pretty** toggle for ConfigMaps and Secrets. It indents JSON values (also double-encoded ones), shows multi-line values as readable blocks, and, for a revealed Secret, shows base64 values as text. It is remembered per browser.
+
+### Changed
+
+- Editing a masked Secret now reads **Reveal and edit**: it reveals the values first, so you never edit placeholders. With Pretty on, a revealed Secret opens in decoded form (`stringData`).
+
 ## 0.8.0 — 2026-11-22
 
 ### Added

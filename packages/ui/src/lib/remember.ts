@@ -19,6 +19,8 @@ export interface NamespaceEntry {
 export const KEY_SELECTION = 'v8s:selection';
 export const KEY_ROUTE = 'v8s:lastRoute';
 export const KEY_NAMESPACES = 'v8s:namespaces';
+export const KEY_YAML_WRAP = 'v8s:yamlWrap';
+export const KEY_YAML_PRETTY = 'v8s:yamlPretty';
 export const MAX_NAMESPACE_KEYS = 50;
 
 const sameSet = (a: readonly string[], b: readonly string[]): boolean => {
@@ -190,3 +192,7 @@ export function writeJson(key: string, value: unknown): void {
         // storage unavailable or full: the memory is a convenience
     }
 }
+
+/** A remembered on/off choice (default off); anything but a stored `true` is off. */
+export const readFlag = (key: string): boolean => readJson(key) === true;
+export const writeFlag = (key: string, on: boolean): void => writeJson(key, on);

@@ -415,6 +415,71 @@ async function main() {
             await page.getByTestId('drawer').waitFor();
         });
 
+        await step('yaml pane: Wrap and Pretty for a ConfigMap; Secret edit reveals first', async () => {
+            const openByName = async (n: string) => {
+                await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+                const input = page.getByTestId('palette-input');
+                await input.waitFor();
+                await input.fill(n);
+                await page.getByRole('option').filter({ hasText: n }).first().waitFor({ timeout: 10000 });
+                await input.press('Enter');
+                await page.getByTestId('drawer').waitFor();
+                await page.getByRole('tab', { name: 'YAML' }).click();
+                await page.locator('.cm-content').waitFor();
+            };
+            const pressed = (testid: string) => page.getByTestId(testid).getAttribute('aria-pressed');
+
+            await openByName('json-config');
+            assert.equal(await pressed('yaml-pretty'), 'false');
+            assert.match(await page.locator('.cm-content').innerText(), /"retries":3/);
+            await page.getByTestId('yaml-pretty').click();
+            await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('"retries": 3'), null, { timeout: 10000 });
+            const pretty = await page.locator('.cm-content').innerText();
+            assert.match(pretty, /settings\.json: \|-/);
+            assert.match(pretty, /app\.conf: \|\n/);
+            // Edit opens the raw YAML, with a hint
+            await page.getByTestId('edit-yaml').click();
+            await page.getByTestId('edit-hint').waitFor();
+            assert.match(await page.locator('.cm-content').innerText(), /"retries":3/);
+            await page.getByRole('button', { name: 'Discard' }).click();
+            // Wrap drives the editor's line wrapping, without recreating it
+            assert.equal(await page.locator('.cm-editor .cm-lineWrapping').count(), 0);
+            await page.getByTestId('yaml-wrap').click();
+            await page.locator('.cm-editor .cm-lineWrapping').waitFor();
+            assert.equal(await pressed('yaml-wrap'), 'true');
+            await page.getByTestId('yaml-wrap').click();
+            await page.waitForFunction(() => !document.querySelector('.cm-lineWrapping'));
+            await page.getByTestId('yaml-pretty').click();
+            await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('"retries":3'));
+            await page.getByTestId('drawer-close').click();
+
+            // Secrets are not in global search (names only come from lists): open it through the router by URL.
+            await page.evaluate(() => {
+                history.pushState(null, '', '/r/v1/secrets?c=prod-us&ns=team-0&n=json-secret&tab=yaml');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            });
+            await page.getByTestId('drawer').waitFor();
+            await page.locator('.cm-content').waitFor();
+            const edit = page.getByTestId('edit-yaml');
+            assert.equal((await edit.innerText()).trim(), 'Reveal and edit');
+            await edit.click();
+            await page.getByText('values revealed').waitFor({ timeout: 10000 });
+            await page.getByTestId('review').waitFor();
+            await page.getByRole('button', { name: 'Discard' }).click();
+            // Pretty on: a revealed Secret opens decoded (text in stringData), JSON still compact
+            await page.getByTestId('yaml-pretty').click();
+            await page.getByTestId('edit-yaml').click();
+            await page.getByTestId('edit-hint').waitFor();
+            const decoded = await page.locator('.cm-content').innerText();
+            assert.match(decoded, /stringData:/);
+            assert.match(decoded, /"password":"hunter2"/);
+            await page.getByRole('button', { name: 'Discard' }).click();
+            await page.getByTestId('yaml-pretty').click();
+            await page.getByTestId('mask').click();
+            await page.getByText('values masked').waitFor();
+            await page.getByTestId('drawer-close').click();
+        });
+
         // ---- pod usage (metrics.k8s.io through the fake agent) ----
         await step('pods: CPU/MEM usage shows; sorting %CPU/L desc orders numerically with n/a last; hover title says "requested"', async () => {
             await page.keyboard.press('Escape');

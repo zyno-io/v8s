@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ObjectPayload, ObjectRef } from '@v8s/client';
 
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
 import { getAgent } from '@/lib/agent.ts';
 import { errorText } from '@/lib/mutations.ts';
@@ -16,7 +16,7 @@ const payload = shallowRef<ObjectPayload | null>(null);
 const revealed = ref(false);
 const loading = ref(false);
 const error = ref('');
-const pane = ref<{ mode: string } | null>(null);
+const pane = ref<{ mode: string; startEdit(): Promise<void>; reloadLive(): Promise<void> } | null>(null);
 let seq = 0;
 
 async function load(reveal: boolean) {
@@ -61,6 +61,29 @@ watch(
     }
 );
 
+// "Reveal and edit": fetch the values, then open the editor on the revealed document. A failed reveal leaves the error shown and the view as it was.
+const opening = ref(false);
+async function revealAndEdit() {
+    if (opening.value) return;
+    opening.value = true;
+    try {
+        await load(true);
+        if (error.value || !revealed.value) return;
+        await nextTick(); // the pane gets the revealed payload before it opens the document
+        await pane.value?.startEdit();
+    } finally {
+        opening.value = false;
+    }
+}
+
+// Reload after a conflict whose server copy could not be revealed: reveal again, then let the pane reopen the document.
+async function revealReload() {
+    await load(true);
+    if (error.value || !revealed.value) return;
+    await nextTick();
+    await pane.value?.reloadLive();
+}
+
 const editing = () => !!pane.value && pane.value.mode !== 'view';
 </script>
 
@@ -84,11 +107,22 @@ const editing = () => !!pane.value && pane.value.mode !== 'view';
                 >
                     Reveal all
                 </button>
-                <button v-else class="btn sm" type="button" data-testid="mask" :disabled="loading || editing()" @click="load(false)">
+                <button v-else class="btn sm" type="button" data-testid="mask" :disabled="loading || opening || editing()" @click="load(false)">
                     Mask again
                 </button>
             </div>
-            <YamlPane ref="pane" :target="target" :payload="payload" :deleted="false" :frames="1" />
+            <YamlPane
+                ref="pane"
+                :target="target"
+                :payload="payload"
+                :deleted="false"
+                :frames="1"
+                :masked="!revealed"
+                @reveal-edit="revealAndEdit"
+                @reveal-reload="revealReload"
+                @synced="payload = $event"
+                @applied="load(revealed)"
+            />
         </template>
     </div>
 </template>
