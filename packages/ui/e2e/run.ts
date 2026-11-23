@@ -415,6 +415,23 @@ async function main() {
             await page.getByTestId('drawer').waitFor();
         });
 
+        await step('overview: clicking an owner opens it in the drawer', async () => {
+            await page.keyboard.press('Escape');
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            const first = page.locator('.scroller .row:not(.sk)').first();
+            await first.waitFor({ timeout: 30000 });
+            await first.locator('.name').click();
+            const drawer = page.getByTestId('drawer');
+            const owner = drawer.getByTestId('owner-link').first();
+            await owner.waitFor();
+            const ownerName = (await owner.innerText()).split('/').pop()?.trim() ?? '';
+            assert.ok(ownerName, 'owner link names its object');
+            await owner.click();
+            await drawer.getByRole('heading', { name: ownerName }).waitFor();
+            await page.keyboard.press('Escape');
+        });
+
         // ---- pod usage (metrics.k8s.io through the fake agent) ----
         await step('pods: CPU/MEM usage shows; sorting %CPU/L desc orders numerically with n/a last; hover title says "requested"', async () => {
             await page.keyboard.press('Escape');

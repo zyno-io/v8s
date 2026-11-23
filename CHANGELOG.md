@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- The owners on an object's Overview tab are links: click one to open it in the drawer, like `Shift+J`. The Related tab's **Open** now also finds a cluster-scoped owner (a Node owning a mirror pod).
+
 ## 0.8.0 — 2026-11-22
 
 ### Added
