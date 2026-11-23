@@ -108,7 +108,7 @@ Every projection drops `managedFields` and `kubectl.kubernetes.io/last-applied-c
 
 ### Cluster deselect and GC
 
-Deselecting a cluster starts a 10 s grace (accidental toggles are free), then stops all its watches, drops its stores, row handles, string dictionaries, and problem state, and, on desktop, calls `debug.FreeOSMemory()` when more than 100 MB was released so the RSS actually falls. Re-selecting is a cold start (WatchList makes that cheap for the API server). Elevating or reverting a cluster (`clusters.elevate`) is the same cold restart of that one cluster; the other clusters are untouched.
+Deselecting a cluster starts a 10 s grace (accidental toggles are free), then stops all its watches, drops its stores, row handles, string dictionaries, and problem state, and, on desktop, calls `debug.FreeOSMemory()` when more than 100 MB was released so the RSS actually falls. Re-selecting is a cold start (WatchList makes that cheap for the API server). Elevating or reverting a cluster (`clusters.elevate`) is the same cold restart of that one cluster; the other clusters are untouched. The new runner starts from the replaced runner's discovery (same cluster, checked by the link check) and refreshes it in the background, so open views re-list at once. A discovery that fails is logged (`discovery failed`, once per streak; `slow discovery` above 3 s) and, while a runner has none yet, retried after 1 s, doubling to 30 s. A generic (Table-mode) kind learns its columns from a one-row list, so its views work before its first full list finishes.
 
 ### Restricted users
 

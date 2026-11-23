@@ -264,7 +264,7 @@ func (m *Manager) Select(ids []string) (protocol.ClusterStates, error) {
 			}
 			continue
 		}
-		nr, err := m.startOn(id, id)
+		nr, err := m.startOn(id, id, nil, 0)
 		if err != nil {
 			m.log.Warn("cluster start failed", "cluster", id, "err", err)
 			nr = m.failed(id, id, err)
@@ -359,7 +359,7 @@ func (m *Manager) swapLocked(id string, old *runner, ctxID string) {
 	if m.problems != nil {
 		m.problems.Drop(id)
 	}
-	nr, err := m.startOn(id, ctxID)
+	nr, err := m.startOn(id, ctxID, old.disc.Load(), old.discGen.Load())
 	if err != nil {
 		m.log.Warn("cluster restart failed", "cluster", id, "context", ctxID, "err", err)
 		nr = m.failed(id, ctxID, err)
@@ -400,6 +400,7 @@ func (m *Manager) Elevate(id string, on bool, w string) (protocol.ClusterStates,
 	}
 	m.swapLocked(id, old, target)
 	m.mu.Unlock()
+	m.kick()   // the page sees the new identity and "connecting" at once, not after old.stop()
 	old.stop() // outside m.mu: the old discovery loop may be inside reconcileAll, which takes m.mu
 	m.dropHeld(id)
 	m.reconcileAll()
@@ -444,7 +445,10 @@ func (m *Manager) failed(id, ctxID string, err error) *runner {
 }
 
 // startOn starts ingest for cluster id running as context ctxID (id itself, or its write context while elevated).
-func (m *Manager) startOn(id, ctxID string) (*runner, error) {
+// seed, when set, is the replaced runner's discovery (same cluster, so still valid; discovery is not filtered by RBAC)
+// and seedGen its generation: the new runner starts with it so open views re-list at once instead of waiting for its
+// first discovery. discState is immutable once stored, so sharing it is safe; the new discovery loop refreshes it.
+func (m *Manager) startOn(id, ctxID string, seed *discState, seedGen uint64) (*runner, error) {
 	be, err := m.src.Backend(ctxID)
 	if err != nil {
 		return nil, err
@@ -463,6 +467,13 @@ func (m *Manager) startOn(id, ctxID string) (*runner, error) {
 	r.capStore = store.New()
 	_ = r.capStore.Replace(nil, "") // synced and empty until the first capacity scan
 	m.eng.AttachKind(id, protocol.CapacityGVR, r.capStore)
+	if seed != nil {
+		r.disc.Store(seed)
+		r.discGen.Store(seedGen)
+		if r.pe != nil {
+			r.pe.SetDiscovery(discGRs(seed.list))
+		}
+	}
 	r.usage = newUsageState(r) // before startTier0: the discovery loop kicks it
 	r.startTier0()
 	r.wg.Add(1)

@@ -220,20 +220,55 @@ func (r *runner) discoveryPeriod() time.Duration {
 	return min(r.m.DiscoveryEvery, r.m.DiscoveryFallbackEvery)
 }
 
+// discGRs is the set of group-resources a discovery result serves (the problems engine's availability input).
+func discGRs(res []disco.Resource) map[string]bool {
+	grs := make(map[string]bool, len(res))
+	for i := range res {
+		if !res[i].Placeholder() {
+			grs[problems.GR(res[i].GVR())] = true
+		}
+	}
+	return grs
+}
+
+// probeTimeout bounds the schema probe of a generic kind.
+const probeTimeout = 15 * time.Second
+
+// slowDiscovery is the duration above which a successful discovery is logged at Info.
+const slowDiscovery = 3 * time.Second
+
 func (r *runner) discoverLoop() {
 	defer r.wg.Done()
 	var sig uint64
 	var haveSig, followUp bool
+	if d := r.disc.Load(); d != nil { // seeded by startOn: an unchanged discovery must not bump the generation
+		sig, haveSig = discSig(d.list), true
+	}
+	fails := 0
 	for {
 		wait := r.discoveryPeriod()
+		began := time.Now()
 		res, err := r.be.Discover(r.ctx)
 		if r.ctx.Err() != nil {
 			return
 		}
+		took := time.Since(began).Round(time.Millisecond)
 		if err != nil {
-			r.m.log.Debug("discovery failed", "cluster", r.id, "err", err)
+			fails++
+			if fails == 1 { // one Warn per streak; the retries are Debug
+				r.m.log.Warn("discovery failed", "cluster", r.id, "context", r.ctxID, "took", took, "err", err)
+			} else {
+				r.m.log.Debug("discovery failed", "cluster", r.id, "context", r.ctxID, "took", took, "fails", fails, "err", err)
+			}
 			wait = min(wait, 30*time.Second)
+			if r.disc.Load() == nil { // views wait on it: retry quickly at first
+				wait = min(wait, time.Second<<min(fails-1, 5))
+			}
 		} else {
+			fails = 0
+			if took > slowDiscovery {
+				r.m.log.Info("slow discovery", "cluster", r.id, "context", r.ctxID, "took", took)
+			}
 			d := &discState{list: res, byG: make(map[string]*disco.Resource, len(res))}
 			for i := range d.list {
 				if !d.list[i].Placeholder() { // a group-version listed but not answering has no resource
@@ -246,13 +281,7 @@ func (r *runner) discoverLoop() {
 				r.discGen.Add(1)
 			}
 			if r.pe != nil {
-				grs := make(map[string]bool, len(res))
-				for i := range res {
-					if !res[i].Placeholder() {
-						grs[problems.GR(res[i].GVR())] = true
-					}
-				}
-				r.pe.SetDiscovery(grs)
+				r.pe.SetDiscovery(discGRs(res))
 			}
 			r.m.kick()
 			r.m.reconcileAll()
@@ -431,6 +460,17 @@ func (r *runner) startLocked(gvr string, tier0 bool) (*watchEntry, error) {
 		r.pe.Attach(gvr, w.st)
 	}
 	r.runLocked(w)
+	if spec != nil {
+		// A generic kind's schema otherwise arrives with the first page of its full list, which on a big kind
+		// (Helm release Secrets) can take long; one row is enough to serve views.
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			ctx, cancel := context.WithTimeout(r.ctx, probeTimeout)
+			defer cancel()
+			w.lw.ProbeSchema(ctx)
+		}()
+	}
 	if r.attached {
 		r.m.eng.AttachKind(r.id, gvr, w.st)
 	}
