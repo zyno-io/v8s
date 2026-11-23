@@ -8,12 +8,13 @@ import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutt
 import { tags as t } from '@lezer/highlight';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-const props = defineProps<{ initial: string; readOnly: boolean; label: string }>();
+const props = defineProps<{ initial: string; readOnly: boolean; label: string; wrap?: boolean }>();
 const emit = defineEmits<{ dirty: [dirty: boolean] }>();
 
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
 const editable = new Compartment();
+const wrapping = new Compartment();
 let base = props.initial;
 
 // Colours come from the design tokens, so the editor follows light/dark with no theme branching.
@@ -58,6 +59,7 @@ function make(doc: string) {
             syntaxHighlighting(highlight),
             theme,
             keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+            wrapping.of(props.wrap ? EditorView.lineWrapping : []),
             editable.of([EditorView.editable.of(!props.readOnly), EditorState.readOnly.of(props.readOnly)]),
             EditorView.contentAttributes.of({ 'aria-label': props.label, 'aria-multiline': 'true' }),
             EditorView.updateListener.of(u => {
@@ -88,6 +90,11 @@ watch(
 watch(
     () => props.readOnly,
     ro => view?.dispatch({ effects: editable.reconfigure([EditorView.editable.of(!ro), EditorState.readOnly.of(ro)]) })
+);
+
+watch(
+    () => !!props.wrap,
+    on => view?.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) })
 );
 
 defineExpose({

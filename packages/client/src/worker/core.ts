@@ -1,4 +1,14 @@
-import type { ClusterStates, DictAdd, Hello, JobFrame, Response, StreamOpenResult, ViewPatch, ViewSubscribeResult } from '../protocol.gen.ts';
+import type {
+    ClusterState,
+    ClusterStates,
+    DictAdd,
+    Hello,
+    JobFrame,
+    Response,
+    StreamOpenResult,
+    ViewPatch,
+    ViewSubscribeResult
+} from '../protocol.gen.ts';
 import type { Column, MainToWorker, ObjectFrameWire, Row, ViewQuery, Window, WorkerToMain } from '../types.ts';
 
 import {
@@ -32,6 +42,18 @@ export const RECONNECT_MAX_MS = 15_000;
 export const RECONNECT_ATTEMPT_MS = 10_000;
 /** After a reconnect's Hello the cluster states normally follow at once; views are resubscribed without them after this long. */
 export const STATES_WAIT_MS = 2000;
+
+/** Refusals a later cluster change can lift (elevation, selection, discovery): such views are subscribed again then. */
+const RETRYABLE = new Set(['forbidden', 'not_found', 'unavailable']);
+
+/** Phases in which the cluster's API answers: a view refused while it was down (a schema timeout) is retried when it comes back up. */
+const UP: ReadonlySet<string> = new Set(['syncing', 'ready', 'degraded']);
+/** What resolving a view depends on in the cluster states: which clusters, as which identity, with which discovered kinds, reachable or not. */
+export function identityKey(states: readonly ClusterState[]): string {
+    let k = '';
+    for (const s of states) k += s.id + '\u0000' + (s.elevated ? 1 : 0) + '\u0000' + (s.kinds ?? 0) + '\u0000' + (UP.has(s.phase) ? 1 : 0) + '\u0001';
+    return k;
+}
 
 /** Delay before reconnect attempt number `attempt` (0-based). `rand` is in [0, 1). Never above RECONNECT_MAX_MS. */
 export function backoffMs(attempt: number, rand: number): number {
@@ -83,6 +105,12 @@ interface View {
     early: ViewPatch[];
     timer: unknown;
     lastFlush: number;
+    /** The agent refused the last subscribe with a code a cluster change can lift: retried when the cluster identity changes. */
+    failed: boolean;
+    /** A view.subscribe is awaiting its response. */
+    inflight: boolean;
+    /** The page changed the query or window while a subscribe was in flight: re-sent once it is accepted. */
+    stale: boolean;
 }
 
 type Pending =
@@ -121,6 +149,8 @@ export class DataCore {
     private attemptTimer: unknown = null;
     /** The clusters the agent last reported live or this page last selected successfully: all the worker restores after a reconnect (never a merely pre-checked set). */
     private selected: string[] = [];
+    /** identityKey of the last cluster states, to tell an identity change from a mere progress frame. */
+    private statesKey = '';
     /** Reconnected, waiting for the agent's first cluster states before resubscribing views. */
     private awaitStates = false;
     private statesTimer: unknown = null;
@@ -180,6 +210,7 @@ export class DataCore {
                 this.views.set(msg.qid, view);
                 const rid = this.nextRid++;
                 this.pending.set(rid, { kind: 'subscribe', qid: msg.qid });
+                view.inflight = true;
                 this.sendRequest(rid, 'view.subscribe', {
                     qid: msg.qid,
                     gen: msg.gen,
@@ -278,6 +309,7 @@ export class DataCore {
 
     /** Records a view.update on the worker's copy: gen bump, and the query/window a resubscribe would need. */
     private noteUpdate(view: View, msg: { gen: number; query?: ViewQuery; window?: Window; usage?: boolean }): void {
+        if (view.inflight) view.stale = true;
         if (msg.gen > view.gen) {
             view.gen = msg.gen;
             // Anything computed for the old query must not reach the screen after the bump.
@@ -347,7 +379,10 @@ export class DataCore {
             ids: null,
             early: [],
             timer: null,
-            lastFlush: -Infinity
+            lastFlush: -Infinity,
+            failed: false,
+            inflight: false,
+            stale: false
         };
     }
 
@@ -396,9 +431,15 @@ export class DataCore {
             }
             case KindClusterState: {
                 const states = (f.payload as ClusterStates).states ?? [];
+                const key = identityKey(states);
+                const changed = key !== this.statesKey;
+                this.statesKey = key;
                 if (this.awaitStates) this.restore(states.length > 0);
-                // What the agent really has connected (this page may have loaded onto an agent another tab already connected).
-                else this.selected = states.map(s => s.id); // including none: another tab may have deselected everything
+                else {
+                    // What the agent really has connected (this page may have loaded onto an agent another tab already connected).
+                    this.selected = states.map(s => s.id); // including none: another tab may have deselected everything
+                    if (changed) this.retryRefused();
+                }
                 this.io.post({ t: 'clusterStates', states });
                 break;
             }
@@ -431,6 +472,9 @@ export class DataCore {
         view.ids = null;
         view.early = [];
         view.reset = true;
+        view.inflight = true;
+        view.failed = false;
+        view.stale = false;
         // Wire ids restart on the new connection, so an anchorId from the old one would point at a different row (or none):
         // ask for the same absolute range the last patch covered instead.
         const window = { offset: view.window.anchorId ? view.offset : view.window.offset, limit: view.window.limit };
@@ -438,6 +482,27 @@ export class DataCore {
         this.pending.set(rid, { kind: 'subscribe', qid: view.qid });
         // The usage flag is part of the subscription: without it a reconnect would silently drop the metrics columns.
         this.sendRequest(rid, 'view.subscribe', { qid: view.qid, gen: view.gen, query: view.query, window, ...(view.usage ? { usage: true } : {}) });
+    }
+
+    /** Subscribes again every view the agent refused, now that the clusters it resolves against changed. A refused subscribe leaves no subscription, so the qid is free. */
+    private retryRefused(): void {
+        for (const view of this.views.values()) {
+            if (!view.failed || view.inflight) continue;
+            view.failed = false;
+            view.inflight = true;
+            view.stale = false;
+            // The page shows Loading… instead of the stale refusal.
+            this.io.post({ t: 'columns', qid: view.qid, columns: null });
+            const rid = this.nextRid++;
+            this.pending.set(rid, { kind: 'subscribe', qid: view.qid });
+            this.sendRequest(rid, 'view.subscribe', {
+                qid: view.qid,
+                gen: view.gen,
+                query: view.query,
+                window: { offset: view.window.offset, limit: view.window.limit },
+                ...(view.usage ? { usage: true } : {})
+            });
+        }
     }
 
     /** Reselects this page's clusters if none are live, then resubscribes every view in order. */
@@ -506,7 +571,11 @@ export class DataCore {
             }
         }
         this.pending.clear();
-        for (const v of this.views.values()) this.dropView(v);
+        for (const v of this.views.values()) {
+            this.dropView(v);
+            v.inflight = false;
+            v.stale = false;
+        }
         if (this.stopped || !this.everReady) {
             this.reconnecting = false;
             this.clearTimers();
@@ -591,7 +660,10 @@ export class DataCore {
         } else if (p.kind === 'subscribe') {
             const view = this.views.get(p.qid);
             if (!view) return;
+            view.inflight = false;
             if (res.error || !res.result) {
+                view.failed = !!res.error && RETRYABLE.has(res.error.code);
+                view.stale = false;
                 this.io.post({
                     t: 'columns',
                     qid: p.qid,
@@ -604,10 +676,18 @@ export class DataCore {
             view.columns = columns;
             view.dictCols = [];
             columns.forEach((c, i) => c.type === ColDict && view.dictCols.push(i + 2));
+            view.failed = false;
             this.io.post({ t: 'columns', qid: p.qid, columns });
             const early = view.early;
             view.early = [];
             for (const patch of early) this.applyPatch(view, patch);
+            if (view.stale) {
+                // The page moved on while the subscribe resolved; updates sent meanwhile may have been refused (not_found).
+                view.stale = false;
+                const rid = this.nextRid++;
+                this.pending.set(rid, { kind: 'ignore' });
+                this.sendRequest(rid, 'view.update', { qid: view.qid, gen: view.gen, query: view.query, window: view.window, usage: view.usage });
+            }
         }
     }
 

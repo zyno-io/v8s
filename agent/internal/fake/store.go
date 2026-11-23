@@ -220,6 +220,8 @@ type kindAPI struct {
 	d   *kindDef
 	mod *ingest.Module
 	ns  string // narrows list and watch to one namespace
+	// delay holds each Table-mode LIST (Config.ListDelay).
+	delay time.Duration
 }
 
 // InNamespace implements ingest.Namespacer.
@@ -277,6 +279,15 @@ func (a *kindAPI) List(ctx context.Context, opts metav1.ListOptions) (runtime.Ob
 	sel, err := parseSelector(opts.FieldSelector)
 	if err != nil {
 		return nil, err
+	}
+	if a.table() && a.delay > 0 && opts.Limit != 1 { // the schema probe (Limit 1) is one row: it stays fast
+		t := time.NewTimer(a.delay)
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			t.Stop()
+			return nil, ctx.Err()
+		}
 	}
 	a.w.mu.Lock()
 	defer a.w.mu.Unlock()
@@ -807,6 +818,8 @@ type Backend struct {
 	rate  int // synthetic log lines per second
 	// noMetrics: metrics.k8s.io is not installed (not in discovery; the lists answer NotFound).
 	noMetrics bool
+	// listDelay and discDelay slow Table-mode LISTs and discovery (fake options listdelay, discdelay).
+	listDelay, discDelay time.Duration
 }
 
 var _ kube.Backend = (*Backend)(nil)
@@ -829,10 +842,19 @@ func (b *Backend) API(gvr string, m *ingest.Module) (ingest.API, error) {
 	if b.deny && gvr == "v1/secrets" { // the rbac=1 read context cannot read Secrets; its admin context can
 		return deniedAPI{err: apierrors.NewForbidden(schemaGR(gvr), "", errors.New("RBAC: this identity cannot list secrets on "+b.c.name))}, nil
 	}
-	return &kindAPI{w: b.w, d: d, mod: m}, nil
+	return &kindAPI{w: b.w, d: d, mod: m, delay: b.listDelay}, nil
 }
 
 func (b *Backend) Discover(ctx context.Context) ([]disco.Resource, error) {
+	if b.discDelay > 0 {
+		t := time.NewTimer(b.discDelay)
+		select {
+		case <-t.C:
+		case <-ctx.Done():
+			t.Stop()
+			return nil, ctx.Err()
+		}
+	}
 	d := Discovery()
 	if b.noMetrics {
 		d = slices.DeleteFunc(d, func(r disco.Resource) bool { return r.Group == "metrics.k8s.io" })

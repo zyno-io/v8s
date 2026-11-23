@@ -131,6 +131,26 @@ func (l *ListerWatcher) tableModule(t *TableResult) (*Module, []int) {
 	return l.Mod, l.mapping
 }
 
+// ProbeSchema learns a Table-mode kind's schema from a one-row LIST, so the kind can be served (views, columns)
+// after one round trip instead of after the first full paged list finishes. It only runs for a generic kind whose
+// module is not known yet and does nothing else: no hooks fire and an error is left to the reflector's own list,
+// which reports it.
+func (l *ListerWatcher) ProbeSchema(ctx context.Context) {
+	l.mu.Lock()
+	need := l.Mod == nil && l.Generic != nil
+	l.mu.Unlock()
+	if !need {
+		return
+	}
+	obj, err := l.API.List(ctx, l.tweak(metav1.ListOptions{Limit: 1}))
+	if err != nil {
+		return
+	}
+	if t, ok := obj.(*TableResult); ok {
+		l.tableModule(t)
+	}
+}
+
 func (l *ListerWatcher) tweak(opts metav1.ListOptions) metav1.ListOptions {
 	if l.Tweak != nil {
 		l.Tweak(&opts)

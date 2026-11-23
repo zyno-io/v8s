@@ -52,8 +52,9 @@ function saveWidth(key: string, width: number) {
             <span class="muted count" role="status">{{ formatCount(handle.total.value) }} {{ title.toLowerCase() }}</span>
         </div>
         <div class="card table-card">
-            <div v-if="unavailable" class="unavail" role="status">
-                <p>None of the selected clusters serves <b>{{ title }}</b>.</p>
+            <div v-if="unavailable" class="unavail" role="status" data-testid="unavailable">
+                <p v-if="handle.error.value?.code === 'forbidden'">You are not allowed to list <b>{{ title }}</b> on the selected clusters.</p>
+                <p v-else>None of the selected clusters serves <b>{{ title }}</b>.</p>
             </div>
             <ResourceTable
                 v-else

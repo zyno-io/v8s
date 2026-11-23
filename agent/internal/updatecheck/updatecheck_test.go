@@ -28,7 +28,7 @@ func TestCheckable(t *testing.T) {
 	}
 }
 
-// gh is a fake GitHub: it records requests and serves a scripted tag.
+// gh is a fake v8s.io: it records requests and serves a scripted release.json.
 type gh struct {
 	*httptest.Server
 	mu    sync.Mutex
@@ -47,7 +47,7 @@ func newGH(t *testing.T, tag string) *gh {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		g.reqs = append(g.reqs, r)
-		if r.URL.Path != "/repos/zyno-io/v8s/releases/latest" {
+		if r.URL.Path != "/release.json" {
 			http.NotFound(w, r)
 			return
 		}
@@ -64,7 +64,7 @@ func newGH(t *testing.T, tag string) *gh {
 			_, _ = w.Write([]byte(g.body))
 			return
 		}
-		_, _ = w.Write([]byte(`{"tag_name":"` + g.tag + `","html_url":"https://evil.example/x"}`))
+		_, _ = w.Write([]byte(`{"version":"` + g.tag + `","url":"https://evil.example/x"}`))
 	}))
 	t.Cleanup(g.Close)
 	return g
@@ -73,7 +73,7 @@ func newGH(t *testing.T, tag string) *gh {
 func (g *gh) set(f func()) { g.mu.Lock(); f(); g.mu.Unlock() }
 
 func mk(g *gh, cur string, mut func(*Options)) *Checker {
-	o := Options{Current: cur, API: g.URL, RetryMin: time.Millisecond, Interval: time.Hour}
+	o := Options{Current: cur, URL: g.URL + "/release.json", RetryMin: time.Millisecond, Interval: time.Hour}
 	if mut != nil {
 		mut(&o)
 	}
@@ -116,7 +116,7 @@ func TestRequestHeadersAndETag(t *testing.T) {
 		t.Fatalf("%d requests", len(g.reqs))
 	}
 	h := g.reqs[0].Header
-	if h.Get("Accept") != "application/vnd.github+json" || h.Get("X-GitHub-Api-Version") != "2022-11-28" || h.Get("User-Agent") != "v8s" {
+	if h.Get("Accept") != "" || h.Get("X-GitHub-Api-Version") != "" || h.Get("User-Agent") != "v8s" {
 		t.Errorf("headers: %v", h)
 	}
 	if h.Get("If-None-Match") != "" || g.reqs[1].Header.Get("If-None-Match") != `"e1"` {
@@ -136,7 +136,7 @@ func TestFailuresGiveEmptyStatusAndBackOff(t *testing.T) {
 	}))
 	defer slow.Close()
 	big := newGH(t, "")
-	big.body = `{"tag_name":"0.5.0","pad":"` + strings.Repeat("x", 2<<20) + `"}`
+	big.body = `{"version":"0.5.0","pad":"` + strings.Repeat("x", 2<<20) + `"}`
 	cases := map[string]*gh{"403": newGH(t, ""), "500": newGH(t, ""), "404": newGH(t, "")}
 	cases["403"].code, cases["500"].code, cases["404"].code = 403, 500, 404
 	for _, tag := range []string{"latest", "v1.2", "v0.5.0-rc1"} {
@@ -153,20 +153,24 @@ func TestFailuresGiveEmptyStatusAndBackOff(t *testing.T) {
 			t.Errorf("%s: status %+v", name, st)
 		}
 	}
+	// defaults
+	if d := New(Options{Current: "0.4.0"}); d.o.Interval != 15*time.Minute || d.o.RetryMin != 5*time.Minute || d.o.URL != "https://v8s.io/release.json" {
+		t.Errorf("defaults: %+v", d.o)
+	}
 	// timeout
-	chk := New(Options{Current: "0.4.0", API: slow.URL, RetryMin: time.Millisecond, HTTP: &http.Client{Timeout: 20 * time.Millisecond}})
+	chk := New(Options{Current: "0.4.0", URL: slow.URL, RetryMin: time.Millisecond, HTTP: &http.Client{Timeout: 20 * time.Millisecond}})
 	if d := chk.check(context.Background()); d != time.Millisecond {
 		t.Errorf("timeout retry %v", d)
 	}
 	// backoff doubles to the cap
-	b := New(Options{Current: "0.4.0", RetryMin: time.Hour, Interval: 24 * time.Hour})
+	b := New(Options{Current: "0.4.0", RetryMin: time.Minute, Interval: 24 * time.Minute})
 	var got []time.Duration
 	for n := 1; n <= 7; n++ {
 		got = append(got, b.backoff(n))
 	}
 	want := []time.Duration{1, 2, 4, 8, 16, 24, 24}
 	for i := range want {
-		if got[i] != want[i]*time.Hour {
+		if got[i] != want[i]*time.Minute {
 			t.Fatalf("backoff %v", got)
 		}
 	}
@@ -174,7 +178,7 @@ func TestFailuresGiveEmptyStatusAndBackOff(t *testing.T) {
 
 func TestOversizedBodyIsFailure(t *testing.T) {
 	g := newGH(t, "")
-	g.body = strings.Repeat(" ", 2<<20) + `{"tag_name":"0.5.0"}`
+	g.body = strings.Repeat(" ", 2<<20) + `{"version":"0.5.0"}`
 	chk := mk(g, "0.4.0", nil)
 	chk.check(context.Background())
 	if chk.status.Latest != "" || chk.failures != 1 {
@@ -182,7 +186,7 @@ func TestOversizedBodyIsFailure(t *testing.T) {
 	}
 }
 
-func TestHTMLURLIgnored(t *testing.T) {
+func TestJSONURLIgnored(t *testing.T) {
 	g := newGH(t, "0.5.0")
 	chk := mk(g, "0.4.0", nil)
 	chk.check(context.Background())
@@ -203,7 +207,7 @@ func TestCache(t *testing.T) {
 	}
 	// fresh: no request, Status immediate (Run not even started)
 	g2 := newGH(t, "0.6.0")
-	fresh := New(Options{Current: "0.4.0", API: g2.URL, CachePath: path, Now: func() time.Time { return now.Add(time.Hour) }})
+	fresh := New(Options{Current: "0.4.0", URL: g2.URL + "/release.json", CachePath: path, Now: func() time.Time { return now.Add(5 * time.Minute) }})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if st := fresh.Status(ctx); st.Latest != "0.5.0" {
@@ -212,8 +216,8 @@ func TestCache(t *testing.T) {
 	if g2.count.Load() != 0 {
 		t.Fatal("fresh cache made a request")
 	}
-	// stale: requests on Run
-	stale := New(Options{Current: "0.4.0", API: g2.URL, CachePath: path, Now: func() time.Time { return now.Add(48 * time.Hour) }})
+	// stale (older than the 15m interval): requests on Run
+	stale := New(Options{Current: "0.4.0", URL: g2.URL + "/release.json", CachePath: path, Now: func() time.Time { return now.Add(48 * time.Hour) }})
 	rctx, rcancel := context.WithCancel(context.Background())
 	go stale.Run(rctx)
 	if st := stale.Status(ctx); st.Latest != "0.6.0" || g2.count.Load() != 1 {
@@ -224,7 +228,7 @@ func TestCache(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{nope"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cc := New(Options{Current: "0.4.0", API: g2.URL, CachePath: path})
+	cc := New(Options{Current: "0.4.0", URL: g2.URL + "/release.json", CachePath: path})
 	cctx, ccancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer ccancel()
 	if st := cc.Status(cctx); st.Latest != "" { // no Run: not answered, ctx ends
@@ -236,10 +240,10 @@ func TestStatusWaitsForFirstCheck(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-release
-		_, _ = w.Write([]byte(`{"tag_name":"0.5.0"}`))
+		_, _ = w.Write([]byte(`{"version":"0.5.0"}`))
 	}))
 	defer srv.Close()
-	chk := New(Options{Current: "0.4.0", API: srv.URL, Interval: time.Hour})
+	chk := New(Options{Current: "0.4.0", URL: srv.URL, Interval: time.Hour})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go chk.Run(ctx)

@@ -37,6 +37,11 @@ type Config struct {
 	RBAC bool
 	// NoMetrics removes metrics.k8s.io from discovery (and answers NotFound), for the metrics-server-absent state.
 	NoMetrics bool
+	// ListDelay delays every Table-mode LIST of more than one row (ConfigMaps, Secrets, StorageClasses…; not the
+	// mode-B custom resources, and not the one-row schema probe), like a slow API server.
+	ListDelay time.Duration
+	// DiscoveryDelay delays every discovery call.
+	DiscoveryDelay time.Duration
 }
 
 // ParseConfig parses "clusters=3,pods=50000,churn=200".
@@ -64,6 +69,10 @@ func ParseConfig(s string) (Config, error) {
 			c.LogRate = n
 		case "metrics":
 			c.NoMetrics = n == 0
+		case "listdelay":
+			c.ListDelay = time.Duration(n) * time.Millisecond
+		case "discdelay":
+			c.DiscoveryDelay = time.Duration(n) * time.Millisecond
 		default:
 			return c, fmt.Errorf("unknown --fake option %q", k)
 		}
@@ -140,7 +149,7 @@ func (s *Source) Backend(id string) (kube.Backend, error) {
 			s.worlds[base] = w
 		}
 		return &Backend{c: c, w: w, admin: admin, deny: s.cfg.RBAC && i == 1 && !admin, dyn: &dynClient{w: w, c: c}, rate: s.cfg.LogRate,
-			noMetrics: s.cfg.NoMetrics}, nil
+			noMetrics: s.cfg.NoMetrics, listDelay: s.cfg.ListDelay, discDelay: s.cfg.DiscoveryDelay}, nil
 	}
 	return nil, fmt.Errorf("unknown fake cluster %q", id)
 }

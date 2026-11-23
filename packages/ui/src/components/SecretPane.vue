@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ObjectPayload, ObjectRef } from '@v8s/client';
 
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 
 import { getAgent } from '@/lib/agent.ts';
 import { errorText } from '@/lib/mutations.ts';
@@ -16,7 +16,7 @@ const payload = shallowRef<ObjectPayload | null>(null);
 const revealed = ref(false);
 const loading = ref(false);
 const error = ref('');
-const pane = ref<{ mode: string } | null>(null);
+const pane = ref<{ mode: string; startEdit(): Promise<void>; reloadLive(): Promise<void> } | null>(null);
 let seq = 0;
 
 async function load(reveal: boolean) {
@@ -61,6 +61,29 @@ watch(
     }
 );
 
+// "Reveal and edit": fetch the values, then open the editor on the revealed document. A failed reveal leaves the error shown and the view as it was.
+const opening = ref(false);
+async function revealAndEdit() {
+    if (opening.value) return;
+    opening.value = true;
+    try {
+        await load(true);
+        if (error.value || !revealed.value) return;
+        await nextTick(); // the pane gets the revealed payload before it opens the document
+        await pane.value?.startEdit();
+    } finally {
+        opening.value = false;
+    }
+}
+
+// Reload after a conflict whose server copy could not be revealed: reveal again, then let the pane reopen the document.
+async function revealReload() {
+    await load(true);
+    if (error.value || !revealed.value) return;
+    await nextTick();
+    await pane.value?.reloadLive();
+}
+
 const editing = () => !!pane.value && pane.value.mode !== 'view';
 </script>
 
@@ -69,26 +92,39 @@ const editing = () => !!pane.value && pane.value.mode !== 'view';
         <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
         <p v-if="loading && !payload" class="muted" role="status">Loading…</p>
         <template v-if="payload">
-            <div class="bar">
-                <span v-if="revealed" class="tag warning" role="status">values revealed</span>
-                <span v-else class="tag" role="status">values masked</span>
-                <div class="grow"></div>
-                <button
-                    v-if="!revealed"
-                    class="btn sm"
-                    type="button"
-                    data-testid="reveal"
-                    :disabled="loading || editing()"
-                    :title="editing() ? 'Finish or discard your edit first' : 'Fetch the Secret again with its values'"
-                    @click="load(true)"
-                >
-                    Reveal all
-                </button>
-                <button v-else class="btn sm" type="button" data-testid="mask" :disabled="loading || editing()" @click="load(false)">
-                    Mask again
-                </button>
-            </div>
-            <YamlPane ref="pane" :target="target" :payload="payload" :deleted="false" :frames="1" />
+            <YamlPane
+                ref="pane"
+                :target="target"
+                :payload="payload"
+                :deleted="false"
+                :frames="1"
+                :masked="!revealed"
+                @reveal-edit="revealAndEdit"
+                @reveal-reload="revealReload"
+                @synced="payload = $event"
+                @applied="load(revealed)"
+            >
+                <template #status>
+                    <span v-if="revealed" class="tag warning" role="status" title="The values were fetched; Mask drops them">values revealed</span>
+                    <span v-else class="tag" role="status" title="Reveal fetches the values; with Decoded on they show as text">values masked</span>
+                </template>
+                <template #actions>
+                    <button
+                        v-if="!revealed"
+                        class="btn sm"
+                        type="button"
+                        data-testid="reveal"
+                        :disabled="loading || editing()"
+                        :title="editing() ? 'Finish or discard your edit first' : 'Fetch the Secret again with its values'"
+                        @click="load(true)"
+                    >
+                        Reveal
+                    </button>
+                    <button v-else class="btn sm" type="button" data-testid="mask" :disabled="loading || opening || editing()" @click="load(false)">
+                        Mask
+                    </button>
+                </template>
+            </YamlPane>
         </template>
     </div>
 </template>
@@ -100,10 +136,5 @@ const editing = () => !!pane.value && pane.value.mode !== 'view';
     gap: 10px;
     min-height: 0;
     flex: 1 1 0;
-}
-.bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
 }
 </style>

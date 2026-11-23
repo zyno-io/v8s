@@ -230,7 +230,7 @@ func (s *Service) DryRun(ctx context.Context, p protocol.ObjectDryRunParams) (pr
 		if merr := s.unmask(wctx, p.Ref.Cluster, t, live); merr != nil {
 			return res, merr
 		}
-		res.Conflicts = conflictsFor(live, t.obj.Object)
+		res.Conflicts = conflictsFor(live, foldStringData(t.obj.Object))
 		t.obj.SetResourceVersion(live.GetResourceVersion())
 		wcid, c, viaWrite, err := s.route(ctx, p.Ref.Cluster, "update", t.gvr, t.ns, t.name)
 		if err != nil {

@@ -551,6 +551,12 @@ export interface ClusterState {
    * (clusters.elevate) until reverted, stopped after deselection, or the agent restarts. Not persisted.
    */
   elevated?: boolean;
+  /**
+   * Loading lists the kinds open views wait for on this cluster: a watch a view holds whose first list has not
+   * finished (rows still arriving), and, until the cluster's first discovery, a kind an open view asks for that it
+   * cannot place yet. A refused (Forbidden, NotFound) or parked watch is not loading. Sorted; omitted when empty.
+   */
+  loading?: string[];
 }
 export interface ClusterStates {
   states: ClusterState[];
@@ -951,7 +957,7 @@ export interface SearchParams {
 }
 /**
  * UpdateStatus answers update.status: the newest stable v8s release when it is newer than this agent. The agent
- * checks GitHub itself; the request only waits on the network for this process's first check (≤10 s). Empty when
+ * checks v8s.io/release.json itself; the request only waits on the network for this process's first check (≤10 s). Empty when
  * this build is current, the check is off, this is a development/branch build, or no check has succeeded yet.
  */
 export interface UpdateStatus {

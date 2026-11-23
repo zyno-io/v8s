@@ -11,7 +11,7 @@ vi.mock('../src/lib/agent.ts', () => ({
 const clearAccessCache = vi.fn();
 vi.mock('../src/lib/access.ts', () => ({ clearAccessCache: () => clearAccessCache() }));
 
-import { elevateItem } from '../src/lib/elevate.ts';
+import { elevateItem, switchingWord } from '../src/lib/elevate.ts';
 import { useClustersStore } from '../src/stores/clusters.ts';
 import { useUiStore } from '../src/stores/ui.ts';
 
@@ -96,5 +96,48 @@ describe('cluster tag tone', () => {
         expect(c.tagTone('prod')).toBe('');
         clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
         expect(c.tagTone('prod')).toBe('warning');
+    });
+});
+
+describe('switchingWord', () => {
+    it('is empty without a request or once the agent reports the target', () => {
+        expect(switchingWord(undefined, false)).toBe('');
+        expect(switchingWord(true, true)).toBe('');
+        expect(switchingWord(false, false)).toBe('');
+    });
+    it('names the direction while the state has not flipped', () => {
+        expect(switchingWord(true, false)).toBe('elevating');
+        expect(switchingWord(false, true)).toBe('reverting');
+    });
+});
+
+describe('clusters store switching', () => {
+    it('is elevating while the RPC is pending and ends when the state reports elevated', async () => {
+        const c = useClustersStore();
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0 }];
+        let release!: () => void;
+        elevateCluster.mockReturnValue(new Promise<void>(r => (release = r)));
+        const p = c.setElevated('prod', true);
+        expect(c.elevating.get('prod')).toBe(true);
+        expect(c.switching('prod')).toBe('elevating');
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
+        expect(c.switching('prod')).toBe('');
+        release();
+        await p;
+        expect(c.switching('prod')).toBe('');
+    });
+
+    it('is reverting while the RPC is pending and ends when the state reports not elevated', async () => {
+        const c = useClustersStore();
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0, elevated: true }];
+        let release!: () => void;
+        elevateCluster.mockReturnValue(new Promise<void>(r => (release = r)));
+        const p = c.setElevated('prod', false);
+        expect(c.elevating.get('prod')).toBe(false);
+        expect(c.switching('prod')).toBe('reverting');
+        clusterStates.value = [{ id: 'prod', phase: 'ready', synced: 0 }];
+        expect(c.switching('prod')).toBe('');
+        release();
+        await p;
     });
 });

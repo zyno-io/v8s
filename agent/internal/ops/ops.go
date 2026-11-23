@@ -304,8 +304,17 @@ func (s *Service) checkLink(ctx context.Context, cluster, wctx string, rc, wc ku
 		return nil
 	}
 	s.mu.Unlock()
-	ru, rerr := kubeSystemUID(ctx, rc)
-	wu, werr := kubeSystemUID(ctx, wc)
+	// Two independent round trips (often through a gateway): run them together.
+	var ru, wu string
+	var rerr, werr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		wu, werr = kubeSystemUID(ctx, wc)
+	}()
+	ru, rerr = kubeSystemUID(ctx, rc)
+	wg.Wait()
 	if rerr != nil || werr != nil {
 		return nil
 	}
