@@ -5,6 +5,17 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- Namespace keys, k9s style: `0` shows all namespaces, `1`–`9` switch to the 9 most recently used namespace sets. A set is
+  remembered when you name namespaces in a command or close the namespace menu after changing it; the keys themselves never
+  reorder the list, so `1` / `2` flip between two sets. Kept per set of connected clusters.
+- `:<type>` takes namespaces the way `:ns` does: `:po a,b`, `:po pay*`, and `:po *` for all namespaces.
+
+### Changed
+
+- `:ns *` clears the namespace filter (like `:ns all`) instead of selecting every namespace one by one.
+
 ## 0.9.0 — 2026-11-23
 
 ### Added

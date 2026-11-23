@@ -83,17 +83,17 @@ Typing `:` anywhere opens a one-line command bar at the top of the content (Floa
 | `:ctx <name> [<name>…]` | select exactly these clusters (names or groups; completes from contexts and groups) |
 | `:ctx +<name>` / `:ctx -<name>` | add or remove one cluster from the selection |
 | `:<type>` | open a resource type by plural, kind, or short name (`:pods`, `:po`, `:deploy`, `:svc`, `:hr`, `:ks`); CRDs complete from discovery |
-| `:<type> <ns>` | open the type filtered to a namespace (`:po payments`) |
+| `:<type> <ns>[,<ns>…]` / `:<type> *` | open the type filtered to namespaces, `:ns`-style (`:po payments`, `:po pay*`), or across all of them |
 | `:<type> <ns>/<name>` | open one object's detail |
 | `:ip <address\|cidr\|range>` | search objects by IP in the palette (`:ip 10.0.0.5`, `:ip 10.0.0.0/16`) |
 | `:<type> <ip\|cidr>` | open the type filtered by address (`:po 10.42.`, `:svc 10.96.0.0/12`); kinds with IPs only |
-| `:ns <ns>[,<ns>…]` / `:ns all` | set or clear the namespace filter on the current view; `*` patterns (`pay*`) expand against the known namespaces |
+| `:ns <ns>[,<ns>…]` / `:ns all` / `:ns *` | set or clear the namespace filter on the current view; `*` patterns (`pay*`) expand against the known namespaces |
 | `:ns +<ns>` / `:ns -<ns>` | add namespaces to, or remove them from, the current view's filter (comma lists and `*` patterns; `-` completes and matches from the filter) |
 | `:problems` (`:pb`) | open Problems |
 | `:star` / `:unstar` | star or unstar the current type |
 | `:q` / `Esc` | close the bar |
 
-Also, outside the bar: `/` focuses the filter, `?` shows every shortcut, `Esc` closes the drawer first (unless focus is in the filter, where it clears the filter), then clears the filter, then the selection, and `Ctrl-a`-style shortcuts are avoided so browser and OS shortcuts keep working. Completion is prefix-then-fuzzy over commands, kinds, namespaces (from the agent's per-cluster namespace index), clusters, and groups. Unknown commands say so inline; they never navigate somewhere unexpected.
+Also, outside the bar: `0` clears the namespace filter and `1`–`9` apply the 9 most recently used namespace sets (k9s style; see `lib/recent-namespaces.ts` for what records one), `/` focuses the filter, `?` shows every shortcut, `Esc` closes the drawer first (unless focus is in the filter, where it clears the filter), then clears the filter, then the selection, and `Ctrl-a`-style shortcuts are avoided so browser and OS shortcuts keep working. Completion is prefix-then-fuzzy over commands, kinds, namespaces (from the agent's per-cluster namespace index), clusters, and groups. Unknown commands say so inline; they never navigate somewhere unexpected.
 
 ### Filter bar
 

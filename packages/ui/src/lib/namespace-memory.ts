@@ -5,6 +5,7 @@ import { useTableStore } from '@/stores/table.ts';
 
 import type { NamespaceFilters } from './remember.ts';
 
+import { hasStoredRecent, moveStoredRecent, setRecentKey } from './recent-namespaces.ts';
 import { connectionKey, KEY_NAMESPACES, moveEntry, parseEntries, readJson, setKindFilter, touchEntry, upsertEntry, writeJson } from './remember.ts';
 
 let installed = false;
@@ -44,6 +45,7 @@ export function installNamespaceMemory(): void {
             const sameSet = !!currentIds && i === currentIds;
             current = k;
             currentIds = i;
+            setRecentKey(k);
             if (!k) return;
             if (sameSet && prev && prev !== k) {
                 // Same clusters, new name: a group was created, renamed or deleted, its members were edited, or links changed. The
@@ -52,10 +54,12 @@ export function installNamespaceMemory(): void {
                 const ns = saved(prev) ?? saved(k);
                 const prevGroupLives = prev.startsWith('g:') && Object.hasOwn(clusters.groupMap, prev.slice(2));
                 writeJson(KEY_NAMESPACES, prevGroupLives ? upsertEntry(entries(), k, ns) : moveEntry(entries(), prev, k, ns));
+                moveStoredRecent(prev, k, prevGroupLives);
                 return;
             }
             // A group seen for the first time starts from what was saved for its clusters as a plain set (`i` is that key).
             table.applyNamespaceFilters(saved(k) ?? (k.startsWith('g:') ? saved(i) : null) ?? {});
+            if (k.startsWith('g:') && !hasStoredRecent(k)) moveStoredRecent(i, k, true);
             writeJson(KEY_NAMESPACES, touchEntry(entries(), k));
         },
         { immediate: true }

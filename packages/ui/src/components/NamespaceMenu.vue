@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 import SelectedChips from '@/components/SelectedChips.vue';
 import { getNamespacesView } from '@/lib/agent.ts';
 import { namespaceNames } from '@/lib/namespaces.ts';
+import { recordRecentNamespaces, sameSet } from '@/lib/recent-namespaces.ts';
 import { useTableStore } from '@/stores/table.ts';
 
 const props = defineProps<{ gvr: string }>();
@@ -37,17 +38,26 @@ watch(
     v => v >= 0 && readNamespaces()
 );
 
+// The filter when the menu opened: closing it after a change makes the new set the most recent (keys 1–9), once, not per click.
+let atOpen: readonly string[] = [];
+function dismissed() {
+    const now = ui.value.namespaces;
+    if (now.length && !sameSet(now, atOpen)) recordRecentNamespaces(now);
+}
+onBeforeUnmount(() => open.value && dismissed());
+
 async function toggleMenu() {
-    open.value = !open.value;
-    if (open.value) {
-        readNamespaces();
-        q.value = '';
-        await nextTick();
-        searchEl.value?.focus();
-    }
+    if (open.value) return close();
+    open.value = true;
+    atOpen = [...ui.value.namespaces];
+    readNamespaces();
+    q.value = '';
+    await nextTick();
+    searchEl.value?.focus();
 }
 function close() {
     open.value = false;
+    dismissed();
     btnEl.value?.focus();
 }
 function toggle(ns: string) {
@@ -66,7 +76,8 @@ function toggle(ns: string) {
         </button>
         <template v-if="open">
             <div class="backdrop" @mousedown="close"></div>
-            <div class="floating menu" role="dialog" aria-label="Namespace filter">
+            <!-- Digits pick recent namespace sets (lib/keys.ts); not while this menu is choosing them by hand. -->
+            <div class="floating menu" role="dialog" aria-label="Namespace filter" @keydown="/^[0-9]$/.test($event.key) && $event.stopPropagation()">
                 <label class="field">
                     <input ref="searchEl" v-model="q" type="search" placeholder="Search namespaces" aria-label="Search namespaces" />
                 </label>

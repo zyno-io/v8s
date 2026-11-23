@@ -53,10 +53,21 @@ Press `?` for the same list in the app.
 | `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys                                                       |
 | `Esc`                 | Close the drawer; with no drawer, clear the filter, then the selection                                                        |
 | `Ctrl+K` / `Cmd+K`    | Open the search palette                                                                                                       |
+| `0`                   | Show all namespaces (clear the namespace filter)                                                                              |
+| `1`–`9`               | Switch to a recently used namespace set, most recent first ([below](#recent-namespaces))                                      |
 | `[`                   | Pin or unpin the sidebar                                                                                                      |
 | `?`                   | Show the shortcut list                                                                                                        |
 
 `y`, `c`, `n`, `Shift+J`, `o`, `Shift+F`, `r` and `Ctrl+D` are k9s-style. They use the same actions as the action bar and the drawer, with the same permission checks and confirmations: `Ctrl+D` and `r` ask before they run, bulk or protected-cluster changes still need the typed confirmation, and a key does nothing (or shows the reason) where the action is not offered. `Shift+J` reads the object's owner references and shows "No owner" when there is none. `r` applies to Deployments, StatefulSets and DaemonSets; `Shift+F` to pods and services (and the port-forward dialog); `o` to pods. With no row focused (for example after a `Shift+J` jump) the keys act on the object open in the drawer. Confirmations from `Ctrl+D` and `r` start with Cancel focused, so a stray `Enter` never runs them. Helm releases use their own Uninstall and Upgrade actions instead of `Ctrl+D` and `r`.
+
+### Recent namespaces
+
+`1` to `9` switch the current list to one of the 9 namespace sets you used most recently, `1` being the latest, like k9s' favorite namespaces. A set is everything you had selected at once: after `:ns a,b,c`, `1` brings back `a`, `b` and `c` together. `0` shows all namespaces. A set is added to the front when you:
+
+- run a command that names namespaces: `:ns a,b`, `:ns pay*` (the namespaces it matched), `:ns +a` or `:ns -b` (the filter that results), `:po payments`, `:deploy payments/api`. `:ns *`, `:ns all` and `:po *` are not recorded.
+- close the namespace menu after changing its selection (once per close, not for every click), unless you cleared it.
+
+Using a set again moves it back to `1` and pushes the others down; the 10th drops off. The number keys themselves never reorder the list, so `1`, `2`, `1`, `2` flips between the same two sets. Each set of connected clusters keeps its own list. The keys work on resource lists; they do nothing on cluster-scoped types, on Problems, or where nothing is stored under that number.
 
 `l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).
 
@@ -83,8 +94,10 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 
 | Command                | Effect                                                    |
 | ---------------------- | --------------------------------------------------------- |
-| `:po`                  | Open pods (all namespaces)                                |
+| `:po`                  | Open pods, keeping their namespace filter                 |
 | `:po payments`         | Open pods in the `payments` namespace                     |
+| `:po shop,pay*`        | Open pods in several namespaces, as `:ns` takes them      |
+| `:po *` or `:po all`   | Open pods in all namespaces                               |
 | `:deploy payments/api` | Open the Deployment `api` in `payments`, in the drawer    |
 | `:no worker-1`         | For cluster-scoped types, the argument is the object name |
 | `:hr`                  | Open Flux HelmReleases                                    |
@@ -99,14 +112,14 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 | `:ns +shop`          | Add `shop` to the namespace filter                     |
 | `:ns -shop`          | Remove `shop` from the namespace filter                |
 | `:ns -kube-*`        | Remove every namespace in the filter matching `kube-*` |
-| `:ns all`            | Clear the namespace filter                             |
+| `:ns *` or `:ns all` | Clear the namespace filter                             |
 | `:pb` or `:problems` | Open the [Problems view](/guide/problems)              |
 | `:star` / `:unstar`  | Star or unstar the current resource type               |
 | `:q`                 | Close the bar (`Esc` does the same)                    |
 
 Aliases: `:context` for `:ctx`, `:namespace` for `:ns`.
 
-`:ns` takes comma-separated lists (`:ns a,b,c`) and `*` patterns anywhere in a name (`:ns pay*`, `:ns *-api`, `:ns a,b*,c`), also after `+` and `-`. A pattern is expanded once, against the namespaces v8s knows when you run the command, so a namespace created later is not added; a pattern that matches nothing is an error. `+` patterns match all known namespaces and `-` patterns the ones in the filter. Completion works on the part after the last comma, and a pattern shows how many namespaces it matches.
+`:ns` and `:<type> <namespaces>` take comma-separated lists (`:ns a,b,c`) and `*` patterns anywhere in a name (`:ns pay*`, `:ns *-api`, `:ns a,b*,c`), also after `+` and `-`. A pattern is expanded once, against the namespaces v8s knows when you run the command, so a namespace created later is not added; a pattern that matches nothing is an error. `+` patterns match all known namespaces and `-` patterns the ones in the filter. Completion works on the part after the last comma, and a pattern shows how many namespaces it matches.
 
 ## Search palette
 
@@ -151,11 +164,11 @@ Stars, bookmarks, groups, and column layouts are saved in your settings, so they
 
 ## What the browser remembers
 
-Three things are remembered per browser, in its local storage, with nothing to set up:
+These are remembered per browser, in its local storage, with nothing to set up:
 
 - **The cluster selection.** See [Choose clusters](/guide/clusters#choose-clusters). It is pre-ticked on the next launch, not connected.
 - **The last page.** Opening the app at its root address (`/`) takes you to the page you were last on, including its query (a filter in the URL, for instance). The open object in the drawer is not restored. Only the first load does this: going to `/` from inside the app still lands on the default page (Pods, or Problems on a phone), and Overview is always one click away in the sidebar.
-- **Namespace filters.** Each set of connected clusters has its own namespace filters, for every resource type. Switch to another set and its filters load (none if you haven't used it); switch back and yours return. A set that is exactly a group is remembered as that group, so it keeps its filters when the group's membership changes. The 50 most recently used sets are kept.
+- **Namespace filters.** Each set of connected clusters has its own namespace filters, for every resource type, and its own [recent namespaces](#recent-namespaces) for `1`–`9`. Switch to another set and its filters load (none if you haven't used it); switch back and yours return. A set that is exactly a group is remembered as that group, so it keeps its filters when the group's membership changes. The 50 most recently used sets are kept.
 
 If the browser blocks local storage, none of this is saved and v8s works as it did before.
 

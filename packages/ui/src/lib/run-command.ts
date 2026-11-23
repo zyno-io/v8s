@@ -10,6 +10,7 @@ import type { Command } from './command-parser.ts';
 import { kinds } from './agent.ts';
 import { kindLabel, labelFromGvr } from './kinds.ts';
 import { errorText } from './mutations.ts';
+import { recordRecentNamespaces } from './recent-namespaces.ts';
 import { gvrFromRoute, gvrPath } from './route.ts';
 
 /** Applies a parsed command. Returns an error message to show inline, or null when the bar should close. */
@@ -43,6 +44,8 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
         case 'ns':
             if (!here) return 'open a resource list first';
             table.of(here).namespaces = cmd.namespaces ?? [];
+            // Naming namespaces makes them the most recent set (keys 1–9); `all` / `*` does not.
+            if (cmd.namespaces) recordRecentNamespaces(cmd.namespaces);
             return null;
         case 'ns-delta': {
             if (!here) return 'open a resource list first';
@@ -50,6 +53,7 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
             const next = st.namespaces.filter(n => !cmd.remove.includes(n));
             for (const n of cmd.add) if (!next.includes(n)) next.push(n);
             st.namespaces = next;
+            recordRecentNamespaces(next);
             return null;
         }
         case 'problems':
@@ -80,7 +84,10 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
                 st.namespaces = [];
                 st.text = cmd.text;
             }
-            if (cmd.namespace) st.namespaces = [cmd.namespace];
+            if (cmd.namespaces) st.namespaces = [...cmd.namespaces];
+            else if (cmd.namespace) st.namespaces = [cmd.namespace];
+            if (cmd.namespaces?.length) recordRecentNamespaces(cmd.namespaces);
+            else if (cmd.namespace) recordRecentNamespaces([cmd.namespace]);
             if (cmd.name) {
                 st.text = cmd.name;
                 st.pendingOpen = { namespace: cmd.namespace ?? '', name: cmd.name };

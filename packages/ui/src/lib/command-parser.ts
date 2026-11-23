@@ -26,9 +26,13 @@ export type Command =
     | { type: 'ctx-open' }
     | { type: 'ctx-set'; ids: string[] }
     | { type: 'ctx-delta'; add: string[]; remove: string[] }
-    | { type: 'open-kind'; gvr: string; plural: string; namespace?: string; name?: string; text?: string }
+    /**
+     * `namespaces` replaces the kind's namespace filter (`[]` clears it: `:po *`); absent, the filter is kept. `namespace` + `name` open
+     * one object (`:po ns/name`).
+     */
+    | { type: 'open-kind'; gvr: string; plural: string; namespaces?: string[]; namespace?: string; name?: string; text?: string }
     | { type: 'ip'; text: string }
-    /** `namespaces: null` clears the filter (`:ns all`). */
+    /** `namespaces: null` clears the filter (`:ns all`, `:ns *`). */
     | { type: 'ns'; namespaces: string[] | null }
     | { type: 'ns-delta'; add: string[]; remove: string[] }
     | { type: 'problems' }
@@ -54,7 +58,10 @@ const COMMANDS: { name: string; aliases: string[]; takesArgs: boolean; detail: s
     { name: 'q', aliases: ['quit'], takesArgs: false, detail: 'close the bar' }
 ];
 
-const NS_USAGE = 'usage: :ns <ns>[,<ns>…] | +<ns> | -<ns> | all   (* matches any text: pay*)';
+const NS_USAGE = 'usage: :ns <ns>[,<ns>…] | +<ns> | -<ns> | all | *   (* matches any text: pay*)';
+
+/** `all` or a lone `*`: every namespace (clears the filter). */
+const isAllNs = (item: string): boolean => item === '*' || item.toLowerCase() === 'all';
 
 /** `a,b , c` → ['a', 'b', 'c']. */
 function splitList(s: string): string[] {
@@ -190,18 +197,8 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
             }
             return { type: 'ns-delta', add: [...new Set(add)], remove: [...new Set(remove)] };
         }
-        const items = args.flatMap(splitList);
-        if (!items.length) return { type: 'error', message: NS_USAGE };
-        if (items.some(i => i.toLowerCase() === 'all')) {
-            return items.length === 1 ? { type: 'ns', namespaces: null } : { type: 'error', message: '"all" cannot be combined with namespaces' };
-        }
-        const out: string[] = [];
-        for (const it of items) {
-            const r = expandNs(it, ctx.namespaces, 'namespace');
-            if (typeof r === 'string') return { type: 'error', message: r };
-            out.push(...r);
-        }
-        return { type: 'ns', namespaces: [...new Set(out)] };
+        const r = namespaceList(args.flatMap(splitList), ctx);
+        return typeof r === 'string' ? { type: 'error', message: r } : { type: 'ns', namespaces: r };
     }
     if (cmd?.name === 'pb') return { type: 'problems' };
     if (cmd?.name === 'star') return { type: 'star', on: true };
@@ -214,7 +211,9 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
     const kind = found.kind;
     if (!kind.available) return { type: 'error', message: `${kind.kind} (${kind.plural}) is not available yet` };
     const arg = args[0];
-    if (!arg || arg === 'all') return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural };
+    const open = { type: 'open-kind', gvr: kind.gvr, plural: kind.plural } as const;
+    if (!arg) return open;
+    if (!kind.namespaced && isAllNs(arg)) return open;
     // A namespace name has no dots or colons, so an IP-like argument is an address filter (kinds with IPs only).
     if (kind.ips && looksLikeIP(arg)) return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, text: arg };
     if (!kind.namespaced) return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, name: arg };
@@ -225,7 +224,23 @@ export function parseCommand(input: string, ctx: CommandContext): Command {
         if (!namespace || !name) return { type: 'error', message: 'usage: :<type> <namespace>/<name>' };
         return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, namespace, name };
     }
-    return { type: 'open-kind', gvr: kind.gvr, plural: kind.plural, namespace: arg };
+    // Namespaces the way `:ns` takes them: `:po a,b`, `:po a, b`, `:po pay*`, `:po *`.
+    const r = namespaceList(args.flatMap(splitList), ctx);
+    if (typeof r === 'string') return { type: 'error', message: r };
+    return { ...open, namespaces: r ?? [] };
+}
+
+/** A `:ns`-style namespace list: null for all (`all`, `*`), the expanded names, or an error message. */
+function namespaceList(items: readonly string[], ctx: CommandContext): string[] | null | string {
+    if (!items.length) return NS_USAGE;
+    if (items.some(isAllNs)) return items.length === 1 ? null : '"all" cannot be combined with namespaces';
+    const out: string[] = [];
+    for (const it of items) {
+        const r = expandNs(it, ctx.namespaces, 'namespace');
+        if (typeof r === 'string') return r;
+        out.push(...r);
+    }
+    return [...new Set(out)];
 }
 
 /**
@@ -285,30 +300,37 @@ export function complete(input: string, ctx: CommandContext, limit = 8): Complet
 
     if (cmd?.name === 'ip') return [];
     if (cmd?.name !== 'ns' && lastIdx === 1 && looksLikeIP(typed)) return [];
-    if (cmd?.name === 'ns') return completeNs(typed, tokens.slice(1, lastIdx), before, lastIdx, ctx, limit);
+    if (cmd?.name === 'ns') return completeNs(typed, tokens.slice(1, lastIdx), before, lastIdx, ctx, limit, true);
     const kindHit = !cmd ? findKind(head, ctx.kinds) : null;
-    if (kindHit && 'kind' in kindHit && kindHit.kind.namespaced && lastIdx === 1) {
-        const pool: Completion[] = [];
-        for (const ns of ctx.namespaces) pool.push({ label: ns, detail: 'namespace', insert: before + ns });
-        const nsPart = typed.includes('/') ? '' : typed;
-        if (typed.includes('/')) return [];
-        return rank(nsPart, pool, e => e.label).slice(0, limit);
+    if (kindHit && 'kind' in kindHit && kindHit.kind.namespaced && lastIdx === 1 && !typed.includes('/')) {
+        return completeNs(typed, [], before, lastIdx, ctx, limit, false);
     }
     return [];
 }
 
 /**
- * Completion for `:ns`: the part after the last comma of the token being typed. `+` offers namespaces not in the filter yet, `-` the
- * ones in it, neither repeats one already typed; a `*` pattern shows how many namespaces it matches.
+ * Completion for `:ns` and `:<type> <ns>`: the part after the last comma of the token being typed. `+` offers namespaces not in the
+ * filter yet, `-` the ones in it (`:ns` only: `deltas`), neither repeats one already typed; a `*` pattern shows how many namespaces it
+ * matches.
  */
-function completeNs(typed: string, prior: readonly string[], before: string, lastIdx: number, ctx: CommandContext, limit: number): Completion[] {
-    const sign = typed[0] === '+' || typed[0] === '-' ? typed[0] : '';
+function completeNs(
+    typed: string,
+    prior: readonly string[],
+    before: string,
+    lastIdx: number,
+    ctx: CommandContext,
+    limit: number,
+    deltas: boolean
+): Completion[] {
+    const sign = deltas && (typed[0] === '+' || typed[0] === '-') ? typed[0] : '';
     const body = typed.slice(sign.length);
     const cut = body.lastIndexOf(',') + 1;
     const lead = before + sign + body.slice(0, cut);
     const seg = body.slice(cut);
     const inFilter = new Set(ctx.filter ?? []);
     const names = sign === '-' ? [...inFilter] : sign === '+' ? ctx.namespaces.filter(n => !inFilter.has(n)) : ctx.namespaces;
+    // A lone `*` means all namespaces, which cannot be combined with names.
+    if (seg === '*' && !sign) return lastIdx === 1 && !cut ? [{ label: '*', detail: 'all namespaces', insert: before + typed }] : [];
     if (seg.includes('*')) {
         const re = globRe(seg);
         const m = names.filter(n => re.test(n));
@@ -317,7 +339,7 @@ function completeNs(typed: string, prior: readonly string[], before: string, las
     }
     const used = new Set([...prior, sign + body.slice(0, cut)].flatMap(t => splitList(t.replace(/^[+-]/, ''))));
     const pool: Completion[] = [];
-    if (!sign && lastIdx === 1 && !cut) pool.push({ label: 'all', detail: 'clear the namespace filter', insert: before + 'all' });
+    if (!sign && lastIdx === 1 && !cut) pool.push({ label: 'all', detail: 'all namespaces (clears the filter)', insert: before + 'all' });
     for (const ns of names) {
         if (!used.has(ns)) pool.push({ label: sign + ns, detail: sign === '-' ? 'in the filter' : 'namespace', insert: lead + ns });
     }

@@ -23,6 +23,8 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['Enter', 'in the filter: move focus to the results'],
             ['Esc', 'clear filter, then selection, then close the drawer'],
             ['Ctrl/⌘ K', 'search objects, kinds and commands'],
+            ['0', 'all namespaces'],
+            ['1 – 9', 'recent namespace sets'],
             ['[', 'pin or unpin the sidebar'],
             ['?', 'show this list']
         ]
@@ -45,11 +47,11 @@ const groups: { title: string; rows: [string, string][] }[] = [
             [':ctx', 'choose clusters'],
             [':ctx a b', 'connect exactly a and b'],
             [':ctx +a / -a', 'add / remove a cluster'],
-            [':po [ns]', 'pods, optionally in a namespace'],
+            [':po [ns]', 'pods, optionally in namespaces (a,b / pay* / *)'],
             [':<type> ns/name', 'open one object in the drawer'],
             [':star / :unstar', 'star or unstar the current type'],
             [':ns', 'open the namespaces list'],
-            [':ns <ns> / all', 'set or clear the namespace filter'],
+            [':ns <ns> / *', 'set or clear the namespace filter'],
             [':pb', 'problems'],
             [':q', 'close the bar']
         ]
