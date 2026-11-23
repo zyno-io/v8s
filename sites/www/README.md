@@ -20,6 +20,7 @@ npm run og       # regenerate public/og/home.png and the icons
 | `/` | Hero with the download card and the **interactive demo**; why it's fast; CPU and memory at a glance; multi-cluster; Problems; Flux and Helm; security and network; safe edits; three ways to run; trust; downloads; footer with the Zyno Consulting band |
 | `/404` | Not found (`noindex`) |
 | `/sitemap.xml` | Hand-listed (`src/pages/sitemap.xml.ts`); add new pages there |
+| `/release.json` | `{"version", "date", "url"}` of the newest release (`src/pages/release.json.ts`), read by the v8s update check; see below |
 
 ## The interactive demo
 
@@ -55,13 +56,22 @@ When the app's UI changes, update the demo to match (compare against fresh scree
 The version, date and every download link are fixed at build time: `src/data/release.ts` reads the newest released
 section of the repo's `CHANGELOG.md` (`## X.Y.Z — YYYY-MM-DD`), and `src/data/site.ts` turns it into GitHub release asset
 URLs (`v8s-<version>-<suffix>` for desktop builds, `v8s_<version>_<suffix>` for CLI archives, `checksums.txt`). Nothing
-is fetched in the browser. Production is published from the release tag (see Deploy), so the links always name assets
-that exist.
+is fetched in the browser. Production is deployed by `release.yml` after the GitHub release is published (see Deploy), so the links always name
+assets that exist.
 
 `src/scripts/download.ts` only features the visitor's build: it detects the OS from the user agent and the Mac's CPU
 from `navigator.userAgentData` where the browser offers it (Safari doesn't, so Apple silicon is featured with an Intel
 link beside it), points the hero button at that row's link, and lists the sibling builds. Without JS the hero button
 leads to the download list. Platform names and signing notes live in `src/data/site.ts`.
+
+## release.json
+
+`/release.json` (`src/pages/release.json.ts`, built to `dist/release.json`) is `{"version": "0.8.0", "date": "2026-11-22",
+"url": "<release page>"}`, taken from the same CHANGELOG section as the downloads. The v8s agent
+(`agent/internal/updatecheck`) fetches `https://v8s.io/release.json` every 15 minutes (with `If-None-Match`) to offer
+updates, instead of calling the rate-limited GitHub API. The shape is a contract with shipped agents: `version` is required and
+must be a stable semver, written without the `v` (agents ignore prereleases and anything unparseable); keep it when adding fields, and don't make it
+dynamic or cached for long. The agent ignores `url` and builds the GitHub release link itself.
 
 ## Search and social previews
 
@@ -80,8 +90,12 @@ ZynoHosting CLI:
 
 - `www-staging.v8s.io` (alpha cluster, `--environment alpha`) deploys automatically on every push to `main` that
   touches `sites/www/**` or the workflow.
-- `v8s.io` (production) deploys on every release tag (`v*`, built from the tagged commit, so it picks up the new version
-  from `CHANGELOG.md`; release candidates such as `v0.8.0-rc.1` never deploy), or manually: Actions > Website > Run workflow on `main`, target `production`.
+- `v8s.io` (production) deploys only by `workflow_dispatch` with target `production`, from `main` or a stable release tag
+  (`vX.Y.Z`; the build reads the new version from `CHANGELOG.md`). `release.yml`'s publish job dispatches it as its last step on
+  a stable tag, after the GitHub release and its assets exist (release candidates such as `v0.8.0-rc.1` never deploy). A manual run
+  (Actions > Website > Run workflow) works too. The deploy job first reads the version from the built `dist/release.json` and fails
+  unless `gh release view v<version>` finds a published (not draft, not prerelease) release, so a version can never be announced
+  before it is released.
 - Pull requests only build.
 
 `release.yml` ignores pushes that touch only `sites/www/**` and the workflow, so site edits don't rebuild the app.

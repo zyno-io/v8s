@@ -14,6 +14,7 @@ release notes when the tag has no annotation.
 ### Changed
 
 - Editing a masked Secret now reads **Reveal and edit**: it reveals the values first, so you never edit placeholders. With Decoded on, a revealed Secret opens in decoded form (`stringData`).
+- The update check now reads `v8s.io/release.json` every 15 minutes instead of asking the GitHub API once a day, so a new release shows up within about 20 minutes of being published. Hosted servers with an egress allowlist need `v8s.io` instead of `api.github.com`.
 
 ### Fixed
 

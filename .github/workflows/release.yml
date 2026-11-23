@@ -4,8 +4,9 @@ name: Release
 # and the container image as ghcr.io/zyno-io/v8s:main and :<short sha>, which is what gets live-tested before tagging. A manual
 # run builds any branch the same unsigned way (image :<branch> and :<short sha>). A pull request from this repository builds
 # only the container image, amd64 only, as :pr-<number> and :pr-<number>-<short head sha>, to test on staging before merging.
-# Signing, notarization, attestations, the Helm chart and the GitHub release happen on tags only. container-cleanup.yml
-# prunes the non-release images.
+# Signing, notarization, attestations, the Helm chart and the GitHub release happen on tags only. For a stable tag the
+# publish job ends by dispatching www.yml to deploy v8s.io, so the site (download links, release.json for the update
+# check) only names a release that exists. container-cleanup.yml prunes the non-release images.
 on:
   push:
     branches: [main]
@@ -429,6 +430,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      actions: write # dispatch www.yml (a workflow_dispatch sent with GITHUB_TOKEN does start a run)
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.ref_name }}
@@ -469,3 +471,23 @@ jobs:
           else
             gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${args[@]}" "${assets[@]}"
           fi
+      # The release now exists with its assets, so the site may announce it (release.json is what agents read for
+      # updates). Release candidates never deploy: their CHANGELOG section already names the unreleased version. The
+      # Website run is watched, so a failed site deploy fails this release run instead of going unnoticed; re-running
+      # this job is safe (upload --clobber, edit) and dispatches again.
+      - name: Deploy v8s.io
+        if: env.PRERELEASE != 'true'
+        run: |
+          set -euo pipefail
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run www.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f target=production
+          run=''
+          for _ in $(seq 30); do
+            run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow www.yml --event workflow_dispatch --branch "$TAG" \
+              --created ">=$since" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [[ -n "$run" ]] && break
+            sleep 5
+          done
+          [[ -n "$run" ]] || { echo "::error::the dispatched Website run did not appear"; exit 1; }
+          echo "Website run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+          gh run watch "$run" --repo "$GITHUB_REPOSITORY" --exit-status --interval 15
