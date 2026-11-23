@@ -10,6 +10,7 @@ release notes when the tag has no annotation.
 - YAML tab: a **Wrap** toggle for long lines, remembered per browser.
 - YAML tab: a **Pretty** toggle for ConfigMaps. It indents JSON values (also double-encoded ones) and shows multi-line values as readable blocks. It is remembered per browser.
 - YAML tab: Secrets get a **Decoded** toggle, on by default: once revealed, values show as text (`stringData`) with JSON indented. A Secret's tab has one toolbar, with the values tag and Reveal / Mask in it (Reveal all and Mask again are now Reveal and Mask), and the YAML toolbar no longer shows a `read-only` tag.
+- The owners on an object's Overview tab are links: click one to open it in the drawer, like `Shift+J`. The Related tab's **Open** now also finds a cluster-scoped owner (a Node owning a mirror pod).
 
 ### Changed
 

@@ -38,10 +38,16 @@ export function rowIntent(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' |
  */
 export function ownerRef(ref: ObjectRef, owners: readonly ObjectOwner[] | undefined, kinds: readonly Kind[]): ObjectRef | null {
     for (const o of owners ?? []) {
-        const k = resolveKind(kinds, o.kind);
-        if (k) return { cluster: ref.cluster, gvr: k.gvr, namespace: k.namespaced ? ref.namespace : undefined, name: o.name };
+        const t = ownerTarget(ref, o, kinds);
+        if (t) return t;
     }
     return null;
+}
+
+/** One owner of `ref` as an object to open: same cluster, same namespace unless the owner's kind is cluster-scoped. Null when the clusters don't serve its kind. */
+export function ownerTarget(ref: ObjectRef, o: ObjectOwner, kinds: readonly Kind[]): ObjectRef | null {
+    const k = resolveKind(kinds, o.kind);
+    return k ? { cluster: ref.cluster, gvr: k.gvr, namespace: k.namespaced ? ref.namespace : undefined, name: o.name } : null;
 }
 
 /** A row key that runs an existing action (with its access check and confirmation), handled by the page's hidden ActionBar. */

@@ -52,19 +52,19 @@ The **VerticalPodAutoscaler** list shows each VPA's target, update mode, status 
 
 Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page.
 
-| Tab       | What it shows                                                                                         |
-| --------- | ----------------------------------------------------------------------------------------------------- |
-| Overview  | Status, conditions, key fields, owners, and, for managed objects, a link to the Flux or Helm source   |
-| Logs      | For pods and workloads. See [Operations](/guide/operations#logs)                                      |
-| Shell     | For pods. See [Operations](/guide/operations#pod-shell-and-debug-containers)                          |
-| Inventory | For Flux Kustomizations: the objects they manage. See [Flux](/guide/flux)                             |
-| Release   | For Flux HelmReleases: the Helm release underneath. See [Flux](/guide/flux)                           |
-| Report    | For Trivy, Kyverno, and other scanner report objects: the report's rows (CVEs, checks, results)       |
-| Security  | Kyverno, Trivy, and Kubescape findings for this workload. See [Security](/guide/security)             |
-| Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network) |
-| YAML      | The live object. Read, copy, or edit it                                                               |
-| Events    | All events for this object, newest first                                                              |
-| Related   | What owns this object and what it owns                                                                |
+| Tab       | What it shows                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Overview  | Status, conditions, key fields, owners (click one to open it), and, for managed objects, a link to the Flux or Helm source |
+| Logs      | For pods and workloads. See [Operations](/guide/operations#logs)                                                           |
+| Shell     | For pods. See [Operations](/guide/operations#pod-shell-and-debug-containers)                                               |
+| Inventory | For Flux Kustomizations: the objects they manage. See [Flux](/guide/flux)                                                  |
+| Release   | For Flux HelmReleases: the Helm release underneath. See [Flux](/guide/flux)                                                |
+| Report    | For Trivy, Kyverno, and other scanner report objects: the report's rows (CVEs, checks, results)                            |
+| Security  | Kyverno, Trivy, and Kubescape findings for this workload. See [Security](/guide/security)                                  |
+| Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network)                      |
+| YAML      | The live object. Read, copy, or edit it                                                                                    |
+| Events    | All events for this object, newest first                                                                                   |
+| Related   | What owns this object and what it owns                                                                                     |
 
 The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 
