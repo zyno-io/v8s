@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- The table's keyboard focus ring follows the card's rounded corners instead of being cut off at the bottom.
+
 ### Added
 
 - Namespace keys, k9s style: `0` shows all namespaces, `1`–`9` switch to the 9 most recently used namespace sets. A set is
