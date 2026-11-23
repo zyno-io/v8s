@@ -5,6 +5,16 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- YAML tab: a **Wrap** toggle for long lines, remembered per browser.
+- YAML tab: a **Pretty** toggle for ConfigMaps. It indents JSON values (also double-encoded ones) and shows multi-line values as readable blocks. It is remembered per browser.
+- YAML tab: Secrets get a **Decoded** toggle, on by default: once revealed, values show as text (`stringData`) with JSON indented. A Secret's tab has one toolbar, with the values tag and Reveal / Mask in it (Reveal all and Mask again are now Reveal and Mask), and the YAML toolbar no longer shows a `read-only` tag.
+
+### Changed
+
+- Editing a masked Secret now reads **Reveal and edit**: it reveals the values first, so you never edit placeholders. With Decoded on, a revealed Secret opens in decoded form (`stringData`).
+
 ### Fixed
 
 - A list that could not load now loads on its own when that can change: Secrets your read context may not list appear as soon as you elevate the cluster, and a type none of the selected clusters served appears once you select one that does (or its CRD is installed), instead of staying empty until you leave the page. A list you are not allowed to read now says so instead of "None of the selected clusters serves …".
