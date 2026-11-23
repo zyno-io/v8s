@@ -50,7 +50,7 @@ The **VerticalPodAutoscaler** list shows each VPA's target, update mode, status 
 
 ## The detail drawer
 
-Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page.
+Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page. Opening another row while the drawer is open keeps the tab you are on (Logs, YAML, …) when that object has it; `Esc` closes the drawer.
 
 | Tab       | What it shows                                                                                                              |
 | --------- | -------------------------------------------------------------------------------------------------------------------------- |

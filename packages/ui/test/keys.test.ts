@@ -158,22 +158,38 @@ describe('select triggers', () => {
 });
 
 describe('Esc', () => {
-    it('from the list clears a page filter, refocuses the list, then continues the chain', async () => {
+    it('with a drawer open, closes the drawer first and keeps the search; then clears it from the list', async () => {
         let text = 'abc';
         const n = nav({ filterText: () => text, clearFilter: () => (text = '') });
         setListNav(n);
         drawer.open = true;
         key('Escape', list);
+        expect(drawer.close).toHaveBeenCalledTimes(1);
+        expect(text).toBe('abc');
+        key('Escape', list);
         expect(text).toBe('');
-        expect(drawer.close).not.toHaveBeenCalled();
         await Promise.resolve();
         await Promise.resolve();
         expect(n.focusList).toHaveBeenCalledWith(true);
-        n.focusList.mockClear();
-        key('Escape', list);
+    });
+
+    it('with a drawer open, Esc in the search field clears the search and leaves the drawer', () => {
+        let text = 'abc';
+        setListNav(nav({ filterText: () => text, clearFilter: () => (text = '') }));
+        drawer.open = true;
+        key('Escape', filter);
+        expect(text).toBe('');
+        expect(drawer.close).not.toHaveBeenCalled();
+    });
+
+    it('with a drawer open, Esc on the page body closes it even with a table filter set', () => {
+        const table = useTableStore();
+        table.currentGvr = 'v1/pods';
+        table.of('v1/pods').text = 'pay';
+        drawer.open = true;
+        key('Escape', body);
         expect(drawer.close).toHaveBeenCalledTimes(1);
-        await Promise.resolve();
-        expect(n.focusList).not.toHaveBeenCalled();
+        expect(table.of('v1/pods').text).toBe('pay');
     });
 
     it('with nothing focused also refocuses the list after clearing the table filter', async () => {
@@ -202,7 +218,8 @@ describe('Esc', () => {
         expect(filter.blur).toHaveBeenCalled();
     });
 
-    it('escapeChain order: filter, selection, drawer', () => {
+    it('escapeChain order: drawer, filter, selection; from the search field: filter, selection, drawer', () => {
+        const filterTarget = filter as unknown as EventTarget;
         const table = useTableStore();
         table.currentGvr = 'v1/pods';
         const st = table.of('v1/pods');
@@ -210,12 +227,22 @@ describe('Esc', () => {
         st.selected = new Map([['k', { cluster: 'c', name: 'n' } as never]]);
         drawer.open = true;
         expect(escapeChain()).toBe(true);
+        expect(drawer.close).toHaveBeenCalledTimes(1);
+        expect(st.text).toBe('x');
+        expect(escapeChain()).toBe(true);
         expect(st.text).toBe('');
-        expect(st.selected.size).toBe(1);
         expect(escapeChain()).toBe(true);
         expect(st.selected.size).toBe(0);
-        expect(escapeChain()).toBe(true);
-        expect(drawer.close).toHaveBeenCalled();
         expect(escapeChain()).toBe(false);
+
+        st.text = 'y';
+        st.selected = new Map([['k', { cluster: 'c', name: 'n' } as never]]);
+        drawer.open = true;
+        expect(escapeChain(filterTarget)).toBe(true);
+        expect(st.text).toBe('');
+        expect(escapeChain(filterTarget)).toBe(true);
+        expect(st.selected.size).toBe(0);
+        expect(escapeChain(filterTarget)).toBe(true);
+        expect(drawer.close).toHaveBeenCalledTimes(2);
     });
 });

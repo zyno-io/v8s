@@ -93,7 +93,7 @@ Typing `:` anywhere opens a one-line command bar at the top of the content (Floa
 | `:star` / `:unstar` | star or unstar the current type |
 | `:q` / `Esc` | close the bar |
 
-Also, outside the bar: `/` focuses the filter, `?` shows every shortcut, `Esc` clears filter then selection then closes the drawer, and `Ctrl-a`-style shortcuts are avoided so browser and OS shortcuts keep working. Completion is prefix-then-fuzzy over commands, kinds, namespaces (from the agent's per-cluster namespace index), clusters, and groups. Unknown commands say so inline; they never navigate somewhere unexpected.
+Also, outside the bar: `/` focuses the filter, `?` shows every shortcut, `Esc` closes the drawer first (unless focus is in the filter, where it clears the filter), then clears the filter, then the selection, and `Ctrl-a`-style shortcuts are avoided so browser and OS shortcuts keep working. Completion is prefix-then-fuzzy over commands, kinds, namespaces (from the agent's per-cluster namespace index), clusters, and groups. Unknown commands say so inline; they never navigate somewhere unexpected.
 
 ### Filter bar
 

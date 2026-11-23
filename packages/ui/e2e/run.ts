@@ -415,6 +415,33 @@ async function main() {
             await page.getByTestId('drawer').waitFor();
         });
 
+        await step('drawer: another pod keeps the tab; Esc closes the drawer and keeps the search', async () => {
+            await page.keyboard.press('Escape');
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            const rows = page.locator('.scroller .row:not(.sk)');
+            await rows.nth(1).waitFor({ timeout: 30000 });
+            await rows.nth(0).locator('.name').click();
+            const drawer = page.getByTestId('drawer');
+            await drawer.waitFor();
+            await page.getByRole('tab', { name: 'YAML' }).click();
+            await page.waitForURL(/[?&]tab=yaml/);
+            const second = (await rows.nth(1).locator('.name').innerText()).trim();
+            await rows.nth(1).locator('.name').click();
+            await drawer.getByRole('heading', { name: second }).waitFor();
+            assert.match(page.url(), /[?&]tab=yaml/, 'the YAML tab stays when another pod opens');
+            await page.getByRole('tab', { name: 'YAML', selected: true }).waitFor();
+
+            const filter = page.locator('#pods-filter');
+            await filter.fill(second.slice(0, 4));
+            await rows.first().locator('.name').click(); // focus leaves the search field
+            await drawer.waitFor();
+            await page.keyboard.press('Escape');
+            await drawer.waitFor({ state: 'detached' });
+            assert.equal(await filter.inputValue(), second.slice(0, 4), 'Esc closed the drawer and kept the search');
+            await filter.fill('');
+        });
+
         await step('overview: clicking an owner opens it in the drawer', async () => {
             await page.keyboard.press('Escape');
             await page.getByRole('link', { name: /^Pods/ }).first().click();
