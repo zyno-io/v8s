@@ -2,6 +2,7 @@
 import type { ObjectPayload, ObjectRef } from '@v8s/client';
 
 import { computed, ref, shallowRef, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import type { ParsedObject } from '@/lib/object-session.ts';
 
@@ -9,10 +10,12 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import VpaRecommendations from '@/components/VpaRecommendations.vue';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
+import { openObject } from '@/lib/drawer.ts';
 import { formatAge } from '@/lib/format.ts';
 import { resolveKind } from '@/lib/kinds.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
+import { ownerTarget } from '@/lib/row-keys.ts';
 import { isVpaGvr, podRequests, VPA_GVR, vpaNameFromAnnotation, vpaRecommendations } from '@/lib/vpa.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 
@@ -23,6 +26,9 @@ const emit = defineEmits<{ openSource: [kind: string, name: string, namespace: s
 const meta = computed(() => (props.parsed?.metadata ?? {}) as Record<string, unknown>);
 const status = computed(() => objectStatus(props.target.gvr, props.parsed));
 const fields = computed(() => keyFields(props.target.gvr, props.parsed));
+const router = useRouter();
+// Owners the clusters serve open in the drawer, like Shift+J on a row; an unknown kind stays plain text.
+const owners = computed(() => (props.payload.owners ?? []).map(o => ({ ...o, to: ownerTarget(props.target, o, kinds.value) })));
 const conditions = computed(() => conditionsOf(props.parsed));
 const labels = computed(() => stringMap(meta.value.labels));
 const annotations = computed(() => stringMap(meta.value.annotations));
@@ -132,8 +138,19 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             >
             <dt class="lbl">Owners</dt>
             <dd>
-                <template v-if="payload.owners?.length"
-                    ><span v-for="o in payload.owners" :key="o.kind + o.name" class="tag own">{{ o.kind }} / {{ o.name }}</span></template
+                <template v-if="owners.length"
+                    ><template v-for="o in owners" :key="o.kind + o.name"
+                        ><button
+                            v-if="o.to"
+                            class="tag own link"
+                            type="button"
+                            :title="`Open ${o.kind} ${o.name}`"
+                            data-testid="owner-link"
+                            @click="openObject(router, o.to)"
+                        >
+                            {{ o.kind }} / {{ o.name }}</button
+                        ><span v-else class="tag own">{{ o.kind }} / {{ o.name }}</span></template
+                    ></template
                 >
                 <span v-else class="muted">none</span>
             </dd>
@@ -256,6 +273,22 @@ dd {
 .own {
     height: auto;
     padding: 2px 6px;
+}
+.own + .own {
+    margin-left: 4px;
+}
+.link {
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--link);
+}
+.link:hover {
+    text-decoration: underline;
+}
+.link:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
 }
 h3 {
     margin: 0 0 6px;

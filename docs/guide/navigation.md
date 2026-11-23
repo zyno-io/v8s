@@ -25,36 +25,36 @@ Every resource list is the same component, so the controls work everywhere.
 - **Cluster column.** The cluster column (a short tag with the cluster name) appears only when more than one cluster is selected.
 - **Namespace filter.** Set it from the namespace menu or with `:ns`. The menu lists the namespaces you picked under **Selected**, below the scrolling list, so they stay in view while you search; click one there to remove it.
 - **Selection.** Select rows with `x` or the checkboxes. A bulk action bar appears at the bottom with the actions that apply to every selected row, such as Restart or Delete.
-- **Syncing.** While a cluster is still loading, its rows stream in and the toolbar shows a progress tag such as `syncing prod-eu · 4,210`. There is no full-table spinner.
+- **Syncing.** While a cluster is still loading, its rows stream in and the toolbar shows a progress tag such as `syncing prod-eu · 4,210`. There is no full-table spinner. A list that has not finished loading on a cluster says so instead of "No …": the table reads `Loading secrets from prod-eu…` and that cluster's chip reads `loading secrets…` until the rows arrive.
 
 ## Keyboard shortcuts
 
 Press `?` for the same list in the app.
 
-| Key                   | Action                                                                         |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `:`                   | Open the command bar                                                           |
-| `/`                   | Focus the filter                                                               |
-| `j` / `k`             | Move the focus down / up (arrow keys also work)                                |
-| `Enter`               | Open the focused row in the drawer                                             |
-| `x`                   | Select or deselect the focused row                                             |
-| `l`                   | Open the Logs tab of the focused pod or workload                               |
-| `s`                   | Open the Shell tab of the focused pod                                          |
-| `e`                   | Edit the YAML of the focused row, or of the object open in the drawer          |
-| `d`                   | Describe: open the focused row, or the open object, on the Overview tab        |
-| `y`                   | Open the focused row, or the open object, on the YAML tab                      |
-| `c`                   | Copy the focused row's name                                                    |
-| `n`                   | Copy the focused row's namespace (namespaced types)                            |
-| `Shift+J`             | Jump to the owner: Pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob |
-| `o`                   | On pods, open the node the pod runs on                                         |
-| `Shift+F`             | Port-forward the focused pod or service                                        |
-| `r`                   | Restart the focused workload, or the selected workloads (asks first)           |
-| `Ctrl+D`              | Delete the focused row, or the selected rows                                   |
-| `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys        |
-| `Esc`                 | Clear the filter, then the selection, then close the drawer                    |
-| `Ctrl+K` / `Cmd+K`    | Open the search palette                                                        |
-| `[`                   | Pin or unpin the sidebar                                                       |
-| `?`                   | Show the shortcut list                                                         |
+| Key                   | Action                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `:`                   | Open the command bar                                                                                                          |
+| `/`                   | Focus the filter                                                                                                              |
+| `j` / `k`             | Move the focus down / up (arrow keys also work)                                                                               |
+| `Enter`               | Open the focused row in the drawer                                                                                            |
+| `x`                   | Select or deselect the focused row                                                                                            |
+| `l`                   | Open the Logs tab of the focused pod or workload                                                                              |
+| `s`                   | Open the Shell tab of the focused pod                                                                                         |
+| `e`                   | Edit the YAML of the focused row, or of the object open in the drawer                                                         |
+| `d`                   | Describe: open the focused row, or the open object, on the Overview tab                                                       |
+| `y`                   | Open the focused row, or the open object, on the YAML tab                                                                     |
+| `c`                   | Copy the focused row's name                                                                                                   |
+| `n`                   | Copy the focused row's namespace (namespaced types)                                                                           |
+| `Shift+J`             | Jump to the owner: Pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob (or click it under Owners on the Overview tab) |
+| `o`                   | On pods, open the node the pod runs on                                                                                        |
+| `Shift+F`             | Port-forward the focused pod or service                                                                                       |
+| `r`                   | Restart the focused workload, or the selected workloads (asks first)                                                          |
+| `Ctrl+D`              | Delete the focused row, or the selected rows                                                                                  |
+| `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys                                                       |
+| `Esc`                 | Clear the filter, then the selection, then close the drawer                                                                   |
+| `Ctrl+K` / `Cmd+K`    | Open the search palette                                                                                                       |
+| `[`                   | Pin or unpin the sidebar                                                                                                      |
+| `?`                   | Show the shortcut list                                                                                                        |
 
 `y`, `c`, `n`, `Shift+J`, `o`, `Shift+F`, `r` and `Ctrl+D` are k9s-style. They use the same actions as the action bar and the drawer, with the same permission checks and confirmations: `Ctrl+D` and `r` ask before they run, bulk or protected-cluster changes still need the typed confirmation, and a key does nothing (or shows the reason) where the action is not offered. `Shift+J` reads the object's owner references and shows "No owner" when there is none. `r` applies to Deployments, StatefulSets and DaemonSets; `Shift+F` to pods and services (and the port-forward dialog); `o` to pods. With no row focused (for example after a `Shift+J` jump) the keys act on the object open in the drawer. Confirmations from `Ctrl+D` and `r` start with Cancel focused, so a stray `Enter` never runs them. Helm releases use their own Uninstall and Upgrade actions instead of `Ctrl+D` and `r`.
 

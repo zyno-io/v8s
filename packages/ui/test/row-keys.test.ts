@@ -2,7 +2,7 @@ import type { Kind, ObjectRef } from '@v8s/client';
 
 import { describe, expect, it } from 'vitest';
 
-import { keyAction, keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '../src/lib/row-keys.ts';
+import { keyAction, keyActionBlocked, ownerRef, ownerTarget, requestKeyAction, rowIntent } from '../src/lib/row-keys.ts';
 
 const k = (key: string, extra: Record<string, boolean> = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...extra });
 
@@ -47,6 +47,22 @@ describe('key actions', () => {
     it('blocks Delete and Restart on the virtual Helm kind only', () => {
         expect(keyActionBlocked('helm.sh/v1/releases')).toBe(true);
         expect(keyActionBlocked('apps/v1/deployments')).toBe(false);
+    });
+});
+
+describe('ownerTarget', () => {
+    const kind = (gvr: string, name: string, namespaced: boolean) => ({ gvr, kind: name, namespaced }) as unknown as Kind;
+    const kinds = [kind('apps/v1/replicasets', 'ReplicaSet', true), kind('v1/nodes', 'Node', false)];
+    const pod: ObjectRef = { cluster: 'c1', gvr: 'v1/pods', namespace: 'payments', name: 'api-1' };
+    it('maps each owner on its own, keeping the namespace only for namespaced kinds', () => {
+        expect(ownerTarget(pod, { kind: 'ReplicaSet', name: 'rs' }, kinds)).toEqual({
+            cluster: 'c1',
+            gvr: 'apps/v1/replicasets',
+            namespace: 'payments',
+            name: 'rs'
+        });
+        expect(ownerTarget(pod, { kind: 'Node', name: 'n1' }, kinds)).toEqual({ cluster: 'c1', gvr: 'v1/nodes', namespace: undefined, name: 'n1' });
+        expect(ownerTarget(pod, { kind: 'Mystery', name: 'x' }, kinds)).toBeNull();
     });
 });
 

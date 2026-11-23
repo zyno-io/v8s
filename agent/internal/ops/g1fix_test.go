@@ -332,3 +332,43 @@ func TestMultiDocApplyReportsAppliedWithError(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+// A Secret edited in decoded form (values as stringData) must not report the moved keys as changed fields.
+func TestConflictsFoldStringData(t *testing.T) {
+	live := mk("v1", "Secret", "ns", "s", map[string]any{"data": map[string]any{"a": "eA==", "b": "eQ=="}})
+	setMeta(live, "labels", map[string]any{"app": "web"})
+	setMeta(live, "managedFields", []any{map[string]any{"manager": "kubectl-create", "operation": "Update", "fieldsV1": map[string]any{
+		"f:data": map[string]any{"f:a": map[string]any{}, "f:b": map[string]any{}},
+	}}})
+	draft := func(f func(m map[string]any)) map[string]any {
+		o := live.DeepCopy().Object
+		delete(o, "data")
+		o["stringData"] = map[string]any{"a": "x", "b": "y"} // eA== is "x", eQ== is "y"
+		f(o)
+		return o
+	}
+	paths := func(o map[string]any) []string {
+		var out []string
+		for _, c := range conflictsFor(live, foldStringData(o)) {
+			out = append(out, c.Path)
+		}
+		return out
+	}
+	if got := paths(draft(func(m map[string]any) { _ = unstructured.SetNestedField(m, "other", "metadata", "labels", "app") })); len(got) != 0 {
+		t.Fatalf("decoded draft that only changes a label conflicts: %v", got)
+	}
+	if got := paths(draft(func(m map[string]any) { m["stringData"].(map[string]any)["a"] = "changed" })); len(got) != 1 || got[0] != "data.a" {
+		t.Fatalf("a changed value must conflict with its owner: %v", got)
+	}
+	// stringData wins over data on a collision, and the input is left alone
+	in := map[string]any{"apiVersion": "v1", "kind": "Secret", "data": map[string]any{"a": "b2xk"}, "stringData": map[string]any{"a": "x"}}
+	out := foldStringData(in)
+	if out["data"].(map[string]any)["a"] != "eA==" || in["data"].(map[string]any)["a"] != "b2xk" || out["stringData"] != nil {
+		t.Fatalf("fold: %v / %v", out, in)
+	}
+	// other kinds are never folded
+	cm := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "stringData": map[string]any{"a": "x"}}
+	if got := foldStringData(cm); got["stringData"] == nil || got["data"] != nil {
+		t.Fatalf("folded a non-Secret: %v", got)
+	}
+}

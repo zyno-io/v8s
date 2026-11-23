@@ -52,19 +52,19 @@ The **VerticalPodAutoscaler** list shows each VPA's target, update mode, status 
 
 Press `Enter` on a row, or click it, to open the drawer. The URL changes with it, so the drawer is linkable. On a phone it is a full page.
 
-| Tab       | What it shows                                                                                         |
-| --------- | ----------------------------------------------------------------------------------------------------- |
-| Overview  | Status, conditions, key fields, owners, and, for managed objects, a link to the Flux or Helm source   |
-| Logs      | For pods and workloads. See [Operations](/guide/operations#logs)                                      |
-| Shell     | For pods. See [Operations](/guide/operations#pod-shell-and-debug-containers)                          |
-| Inventory | For Flux Kustomizations: the objects they manage. See [Flux](/guide/flux)                             |
-| Release   | For Flux HelmReleases: the Helm release underneath. See [Flux](/guide/flux)                           |
-| Report    | For Trivy, Kyverno, and other scanner report objects: the report's rows (CVEs, checks, results)       |
-| Security  | Kyverno, Trivy, and Kubescape findings for this workload. See [Security](/guide/security)             |
-| Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network) |
-| YAML      | The live object. Read, copy, or edit it                                                               |
-| Events    | All events for this object, newest first                                                              |
-| Related   | What owns this object and what it owns                                                                |
+| Tab       | What it shows                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Overview  | Status, conditions, key fields, owners (click one to open it), and, for managed objects, a link to the Flux or Helm source |
+| Logs      | For pods and workloads. See [Operations](/guide/operations#logs)                                                           |
+| Shell     | For pods. See [Operations](/guide/operations#pod-shell-and-debug-containers)                                               |
+| Inventory | For Flux Kustomizations: the objects they manage. See [Flux](/guide/flux)                                                  |
+| Release   | For Flux HelmReleases: the Helm release underneath. See [Flux](/guide/flux)                                                |
+| Report    | For Trivy, Kyverno, and other scanner report objects: the report's rows (CVEs, checks, results)                            |
+| Security  | Kyverno, Trivy, and Kubescape findings for this workload. See [Security](/guide/security)                                  |
+| Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network)                      |
+| YAML      | The live object. Read, copy, or edit it                                                                                    |
+| Events    | All events for this object, newest first                                                                                   |
+| Related   | What owns this object and what it owns                                                                                     |
 
 The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 
@@ -82,6 +82,21 @@ Applying is a normal update of the object you opened, like `kubectl edit`. Only 
 ::: tip Large documents
 Documents over 1 MB open read-only, and so do objects deleted on the server.
 :::
+
+### Wrap, Pretty and Decoded
+
+**Wrap** wraps long lines in the YAML editor. It works in view and edit mode and is remembered in your browser.
+
+**Pretty** (ConfigMaps) and **Decoded** (Secrets) are also remembered. They make the document readable without changing the object. Pretty is off by default; Decoded is on by default:
+
+- ConfigMap: JSON values (including JSON that was encoded as a string) are indented, and every multi-line value is shown as a block (`|`) instead of a quoted string with `\n`. Lines are not folded. Values that contain a carriage return (Windows line endings), or whose first line starts with a tab, stay quoted, because a block cannot hold them faithfully. Invalid JSON is left alone.
+- Secret (**Decoded**): once the values are revealed, base64 values that decode to text are shown as text under `stringData`, with JSON indented. Binary values stay in `data`. Turn Decoded off to see the stored base64. While values are masked there is nothing to decode.
+
+JSON formatting is for viewing only, because it would change the stored bytes, so it never goes into an edit. **Copy** copies what is shown. Pretty and Decoded are skipped for documents over 256 KB.
+
+A ConfigMap still opens for edit as its raw YAML. With Decoded on, a revealed Secret opens in decoded form: you edit values as text, and the API server turns `stringData` back into `data` when you apply. The review diff compares against the live object in the same form, and after a conflict the server copy is fetched revealed so the comparison is meaningful.
+
+Only the `data` and `stringData` blocks are rewritten; the rest of the document is shown exactly as the server sent it.
 
 ### Who else manages this field
 
@@ -155,7 +170,9 @@ On a phone, destructive actions use hold-to-confirm. See [On a phone](/guide/mob
 
 Secret lists never download values: v8s watches Secrets as metadata only, so you see names, types, and ages. Opening a Secret does not fetch it either. The Overview tab says so, and the YAML tab loads the masked manifest on demand, tagged **values masked**.
 
-Revealing is for the whole object, not per key. **Reveal all** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**. It needs the `get` permission on that Secret. **Mask again** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
+Revealing is for the whole object, not per key. **Reveal** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**; with Decoded on (the default) they show as text. Revealing needs the `get` permission on that Secret. The Secret's YAML tab has a single toolbar: the values tag on the left, and Decoded, Wrap, Copy, Reveal or Mask, and Edit on the right. **Mask** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
+
+Editing a masked Secret would mean editing placeholders, so the button reads **Reveal and edit** (and `e` does the same): it reveals the values, then opens the editor. If the reveal fails, the error is shown and nothing opens.
 
 Secret values are never written to logs or the recent activity list.
 

@@ -19,6 +19,7 @@ import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
 import { editRequest, openObject } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
 import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
+import { emptyKindOf, loadingNames } from '@/lib/loading.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
@@ -775,14 +776,18 @@ const showCluster = computed(() => props.plan.clusterIdx >= 0 && props.plan.cols
 // Which usage sub-columns are shown matters too: two blocks of the same width with different columns must re-render the rows.
 const planKey = computed(() => props.plan.grid + props.plan.cols.length + props.plan.cols.map(c => c.subs?.map(u => u.key).join() ?? '').join('|'));
 
-const emptyKind = computed(() => {
-    if (!clusters.activeIds.length) return 'no-clusters';
-    if (props.handle.total.value > 0) return '';
-    if (props.handle.version.value === 0) return 'loading';
-    if (isFiltered(ui.value)) return 'filtered';
-    if (clusters.states.some(st => st.phase === 'syncing' || st.phase === 'connecting')) return 'syncing';
-    return 'none';
-});
+const loadingIds = computed(() => clusters.loadingOf(props.gvr));
+const emptyKind = computed(() =>
+    emptyKindOf({
+        clusters: clusters.activeIds.length,
+        total: props.handle.total.value,
+        version: props.handle.version.value,
+        filtered: isFiltered(ui.value),
+        loading: loadingIds.value.length,
+        switching: clusters.activeIds.some(id => clusters.switching(id) !== ''),
+        syncing: clusters.states.some(st => st.phase === 'syncing' || st.phase === 'connecting')
+    })
+);
 
 /** Phone card: the first few text/int columns beyond the identity and status columns, as "label value". */
 const cardMetrics = computed(() =>
@@ -981,7 +986,7 @@ function metricText(c: ColPlan, row: Row): string {
                 </div>
             </template>
         </div>
-        <div v-if="emptyKind" class="empty" role="status">
+        <div v-if="emptyKind" class="empty" role="status" data-testid="table-empty">
             <template v-if="emptyKind === 'no-clusters'">
                 <p>No clusters connected.</p>
                 <button class="btn" type="button" @click="clusters.open()">Choose clusters</button>
@@ -991,7 +996,12 @@ function metricText(c: ColPlan, row: Row): string {
                 <p>No {{ title.toLowerCase() }} match the current filters.</p>
                 <button class="btn sm" type="button" @click="table.clearFilters(gvr)">Clear filters</button>
             </template>
-            <template v-else-if="emptyKind === 'syncing'"><p class="muted">Clusters are still syncing; rows stream in as they arrive.</p></template>
+            <template v-else-if="emptyKind === 'syncing'">
+                <p v-if="loadingIds.length" class="muted">
+                    Loading {{ title.toLowerCase() }} from {{ loadingNames(loadingIds, clusters.displayName) }}; rows appear as they arrive.
+                </p>
+                <p v-else class="muted">Clusters are still syncing; rows stream in as they arrive.</p>
+            </template>
             <template v-else><p class="muted">No {{ title.toLowerCase() }}.</p></template>
         </div>
     </div>

@@ -10,16 +10,16 @@ import (
 	"github.com/zyno-io/v8s/agent/pkg/protocol"
 )
 
-// Every user's engine answers update.status from the one server-wide checker (one GitHub request in total).
+// Every user's engine answers update.status from the one server-wide checker (one request in total).
 func TestUpdateStatusSharedAcrossUsers(t *testing.T) {
 	var hits atomic.Int32
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
-		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9"}`))
+		_, _ = w.Write([]byte(`{"version":"9.9.9"}`))
 	}))
 	defer gh.Close()
 	e := newEnv(t, nil)
-	chk := updatecheck.New(updatecheck.Options{Current: "1.0.0", API: gh.URL})
+	chk := updatecheck.New(updatecheck.Options{Current: "1.0.0", URL: gh.URL})
 	e.srv.updates = chk // before any login: no engine exists yet
 	go chk.Run(e.srv.baseCtx)
 
@@ -38,7 +38,7 @@ func TestUpdateStatusSharedAcrossUsers(t *testing.T) {
 		}
 	}
 	if n := hits.Load(); n != 1 {
-		t.Fatalf("%d GitHub requests", n)
+		t.Fatalf("%d update-check requests", n)
 	}
 }
 

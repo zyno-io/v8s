@@ -6,7 +6,7 @@ It is built around a performance budget. A Go agent keeps compact projections of
 
 ## Does v8s send my cluster data anywhere?
 
-No. The agent runs on your machine, or in your own infrastructure for [hosted mode](/guide/hosted), and talks to your clusters directly. There is no v8s cloud service and no telemetry. The one outside request is a once-a-day check of GitHub for a newer release: it carries no cluster data and no version or identifiers, and you can [turn it off](/guide/install#updates).
+No. The agent runs on your machine, or in your own infrastructure for [hosted mode](/guide/hosted), and talks to your clusters directly. There is no v8s cloud service and no telemetry. The one outside request is a check of `https://v8s.io/release.json` every 15 minutes for a newer release: it carries no cluster data and no version or identifiers, and you can [turn it off](/guide/install#updates).
 
 ## Which credentials does v8s use?
 
@@ -26,7 +26,7 @@ Yes. To v8s a gateway is a Kubernetes endpoint with OIDC, configured like any ot
 
 ## Are Secrets safe to browse?
 
-Secret lists show names and metadata only: values are never downloaded for a list. Values stay hidden until you choose **Reveal all** on the Secret, which fetches the whole object and needs `get` on that Secret. Secret values never go into the recent activity list. See [Secrets](/guide/resources#secrets).
+Secret lists show names and metadata only: values are never downloaded for a list. Values stay hidden until you choose **Reveal** on the Secret, which fetches the whole object and needs `get` on that Secret. Secret values never go into the recent activity list. See [Secrets](/guide/resources#secrets).
 
 ## Can v8s keep my logs?
 
@@ -51,6 +51,10 @@ Kyverno's CEL policies (`policies.kyverno.io`) are supported. From Kyverno 1.20,
 ## Why does a view show "syncing"?
 
 The first rows arrive as soon as they are loaded, and the count updates until the cluster has been read in full. You can work in the view meanwhile. See [Connection states](/guide/clusters#connection-states).
+
+## Why does a chip say "loading secrets…"?
+
+The cluster itself has synced, but the list you have open (Secrets here) has not finished its first load. Secrets and CRD-backed lists are read in pages, and a cluster with many large Helm release Secrets can take a while. If it stays for long, the API server is slow to list that type, or the list keeps failing; the agent log says which (`slow discovery`, `discovery failed`, `first list failing` with the error, `slow first list`).
 
 ## Can I use v8s without a cluster?
 
