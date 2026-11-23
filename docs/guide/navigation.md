@@ -39,7 +39,7 @@ Press `?` for the same list in the app.
 | `Enter`               | Open the focused row in the drawer; focus moves into the drawer                                                               |
 | `x`                   | Select or deselect the focused row                                                                                            |
 | `l`                   | Open the Logs tab of the focused pod or workload                                                                              |
-| `s`                   | Open the Shell tab of the focused pod                                                                                         |
+| `s`                   | Open the Shell tab of the focused pod: one container connects at once, otherwise the container picker takes focus             |
 | `e`                   | Edit the YAML of the focused row, or of the object open in the drawer                                                         |
 | `d`                   | Describe: open the focused row, or the open object, on the Overview tab                                                       |
 | `y`                   | Open the focused row, or the open object, on the YAML tab                                                                     |

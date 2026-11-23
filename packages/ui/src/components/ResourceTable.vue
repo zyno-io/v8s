@@ -16,7 +16,7 @@ import { actionById } from '@/lib/actions.ts';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
-import { editRequest, openObject } from '@/lib/drawer.ts';
+import { editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
 import { focusDrawer, setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { emptyKindOf, loadingNames } from '@/lib/loading.ts';
@@ -658,8 +658,14 @@ setPageKeyHandler((e, scope) => {
         case 's': {
             // `l` opens the Logs tab, `s` the Shell tab of the focused row, where the kind has one.
             const tab: DrawerTab = e.key === 'l' ? 'logs' : 'shell';
-            if (inDrawer) return openInDrawer(tab);
+            if (inDrawer) {
+                if (tab === 'shell') shellRequest.value = true;
+                if (openInDrawer(tab)) return true;
+                shellRequest.value = false;
+                return false;
+            }
             if (!ui.value.focusId || !tabsFor(props.gvr).includes(tab)) return false;
+            if (tab === 'shell') shellRequest.value = true;
             openRow(ui.value.focusId, tab, true);
             return true;
         }

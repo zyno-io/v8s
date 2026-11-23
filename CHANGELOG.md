@@ -17,9 +17,11 @@ release notes when the tag has no annotation.
 
 - The drawer takes the keyboard: opening an object moves focus into it and dims the list, `j`/`k`/`x`/`Enter` no longer act on the list behind it, `Esc` or the close button return focus to the same row, and `y`/`e`/`d`/`l`/`s`/`c`/`n`/`o`/`r` act on the open object. `Esc` in the read-only YAML view now closes the drawer.
 - `:ns *` clears the namespace filter (like `:ns all`) instead of selecting every namespace one by one.
+- Shell tab: `s` connects at once to a pod with one container, or focuses the container picker (`Enter` connects); a click on the tab still waits for **Connect**. When a session ends, focus moves to **Reconnect**, so `Esc` closes the drawer again. The debug container section is a separate collapsible card, hidden while a session is open.
 
 ### Fixed
 
+- `e` puts the cursor in the YAML editor; before, editing started but the keyboard stayed outside it.
 - Logs: scrolling up always pauses following, even under a fast stream; scrolling back to the bottom (or `End`) resumes it; toggling Wrap or resizing keeps following.
 
 ## 0.9.0 — 2026-11-23

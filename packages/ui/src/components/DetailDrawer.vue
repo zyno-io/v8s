@@ -12,7 +12,7 @@ import ProtectedMark from '@/components/ProtectedMark.vue';
 import { kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { isScrollKey, redirectsScrollKey, scrollStep, type DrawerSpot } from '@/lib/drawer-keys.ts';
-import { closeDrawer, editRequest, openObject } from '@/lib/drawer.ts';
+import { closeDrawer, editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
 import { currentDrawerNav, isEditable, restoreListFocus, setDrawerNav, type DrawerNav } from '@/lib/keys.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
@@ -139,7 +139,9 @@ watch(
     { immediate: true }
 );
 // Switching tab (y / l / d) unmounts the focused pane: focus falls to <body>; bring it back.
-watch(tab, async () => {
+watch(tab, async t => {
+    // `s` asked the Shell pane for focus, but it never mounted (the object failed to load): don't let a later visit act on it.
+    if (t !== 'shell') shellRequest.value = false;
     await nextTick();
     if (document.activeElement === document.body) takeFocus();
 });
