@@ -170,7 +170,7 @@ On a phone, destructive actions use hold-to-confirm. See [On a phone](/guide/mob
 
 Secret lists never download values: v8s watches Secrets as metadata only, so you see names, types, and ages. Opening a Secret does not fetch it either. The Overview tab says so, and the YAML tab loads the masked manifest on demand, tagged **values masked**.
 
-Revealing is for the whole object, not per key. **Reveal** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**; with Decoded on (the default) they show as text. The Secret's YAML tab has a single toolbar: the values tag on the left, and Decoded, Wrap, Copy, Reveal or Mask, and Edit on the right. It needs the `get` permission on that Secret. **Mask** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
+Revealing is for the whole object, not per key. **Reveal** fetches the Secret again with every value (base64-encoded, as stored) and tags the pane **values revealed**; with Decoded on (the default) they show as text. Revealing needs the `get` permission on that Secret. The Secret's YAML tab has a single toolbar: the values tag on the left, and Decoded, Wrap, Copy, Reveal or Mask, and Edit on the right. **Mask** drops the values, and they are also dropped when you close the drawer, change tab, or open another object. You cannot reveal or mask while an edit is open.
 
 Editing a masked Secret would mean editing placeholders, so the button reads **Reveal and edit** (and `e` does the same): it reveals the values, then opens the editor. If the reveal fails, the error is shown and nothing opens.
 

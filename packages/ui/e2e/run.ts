@@ -479,6 +479,13 @@ async function main() {
                 });
             assert.equal(await sameToolbar(), true);
             assert.equal(await pressed('yaml-decoded'), 'true');
+            // Reveal and edit (the masked default) reveals, then opens the decoded document in the editor
+            await edit.click();
+            await page.getByTestId('edit-hint').filter({ hasText: 'Editing decoded values' }).waitFor({ timeout: 10000 });
+            await page.waitForFunction(() => document.querySelector('.cm-content')?.textContent?.includes('stringData:'), null, { timeout: 10000 });
+            await page.getByTestId('discard').click();
+            await page.getByTestId('mask').click();
+            await page.getByText('values masked').waitFor({ timeout: 10000 });
             // Reveal with the default (Decoded on) lands on readable string data
             await page.getByTestId('reveal').click();
             await page.getByText('values revealed').waitFor({ timeout: 10000 });

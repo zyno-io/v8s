@@ -98,6 +98,10 @@ watch(
         conflict.value = null;
         prettyView.value = null;
         decodedEdit.value = false;
+        // An edit that opened while the masked payload was on its way (Mask, then Edit at once) has nothing left to edit.
+        mode.value = 'view';
+        review.value = null;
+        dirty.value = false;
     }
 );
 
@@ -379,7 +383,7 @@ defineExpose({ startEdit, reloadLive, mode });
                     </button>
                 </template>
                 <template v-else>
-                    <slot name="status"></slot>
+                    <slot v-if="mode !== 'review'" name="status"></slot>
                     <span class="tag warning">editing</span>
                     <span class="muted small">opened at <span class="mono">{{ openedRV }}</span></span>
                     <span v-if="prettyOn && kind === 'configmap'" class="muted small" data-testid="edit-hint">Editing the raw YAML</span>
@@ -387,7 +391,7 @@ defineExpose({ startEdit, reloadLive, mode });
                     <div class="grow"></div>
                     <button class="btn sm" type="button" :aria-pressed="wrap" data-testid="yaml-wrap" @click="wrap = !wrap">Wrap</button>
                     <slot name="actions"></slot>
-                    <button class="btn sm" type="button" @click="discard">Discard</button>
+                    <button class="btn sm" type="button" data-testid="discard" @click="discard">Discard</button>
                     <button class="btn sm primary" type="button" :disabled="!dirty" data-testid="review" @click="startReview">Review changes</button>
                 </template>
             </div>
