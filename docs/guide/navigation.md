@@ -35,11 +35,11 @@ Press `?` for the same list in the app.
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `:`                   | Open the command bar                                                                                                          |
 | `/`                   | Focus the filter                                                                                                              |
-| `j` / `k`             | Move the focus down / up (arrow keys also work)                                                                               |
-| `Enter`               | Open the focused row in the drawer                                                                                            |
+| `j` / `k`             | Move the focus down / up in the list (arrow keys also work)                                                                   |
+| `Enter`               | Open the focused row in the drawer; focus moves into the drawer                                                               |
 | `x`                   | Select or deselect the focused row                                                                                            |
 | `l`                   | Open the Logs tab of the focused pod or workload                                                                              |
-| `s`                   | Open the Shell tab of the focused pod                                                                                         |
+| `s`                   | Open the Shell tab of the focused pod: one container connects at once, otherwise the container picker takes focus             |
 | `e`                   | Edit the YAML of the focused row, or of the object open in the drawer                                                         |
 | `d`                   | Describe: open the focused row, or the open object, on the Overview tab                                                       |
 | `y`                   | Open the focused row, or the open object, on the YAML tab                                                                     |
@@ -51,14 +51,23 @@ Press `?` for the same list in the app.
 | `r`                   | Restart the focused workload, or the selected workloads (asks first)                                                          |
 | `Ctrl+D`              | Delete the focused row, or the selected rows                                                                                  |
 | `Enter` in the filter | Move focus to the results (first row), then `j` / `k` or the arrow keys                                                       |
-| `Esc`                 | Close the drawer; with no drawer, clear the filter, then the selection                                                        |
+| `Esc`                 | Close the drawer (focus returns to the list, on the same row); with no drawer, clear the filter, then the selection           |
 | `Ctrl+K` / `Cmd+K`    | Open the search palette                                                                                                       |
 | `0`                   | Show all namespaces (clear the namespace filter)                                                                              |
 | `1`–`9`               | Switch to a recently used namespace set, most recent first ([below](#recent-namespaces))                                      |
 | `[`                   | Pin or unpin the sidebar                                                                                                      |
 | `?`                   | Show the shortcut list                                                                                                        |
 
-`y`, `c`, `n`, `Shift+J`, `o`, `Shift+F`, `r` and `Ctrl+D` are k9s-style. They use the same actions as the action bar and the drawer, with the same permission checks and confirmations: `Ctrl+D` and `r` ask before they run, bulk or protected-cluster changes still need the typed confirmation, and a key does nothing (or shows the reason) where the action is not offered. `Shift+J` reads the object's owner references and shows "No owner" when there is none. `r` applies to Deployments, StatefulSets and DaemonSets; `Shift+F` to pods and services (and the port-forward dialog); `o` to pods. With no row focused (for example after a `Shift+J` jump) the keys act on the object open in the drawer. Confirmations from `Ctrl+D` and `r` start with Cancel focused, so a stray `Enter` never runs them. Helm releases use their own Uninstall and Upgrade actions instead of `Ctrl+D` and `r`.
+`y`, `c`, `n`, `Shift+J`, `o`, `Shift+F`, `r` and `Ctrl+D` are k9s-style. They use the same actions as the action bar and the drawer, with the same permission checks and confirmations: `Ctrl+D` and `r` ask before they run, bulk or protected-cluster changes still need the typed confirmation, and a key does nothing (or shows the reason) where the action is not offered. `Shift+J` reads the object's owner references and shows "No owner" when there is none. `r` applies to Deployments, StatefulSets and DaemonSets; `Shift+F` to pods and services (and the port-forward dialog); `o` to pods. While the drawer has focus the keys act on the object in it (never the selection); from the list they act on the focused row, else the open object. Confirmations from `Ctrl+D` and `r` start with Cancel focused, so a stray `Enter` never runs them. Helm releases use their own Uninstall and Upgrade actions instead of `Ctrl+D` and `r`.
+
+### In the drawer
+
+When a drawer opens, or shows another object, it takes the keyboard: focus goes to the tab's content and the list underneath is dimmed (its focused row shows a muted ring). `j`, `k`, `x`, `Enter` and the namespace digits do nothing there. `Enter`, `l`, `s`, `e`, `d` and `y` on the list move focus into the drawer even when it already shows that row; clicking the open row keeps focus on the list. To use the list again, click it or press `Esc`/the close button, which returns focus to the list on the row you left.
+
+- `↑` `↓` `PgUp` `PgDn` scroll the tab, wherever focus is in the drawer's header or tab strip; `←` `→` `Home` `End` do too, except on a tab button reached with `Tab`, where `←` `→` `Home` `End` switch tabs. Clicking a tab moves focus to its content, so every key scrolls.
+- In the Logs tab, `↑`, `PgUp` and `Home` pause following; `End`, or `↓`/`PgDn` at the bottom, resume it.
+- `e`, `d`, `y`, `l` and `s` switch the open object's tab.
+- `Esc` or the ✕ button closes the drawer and puts focus back on the same row.
 
 ### Recent namespaces
 
@@ -71,7 +80,7 @@ Using a set again moves it back to `1` and pushes the others down; the 10th drop
 
 `l` and `s` act only where the type has that tab: `l` on pods and workloads, `s` on pods. The [Problems view](/guide/problems#keyboard) has its own keys (`j`, `k`, `Enter`, `a`, `o`).
 
-In a filter, `Enter` hands focus to the list, with the first row focused. `Esc` from the list clears the filter and keeps focus on the list; `Esc` again continues the order below. `Esc` works in order, so repeated presses unwind your view one layer at a time. With the drawer open, `Esc` closes it and leaves your search as it is; only `Esc` in the search field itself clears the search (`/` still focuses it). Inside the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits. Apart from `Ctrl+D` and `Ctrl+K`, v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs (`Cmd+D` still bookmarks on macOS). Shortcuts are off while you type in a text field.
+In a filter, `Enter` hands focus to the list, with the first row focused. `Esc` from the list clears the filter and keeps focus on the list; `Esc` again continues the order below. `Esc` works in order, so repeated presses unwind your view one layer at a time. With the drawer open, `Esc` closes it and leaves your search as it is; only `Esc` in the search field itself clears the search (`/` still focuses it). While you are editing in the YAML editor, `Esc` only leaves the editor, so it can never close the drawer over unsaved edits; in the read-only view it closes the drawer. Apart from `Ctrl+D` and `Ctrl+K`, v8s avoids `Ctrl+letter` shortcuts, so your browser and OS keep theirs (`Cmd+D` still bookmarks on macOS). Shortcuts are off while you type in a text field.
 
 ## The command bar
 

@@ -213,6 +213,7 @@ const live = computed(() => (loading.value ? 'Loading inventory' : summary.value
             v-if="tree && rows.length"
             ref="scroller"
             class="scroll"
+            data-drawer-scroll
             role="tree"
             tabindex="0"
             aria-label="Kustomization inventory"

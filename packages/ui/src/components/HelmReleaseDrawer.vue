@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
             </button>
         </div>
 
-        <div :id="`helm-panel-${tab}`" class="panel" role="tabpanel" :aria-labelledby="`helm-tab-${tab}`">
+        <div :id="`helm-panel-${tab}`" class="panel" role="tabpanel" tabindex="-1" :aria-labelledby="`helm-tab-${tab}`">
             <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
             <p v-else-if="!rel" class="muted" role="status">Loading release…</p>
             <template v-else-if="cur">
@@ -534,6 +534,10 @@ h3 {
     border-bottom-color: var(--accent);
 }
 .tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+}
+.panel:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
 }

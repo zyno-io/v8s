@@ -10,6 +10,9 @@ import { carriedTab, drawerQuery, gvrFromRoute, gvrPath } from './route.ts';
 /** Set by the `e` shortcut: the YAML pane starts editing as soon as it shows (and clears it). */
 export const editRequest = shallowRef(false);
 
+/** Set by the `s` shortcut (not a click on the tab): the Shell pane focuses its container picker, or connects at once to a lone container. */
+export const shellRequest = shallowRef(false);
+
 /**
  * Opens an object in the drawer; the URL carries it (`?c=…&ns=…&n=…`). Pushes when opening, replaces when only the tab changes.
  * Without a `tab`, an open drawer keeps its current tab when the new object has it (clicking from pod to pod stays on Logs).

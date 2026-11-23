@@ -2,7 +2,7 @@
 import type { ObjectDryRunResult, ObjectPayload, ObjectRef } from '@v8s/client';
 
 import { RpcError } from '@v8s/client';
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { checkAccess } from '@/lib/access.ts';
@@ -167,8 +167,20 @@ async function startEdit() {
     openedYaml.value = text;
     dirty.value = false;
     mode.value = 'edit';
-    queueMicrotask(() => editor.value?.focus());
+    focusPending = true;
+    // After the render that makes the editor editable: focusing a read-only CodeMirror content does nothing.
+    await nextTick();
+    focusEditor();
 }
+
+// The editor is an async component: after `e` it may mount only after editing has started, so focus it when it arrives.
+let focusPending = false;
+function focusEditor() {
+    if (!focusPending || !editor.value || mode.value !== 'edit') return;
+    focusPending = false;
+    editor.value.focus();
+}
+watch(editor, focusEditor, { flush: 'post' });
 
 function editClicked() {
     if (isMaskedSecret.value) emit('reveal-edit');
@@ -424,7 +436,7 @@ defineExpose({ startEdit, reloadLive, mode });
                 <b>Review changes</b>
                 <span class="muted small">against live resourceVersion <span class="mono">{{ payload.resourceVersion }}</span></span>
             </div>
-            <div class="scroll">
+            <div class="scroll" tabindex="-1" data-drawer-scroll>
                 <div v-if="review.busy" class="notice" role="status">Running a server-side dry run…</div>
                 <div v-if="conflict && conflictMasked" class="notice warn" role="note" data-testid="conflict-masked">
                     The server copy's values could not be revealed, so they show as masked below. Reload to continue from the live object.

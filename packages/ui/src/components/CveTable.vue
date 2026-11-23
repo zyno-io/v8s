@@ -230,12 +230,15 @@ const phoneLine3 = (r: ReportRow) => r.cells[r.cells.length - 1] ?? '';
             <div class="muted small" aria-live="polite" role="status">{{ error ? '' : kind === 'document' ? '' : status }}</div>
         </header>
         <div v-if="error" class="notice warn" role="alert">{{ error }}</div>
-        <pre v-else-if="kind === 'document'" class="doc mono" tabindex="0" data-testid="report-doc">{{ doc }}</pre>
+        <pre v-else-if="kind === 'document'" class="doc mono" tabindex="0" :data-drawer-scroll="height ? undefined : ''" data-testid="report-doc">{{
+            doc
+        }}</pre>
         <p v-else-if="kind && !acc.rows.length && !loading" class="muted empty">This report has no rows.</p>
         <div
             v-else
             ref="scroller"
             class="scroller"
+            :data-drawer-scroll="height ? undefined : ''"
             role="table"
             :aria-rowcount="view.length + 1"
             :aria-label="REPORT_KIND_LABEL[kind] ?? 'Report'"

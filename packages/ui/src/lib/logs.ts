@@ -144,6 +144,8 @@ export const OVERSCAN = 12;
 /** Extra lines on each side of the visible range requested from the worker. */
 export const VIEW_PAD = 60;
 export const BOTTOM_TOLERANCE = 4;
+/** Any upward user move pauses; a clamp after a resize or Clear lands exactly at the bottom, so it never does. */
+export const PAUSE_TOLERANCE = 1;
 
 // ---- follow state machine ----
 
@@ -153,7 +155,7 @@ export function isAtBottom(scrollTop: number, clientHeight: number, scrollHeight
 
 /** User scrolled up away from the bottom while following: pause. Only an upward move counts, content growth does not. */
 export function shouldPauseFollow(prevTop: number, top: number, clientHeight: number, scrollHeight: number): boolean {
-    return top < prevTop && !isAtBottom(top, clientHeight, scrollHeight);
+    return top < prevTop && !isAtBottom(top, clientHeight, scrollHeight, PAUSE_TOLERANCE);
 }
 
 /** scrollTop change that keeps the user's view still when `first` advances while following is paused. */
