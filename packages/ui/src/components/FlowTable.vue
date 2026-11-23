@@ -16,7 +16,8 @@ import {
     ROW_H_FLOW_PHONE,
     verdictTone
 } from '@/lib/flows.ts';
-import { dropCompensation, followItems, isAtBottom, newLinesSince, shouldPauseFollow, viewRange } from '@/lib/logs.ts';
+import { FollowTracker } from '@/lib/follow.ts';
+import { dropCompensation, followItems, newLinesSince, viewRange } from '@/lib/logs.ts';
 import { isPhone } from '@/lib/viewport.ts';
 
 /**
@@ -44,6 +45,7 @@ const virt = useVirtualizer(
 const totalSize = computed(() => virt.value.getTotalSize());
 watch(rowH, () => {
     virt.value.measure();
+    if (props.follow) pin = true;
     schedule(true);
 });
 
@@ -76,6 +78,7 @@ function frame() {
         pin = false;
         setTop(el.scrollHeight);
     }
+    ft.painted(el);
     const visible = Math.ceil(el.clientHeight / rowH.value) + 1;
     let range: { first: number; count: number } | null = null;
     if (props.follow) {
@@ -91,31 +94,30 @@ function frame() {
     props.handle.setView(range.first, range.count, props.follow);
 }
 
-let lastTop = 0;
-let expect = -1;
-let expectAt = 0;
+const ft = new FollowTracker();
 function setTop(top: number) {
     const el = scroller.value;
-    if (!el) return;
-    el.scrollTop = top;
-    expect = el.scrollTop;
-    expectAt = performance.now();
-    lastTop = expect;
+    if (el) ft.setTop(el, top);
+}
+function apply(c: 'pause' | 'resume' | null) {
+    if (c === 'pause') emit('update:follow', false);
+    else if (c === 'resume') resume();
 }
 function onScroll() {
     const el = scroller.value;
     if (!el) return;
-    const top = el.scrollTop;
-    const mine = performance.now() - expectAt < 150 && Math.abs(top - expect) < 1;
-    if (!mine) {
-        if (props.follow && shouldPauseFollow(lastTop, top, el.clientHeight, el.scrollHeight)) emit('update:follow', false);
-        else if (!props.follow && top > lastTop && isAtBottom(top, el.clientHeight, el.scrollHeight)) {
-            emit('update:follow', true);
-            pin = true;
-        }
+    const c = ft.onScroll(el, props.follow, rowH.value);
+    if (c === 'pause') emit('update:follow', false);
+    else if (c === 'resume') {
+        emit('update:follow', true);
+        pin = true;
     }
-    lastTop = top;
     schedule();
+}
+function onWheel(e: WheelEvent) {
+    const el = scroller.value;
+    if (!el || e.ctrlKey) return;
+    apply(ft.onWheel(el, e.deltaX, e.deltaY, props.follow, rowH.value));
 }
 function resume() {
     pin = true;
@@ -123,10 +125,15 @@ function resume() {
     schedule(true);
 }
 function onKey(e: KeyboardEvent) {
-    if (e.key === 'End' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
+    const el = scroller.value;
+    if (!el || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.shiftKey && e.key !== ' ') return;
+    if (e.key === ' ' && e.target !== el) return;
+    const c = ft.onKey(el, e.key, e.shiftKey, props.follow, rowH.value);
+    if (c === 'resume') {
+        if (e.key === 'End') e.preventDefault();
         resume();
-    }
+    } else if (c === 'pause') emit('update:follow', false);
 }
 
 watch(
@@ -162,6 +169,7 @@ watch(
 watch(
     () => props.handle,
     h => {
+        ft.reset();
         prevFirst = h.first.value;
         pausedAt.value = h.total.value;
         h.setPaused(document.hidden);
@@ -182,6 +190,7 @@ onMounted(() => {
     if (typeof ResizeObserver === 'function' && scroller.value) {
         ro = new ResizeObserver(() => {
             viewH.value = scroller.value?.clientHeight ?? 0;
+            if (props.follow) pin = true;
             schedule(true);
         });
         ro.observe(scroller.value);
@@ -217,7 +226,9 @@ const rowTitle = (f: Flow) =>
             aria-live="off"
             aria-label="Network flows"
             data-testid="flows-viewer"
+            data-drawer-scroll
             @scroll.passive="onScroll"
+            @wheel.passive="onWheel"
             @keydown="onKey"
         >
             <div class="sizer" :style="{ height: totalSize + 'px' }">

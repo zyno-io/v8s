@@ -117,6 +117,12 @@ onMounted(async () => {
 });
 
 const open = ref(false);
+/** Esc closes an open menu and stops there; with the menu closed it passes on (it closes the drawer). */
+function onMenuEsc(e: KeyboardEvent) {
+    if (!open.value) return;
+    e.stopPropagation();
+    open.value = false;
+}
 /** In flight: a direct action (no dialog) must not fire twice from a double click. */
 const busy = ref(false);
 const names = (n: number) => `${n} ${props.kindLabel.toLowerCase()}`;
@@ -265,7 +271,7 @@ function pastTense(a: ActionDef): string {
             {{ a.label }}<span v-if="viaWrite(a)" class="tag warning wtag">write</span>
         </button>
     </div>
-    <div v-else-if="variant === 'menu'" class="amenu" @keydown.esc.stop="open && (open = false)">
+    <div v-else-if="variant === 'menu'" class="amenu" @keydown.esc="onMenuEsc">
         <button class="btn sm" type="button" aria-haspopup="menu" :aria-expanded="open" data-testid="actions-menu" @click="open = !open">
             Actions
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">

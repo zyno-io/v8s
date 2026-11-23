@@ -822,6 +822,56 @@ async function main() {
             await page.locator('.lrow mark').first().waitFor({ timeout: 10000 });
         });
 
+        await step('drawer: owns the keyboard, logs follow, Esc returns to the row', async () => {
+            const focusedRow = () => page.locator('.scroller .row.focus').first().innerText();
+            const inDrawer = () => page.evaluate(() => !!document.activeElement?.closest('[data-testid=drawer]'));
+            const activeIs = (sel: string) => page.evaluate(s => !!document.activeElement?.matches(s), sel);
+            // Filter -> Enter lands on the list; ArrowDown moves the row focus; `l` opens that row's logs and the drawer takes focus.
+            await page.locator('#pods-filter').click();
+            await page.keyboard.press('Enter');
+            await page.keyboard.press('ArrowDown');
+            const row = await focusedRow();
+            await page.keyboard.press('l');
+            await page.waitForFunction(() => !!document.activeElement?.closest('[data-testid=drawer]'), null, { timeout: 10000 });
+            assert.ok(await inDrawer(), 'drawer has focus after opening');
+            await page.getByTestId('logs-viewer').waitFor({ timeout: 20000 });
+            await page.waitForFunction(
+                () => {
+                    const el = document.querySelector('[data-testid=logs-viewer]');
+                    return !!el && el.scrollHeight > el.clientHeight + 100;
+                },
+                null,
+                { timeout: 20000 }
+            );
+            // Arrows scroll the drawer, not the list underneath.
+            await page.keyboard.press('ArrowDown');
+            await page.keyboard.press('ArrowDown');
+            assert.equal(await focusedRow(), row, 'list row focus unchanged');
+            // Scrolling up pauses following; End follows again.
+            await page.keyboard.press('ArrowUp');
+            await page.waitForFunction(() => document.querySelector('[data-testid=logs-follow]')?.getAttribute('aria-pressed') === 'false', null, {
+                timeout: 5000
+            });
+            assert.ok(await activeIs('[data-testid=logs-viewer]'), 'logs viewer has focus');
+            await page.keyboard.press('End');
+            await page.waitForFunction(() => document.querySelector('[data-testid=logs-follow]')?.getAttribute('aria-pressed') === 'true', null, {
+                timeout: 5000
+            });
+            // `y` opens YAML on the open object; PageDown focuses its scroller.
+            await page.keyboard.press('y');
+            await page.locator('.cm-scroller[data-drawer-scroll]').waitFor({ timeout: 20000 });
+            await page.keyboard.press('PageDown');
+            assert.ok(await activeIs('.cm-scroller'), 'YAML scroller has focus');
+            // Esc closes the drawer from read-only YAML and returns to the same row.
+            await page.keyboard.press('Escape');
+            await page.getByTestId('drawer').waitFor({ state: 'detached' });
+            await page.waitForFunction(() => document.activeElement?.classList.contains('scroller'), null, { timeout: 5000 });
+            assert.equal(await focusedRow(), row, 'same row focused after Esc');
+            // Reopen it for the next steps.
+            await page.keyboard.press('Enter');
+            await page.getByTestId('drawer').waitFor();
+        });
+
         await step('shell: connect and run echo hi', async () => {
             await page.getByRole('tab', { name: 'Shell' }).click();
             await page.getByTestId('shell-connect').click();

@@ -158,6 +158,7 @@ describe('follow helpers', () => {
     it('pauses only on an upward move away from the bottom', () => {
         expect(shouldPauseFollow(900, 800, 100, 1000)).toBe(true);
         expect(shouldPauseFollow(900, 899, 100, 1000)).toBe(false);
+        expect(shouldPauseFollow(900, 896, 100, 1000)).toBe(true);
         expect(shouldPauseFollow(500, 600, 100, 2000)).toBe(false);
     });
     it('compensates for dropped lines', () => {

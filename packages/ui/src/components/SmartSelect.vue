@@ -277,6 +277,8 @@ function typeAhead(ch: string) {
     jumpTo(typeahead(items.value, props.options, buffer, active.value));
 }
 
+defineExpose({ focus: () => trigger.value?.focus() });
+
 function onTriggerKey(e: KeyboardEvent) {
     if (e.defaultPrevented || props.disabled || e.isComposing || e.keyCode === 229) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {

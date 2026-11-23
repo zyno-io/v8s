@@ -370,6 +370,11 @@ h1 {
         outline: none;
     }
 }
+// The drawer has the keyboard: the list's focused-row ring is dimmed until the list takes focus back.
+.scroller.blurred .tr.focus,
+.scroller.blurred .pcard.focus {
+    box-shadow: inset 0 0 0 2px var(--bstrong);
+}
 
 // The inset ring follows the card's rounded corners (12px less its 1px border) instead of being clipped by them. Only corners that
 // touch the card's: a bar below the list (the bulk ActionBar) keeps its bottom square.

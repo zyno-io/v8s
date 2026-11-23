@@ -6,16 +6,17 @@ This page covers the things you do to a running cluster: read logs, open shells,
 
 Open a pod's detail drawer and choose the **Logs** tab. The same tab exists on Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
 
-| Control    | What it does                                                     |
-| ---------- | ---------------------------------------------------------------- |
-| Container  | Choose a container, or all pods and containers merged            |
-| Follow     | Stream new lines as they arrive. Scrolling up pauses following   |
-| Timestamps | Show the line timestamps                                         |
-| Wrap       | Wrap long lines                                                  |
-| Previous   | Show the previous container instance (useful after a crash loop) |
-| Search     | Highlight matches and jump between them, with match case         |
-| Download   | Save the full log to a file                                      |
+| Control    | What it does                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| Container  | Choose a container, or all pods and containers merged                                         |
+| Follow     | Stream new lines as they arrive. Scrolling up pauses following; back at the bottom it resumes |
+| Timestamps | Show the line timestamps                                                                      |
+| Wrap       | Wrap long lines                                                                               |
+| Previous   | Show the previous container instance (useful after a crash loop)                              |
+| Search     | Highlight matches and jump between them, with match case                                      |
+| Download   | Save the full log to a file                                                                   |
 
+- **Keyboard.** `↑`, `PgUp` and `Home` pause following; `End`, or `↓`/`PgDn` once you are at the bottom, resume it. `←` `→` scroll sideways when Wrap is off.
 - **Start.** v8s loads the last 1,000 lines by default, then follows. Choose 1,000, 5,000, or 10,000 in **Tail lines**.
 - **Merged workload logs.** Open Logs on a Deployment (or another workload, or a selector) to see every pod's output merged by timestamp. Merging happens in the agent, so it stays smooth. Merged logs are best on a desktop screen.
 - **Bounded memory.** The view keeps a ring buffer (about 50,000 lines on desktop, 5,000 on a phone). When older lines fall off, the view says "N earlier lines dropped, download full log".
@@ -29,11 +30,11 @@ v8s reads logs live from the pod. It stores nothing: when a pod is gone, so is i
 
 ## Pod shell and debug containers
 
-Open a pod and choose the **Shell** tab, or press `s` on the pod's row. A shell opens only when you press **Connect**, and **Disconnect** ends it. A terminating pod can still be shelled into while its containers run (useful to see why it is stuck), and the shell ends when they stop.
+Open a pod and choose the **Shell** tab, or press `s` on the pod's row. A shell opens only when you press **Connect**, and **Disconnect** ends it. After `s`, a pod with one container connects at once; with several, the container picker has focus, so `↓` picks another and `Enter` connects. When a session ends, focus leaves the terminal for **Reconnect**: `Enter` reconnects and `Esc` closes the drawer. A terminating pod can still be shelled into while its containers run (useful to see why it is stuck), and the shell ends when they stop.
 
 - v8s tries `/bin/bash`, then `/bin/sh`, then `/busybox/sh` in the container you selected.
 - The terminal is a full terminal: resize, UTF-8, copy on select.
-- For **distroless** or shell-less images, v8s offers an **ephemeral debug container**, like `kubectl debug`. Pick an image (for example `busybox` or `nicolaka/netshoot`) and v8s adds it to the pod, targeting the process namespace of the container you are debugging. This needs the `pods/ephemeralcontainers` permission.
+- For **distroless** or shell-less images, v8s offers an **ephemeral debug container**, like `kubectl debug`, under **Debug container** below the terminal (shown while no session is open). Pick an image (for example `busybox` or `nicolaka/netshoot`) and v8s adds it to the pod, targeting the process namespace of the container you are debugging. This needs the `pods/ephemeralcontainers` permission.
 - When the pod is deleted or the container restarts, the session ends and says why.
 
 **Limits.** Sessions through a write context have a 15-minute idle timeout and a 60-minute cap, because they outlive a gateway's per-request check once established. Hosted mode also has an idle timeout (30 minutes by default) and a limit on concurrent sessions per user. On a phone the terminal is simplified, with an accessory key row for Esc, Ctrl, Tab, and arrows. It works, but a desktop is better.

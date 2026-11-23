@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { ObjectPayload } from '@v8s/client';
+import type { ObjectPayload, ObjectRef } from '@v8s/client';
 
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import type { DrawerTab } from '@/lib/route.ts';
@@ -11,7 +11,9 @@ import ObjectOverview from '@/components/ObjectOverview.vue';
 import ProtectedMark from '@/components/ProtectedMark.vue';
 import { kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
-import { closeDrawer, openObject } from '@/lib/drawer.ts';
+import { isScrollKey, redirectsScrollKey, scrollStep, type DrawerSpot } from '@/lib/drawer-keys.ts';
+import { closeDrawer, editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
+import { currentDrawerNav, isEditable, restoreListFocus, setDrawerNav, type DrawerNav } from '@/lib/keys.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
@@ -75,6 +77,12 @@ const actionTargets = computed(() => (pinned.value ? [pinned.value] : []));
 function setTab(t: DrawerTab) {
     if (target.value) void openObject(router, target.value, t, true);
 }
+// A click leaves focus on the tab button, where ← → Home End would switch tabs: hand it to the panel so every scroll key scrolls.
+// Keyboard users who Tab to the tab list keep the ARIA arrow keys (a keyboard activation has `detail` 0).
+function onTabClick(t: DrawerTab, e: MouseEvent) {
+    setTab(t);
+    if (e.detail > 0) void nextTick(() => root.value?.querySelector<HTMLElement>('[role=tabpanel]')?.focus({ preventScroll: true }));
+}
 function onTabKey(e: KeyboardEvent) {
     const list = tabs.value;
     const i = list.indexOf(tab.value);
@@ -100,18 +108,107 @@ function openSource(kindStr: string, name: string, ns: string | undefined) {
     if (gvr) void openObject(router, { cluster: target.value.cluster, gvr, namespace: ns, name });
 }
 
-// ---- focus and width ----
-const closeBtn = ref<HTMLButtonElement | null>(null);
+// ---- focus ----
+// The drawer owns the keyboard while shown. Focus goes to the tab panel (its real scroller mounts async, so the key router resolves
+// it per keypress), never to the close button: a stray Enter/Space must not close the drawer.
+const root = ref<HTMLElement | null>(null);
+let shownRef: ObjectRef | null = null;
+let shownPath = '';
+
+function takeFocus() {
+    const a = root.value;
+    if (!a) return;
+    const act = document.activeElement as HTMLElement | null;
+    // Typing elsewhere, or a dialog is up: leave it.
+    if (act && act !== document.body && !a.contains(act) && (isEditable(act) || act.closest('dialog[open]'))) return;
+    const p = a.querySelector<HTMLElement>('[role=tabpanel]');
+    // Something in the tab took it (the YAML editor after `e`).
+    if (act && p && act !== p && p.contains(act)) return;
+    (p ?? a).focus({ preventScroll: true });
+}
+
 watch(
     () => target.value && `${target.value.cluster}|${target.value.gvr}|${target.value.namespace}|${target.value.name}`,
     async k => {
-        if (k) {
-            await nextTick();
-            closeBtn.value?.focus();
-        }
+        if (!k || !target.value) return;
+        shownRef = { ...target.value };
+        shownPath = route.path;
+        await nextTick();
+        takeFocus();
     },
     { immediate: true }
 );
+// Switching tab (y / l / d) unmounts the focused pane: focus falls to <body>; bring it back.
+watch(tab, async t => {
+    // `s` asked the Shell pane for focus, but it never mounted (the object failed to load): don't let a later visit act on it.
+    if (t !== 'shell') shellRequest.value = false;
+    await nextTick();
+    if (document.activeElement === document.body) takeFocus();
+});
+// `e` on a Helm release sets this, but its drawer has no YAML pane to consume it: the next YAML tab anywhere would start editing.
+watch(
+    [isHelm, editRequest],
+    () => {
+        if (isHelm.value && editRequest.value) editRequest.value = false;
+    },
+    { immediate: true }
+);
+
+const WIDGET =
+    '[role=menu],[role=menubar],[role=listbox],[role=tree],[role=treegrid],[role=grid],[role=radiogroup],[role=slider],[role=separator],[aria-haspopup],dialog';
+
+/** Where focus is in the drawer's chrome; null inside a widget that owns the arrows, or outside the drawer. */
+function spotOf(t: EventTarget | null): DrawerSpot | null {
+    const a = root.value;
+    if (!a || !(t instanceof HTMLElement)) return null;
+    if (t === document.body) return 'body';
+    if (t === a) return 'root';
+    if (!a.contains(t)) return null;
+    if (t.getAttribute('role') === 'tabpanel') return 'panel';
+    if (t.closest('[role=tab]')) return 'tab';
+    if (t.closest('button, a') && !t.closest(WIDGET)) return 'control';
+    return null;
+}
+
+/** Scroll keys pressed on the drawer's chrome focus the active tab's scroller and apply the key there. */
+function scrollKey(e: KeyboardEvent): boolean {
+    if (!isScrollKey(e)) return false;
+    const a = root.value;
+    const panel = a?.querySelector<HTMLElement>('[role=tabpanel]');
+    if (!panel) return false;
+    let dest = panel;
+    for (const c of panel.querySelectorAll<HTMLElement>('[data-drawer-scroll]')) {
+        if (c.getClientRects().length) {
+            dest = c;
+            break;
+        }
+    }
+    if (e.target instanceof Node && dest.contains(e.target)) return false; // native
+    const spot = spotOf(e.target);
+    if (!spot || !redirectsScrollKey(spot, e.key)) return false;
+    if (dest === panel && panel.scrollHeight <= panel.clientHeight && panel.scrollWidth <= panel.clientWidth) return false;
+    dest.focus({ preventScroll: true });
+    // Non-bubbling: only the scroller's own handler runs (LogViewer End/pause, FluxInventory cursor).
+    if (!dest.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, code: e.code, cancelable: true }))) return true;
+    const step = scrollStep(e.key, dest.clientHeight);
+    if ('to' in step) dest.scrollTo({ top: step.to === 'start' ? 0 : dest.scrollHeight });
+    else dest.scrollBy(step);
+    return true;
+}
+
+const nav: DrawerNav = { open: () => !!target.value && !!root.value, scrollKey, focus: takeFocus };
+setDrawerNav(nav);
+onBeforeUnmount(() => {
+    if (currentDrawerNav() === nav) setDrawerNav(null);
+    // Hand focus back to the list (✕, Esc and browser Back alike), unless the user left the page or moved focus elsewhere.
+    const act = document.activeElement;
+    const a = root.value;
+    const ours = !act || act === document.body || (!!a && a.contains(act));
+    if (ours && router.currentRoute.value.path === shownPath) {
+        const ref = shownRef;
+        void nextTick(() => restoreListFocus(ref));
+    }
+});
 
 function loadWidth(): number {
     try {
@@ -163,6 +260,8 @@ const TAB_LABEL: Record<DrawerTab, string> = {
 <template>
     <aside
         v-if="target"
+        ref="root"
+        tabindex="-1"
         class="drawer floating"
         role="complementary"
         :aria-label="`${kindName} ${target.name}`"
@@ -195,14 +294,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     :current-replicas="replicas"
                     :current-revision="revision"
                 />
-                <button
-                    ref="closeBtn"
-                    class="btn ghost sm"
-                    type="button"
-                    aria-label="Close details"
-                    data-testid="drawer-close"
-                    @click="closeDrawer(router)"
-                >
+                <button class="btn ghost sm" type="button" aria-label="Close details" data-testid="drawer-close" @click="closeDrawer(router)">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                         <path d="M4 4l8 8M12 4l-8 8" />
                     </svg>
@@ -227,12 +319,12 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                 :aria-selected="tab === t"
                 :aria-controls="`panel-${t}`"
                 :tabindex="tab === t ? 0 : -1"
-                @click="setTab(t)"
+                @click="onTabClick(t, $event)"
             >
                 {{ TAB_LABEL[t] }}
             </button>
         </div>
-        <div v-if="!isHelm" :id="`panel-${tab}`" class="panel" role="tabpanel" :aria-labelledby="`tab-${tab}`">
+        <div v-if="!isHelm" :id="`panel-${tab}`" class="panel" role="tabpanel" tabindex="-1" :aria-labelledby="`tab-${tab}`">
             <template v-if="isSecret">
                 <div v-if="tab === 'overview'" class="notice" role="note" data-testid="secret-overview">
                     <div>
@@ -381,6 +473,13 @@ h2 {
     border-bottom-color: var(--accent);
 }
 .tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+}
+.drawer:focus {
+    outline: none;
+}
+.panel:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: -2px;
 }

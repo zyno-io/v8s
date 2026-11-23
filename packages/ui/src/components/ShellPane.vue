@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { ObjectRef, ShellHandle } from '@v8s/client';
 
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 
 import SmartSelect from '@/components/SmartSelect.vue';
 import { getAgent } from '@/lib/agent.ts';
+import { shellRequest } from '@/lib/drawer.ts';
 import { errorText, isCancelled } from '@/lib/mutations.ts';
 import {
     connectBlocker,
@@ -47,6 +48,9 @@ const openError = ref('');
 const lastKind = ref<Kind>('exec');
 const startedAt = ref(0);
 const termRef = ref<{ focus(): void } | null>(null);
+const selectRef = ref<{ focus(): void } | null>(null);
+const reconnectRef = ref<HTMLButtonElement | null>(null);
+const paneRef = ref<HTMLElement | null>(null);
 let seq = 0;
 
 const hState = computed(() => handle.value?.state.value ?? null);
@@ -131,6 +135,31 @@ watch(
 );
 onBeforeUnmount(disconnect);
 
+// `s` (never a click on the tab): a lone container connects at once; otherwise the container picker takes focus (Enter connects).
+watch(
+    shellRequest,
+    want => {
+        if (!want) return;
+        shellRequest.value = false;
+        if (handle.value && !ended.value) {
+            termRef.value?.focus();
+            return;
+        }
+        if (!connecting.value && !blocker.value && choice.value.names.length === 1) void start('exec');
+        else void nextTick(() => selectRef.value?.focus());
+    },
+    { immediate: true }
+);
+
+// When the session ends, the terminal lets go of the keyboard (Esc closes the drawer again); Enter on Reconnect starts a new one.
+watch(ended, async v => {
+    if (!v) return;
+    await nextTick();
+    const act = document.activeElement;
+    if (act && act !== document.body && !paneRef.value?.querySelector('.sp-term')?.contains(act)) return;
+    reconnectRef.value?.focus({ preventScroll: true });
+});
+
 const showDebugPrompt = ref(false);
 watch(noShell, v => {
     if (v) showDebugPrompt.value = true;
@@ -142,11 +171,12 @@ function offerDebug() {
 </script>
 
 <template>
-    <div class="sp" data-testid="shell-pane">
+    <div ref="paneRef" class="sp" data-testid="shell-pane">
         <div class="sp-bar">
             <label class="sp-f">
                 <span class="muted">Container</span>
                 <SmartSelect
+                    ref="selectRef"
                     v-model="container"
                     :options="containerOptions"
                     data-testid="shell-container"
@@ -181,7 +211,7 @@ function offerDebug() {
         <div v-if="ended" class="notice" role="status" data-testid="shell-ended">
             <strong>Session ended</strong>
             <span> exit code {{ exit?.code }}<template v-if="exit?.error">: {{ exit.error }}</template> </span>
-            <button type="button" class="btn sm" data-testid="shell-reconnect" @click="start(lastKind)">Reconnect</button>
+            <button ref="reconnectRef" type="button" class="btn sm" data-testid="shell-reconnect" @click="start(lastKind)">Reconnect</button>
         </div>
 
         <p v-if="noShell" class="notice" role="note">
@@ -194,28 +224,48 @@ function offerDebug() {
         </div>
         <p v-else-if="!connecting" class="muted sp-hint">A shell opens only when you press Connect.</p>
 
-        <details class="sp-debug" :open="showDebugPrompt">
-            <summary>Debug container</summary>
-            <p class="muted">
-                For distroless or shell-less containers: starts an ephemeral container with this image sharing the selected container's process
-                namespace.
-            </p>
-            <div class="sp-row">
-                <label class="sp-f">
-                    <span class="muted">Image</span>
+        <details
+            v-if="!handle || ended"
+            class="sp-debug"
+            :open="showDebugPrompt"
+            @toggle="showDebugPrompt = ($event.target as HTMLDetailsElement).open"
+        >
+            <summary>
+                <svg
+                    class="sp-chev"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    aria-hidden="true"
+                >
+                    <path d="M6 4l4 4-4 4" />
+                </svg>
+                <span class="sp-debug-title">Debug container</span>
+                <span class="muted">for distroless or shell-less images</span>
+            </summary>
+            <div class="sp-debug-body">
+                <p class="muted">
+                    Adds an ephemeral container with this image to the pod, sharing the process namespace of
+                    <span class="mono">{{ container || 'the selected container' }}</span>.
+                </p>
+                <div class="sp-row">
                     <input
                         v-model="image"
-                        class="field mono"
+                        class="field mono sp-image"
                         type="text"
                         spellcheck="false"
+                        placeholder="Image"
                         aria-label="Debug container image"
                         data-testid="shell-debug-image"
+                        @keydown.enter.prevent="container && start('debug')"
                     />
-                </label>
-                <span class="muted">Target: <span class="mono">{{ container }}</span></span>
-                <button type="button" class="btn" data-testid="shell-debug" :disabled="connecting || !container" @click="start('debug')">
-                    Start debug container
-                </button>
+                    <button type="button" class="btn" data-testid="shell-debug" :disabled="connecting || !container" @click="start('debug')">
+                        Start debug container
+                    </button>
+                </div>
             </div>
         </details>
     </div>
@@ -262,8 +312,62 @@ function offerDebug() {
     align-items: center;
     gap: 8px;
 }
+.sp-debug {
+    flex: none;
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
 .sp-debug summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 12px;
     cursor: pointer;
-    min-height: 32px;
+    list-style: none;
+    border-radius: 8px;
+}
+.sp-debug summary::-webkit-details-marker {
+    display: none;
+}
+.sp-debug summary:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+}
+.sp-chev {
+    flex: none;
+    color: var(--text3);
+    transition: transform 0.12s ease;
+}
+.sp-debug[open] .sp-chev {
+    transform: rotate(90deg);
+}
+.sp-debug-title {
+    font-weight: 600;
+}
+.sp-debug summary .muted {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.sp-debug-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--border);
+}
+.sp-debug-body p {
+    margin: 0;
+}
+.sp-debug .sp-row {
+    align-items: center;
+}
+.sp-image {
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 360px;
 }
 </style>

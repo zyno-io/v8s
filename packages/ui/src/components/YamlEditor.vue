@@ -26,6 +26,8 @@ const theme = EditorView.theme({
     '.cm-activeLine': { backgroundColor: 'var(--hover)' },
     '.cm-activeLineGutter': { backgroundColor: 'var(--s2)' },
     '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
+    // .cm-host clips an outset ring.
+    '.cm-scroller:focus-visible': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--accent-soft)' },
     '.cm-cursor': { borderLeftColor: 'var(--focus)' },
     '.cm-selectionMatch': { backgroundColor: 'var(--s3)' },
@@ -69,8 +71,25 @@ function make(doc: string) {
     });
 }
 
+/** Read-only, the scroller is the drawer's keyboard target (focusable, scrolls natively); editing, the content is. */
+function syncScroller() {
+    const sc = view?.scrollDOM;
+    if (!sc) return;
+    sc.tabIndex = props.readOnly ? 0 : -1;
+    if (props.readOnly) {
+        sc.setAttribute('data-drawer-scroll', '');
+        sc.setAttribute('role', 'region');
+        sc.setAttribute('aria-label', props.label);
+    } else {
+        sc.removeAttribute('data-drawer-scroll');
+        sc.removeAttribute('role');
+        sc.removeAttribute('aria-label');
+    }
+}
+
 onMounted(() => {
     view = new EditorView({ state: make(props.initial), parent: host.value! });
+    syncScroller();
 });
 onBeforeUnmount(() => view?.destroy());
 
@@ -89,7 +108,10 @@ watch(
 );
 watch(
     () => props.readOnly,
-    ro => view?.dispatch({ effects: editable.reconfigure([EditorView.editable.of(!ro), EditorState.readOnly.of(ro)]) })
+    ro => {
+        view?.dispatch({ effects: editable.reconfigure([EditorView.editable.of(!ro), EditorState.readOnly.of(ro)]) });
+        syncScroller();
+    }
 );
 
 watch(

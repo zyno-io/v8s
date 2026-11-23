@@ -3,8 +3,8 @@ import type { ObjectPayload, ObjectRef, Row, ViewHandle } from '@v8s/client';
 
 import { useVirtualizer } from '@tanstack/vue-virtual';
 import { TONE_NAMES } from '@v8s/client';
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import type { ColPlan, TablePlan, UsageSub } from '@/lib/columns.ts';
 import type { DrawerTab } from '@/lib/route.ts';
@@ -16,9 +16,9 @@ import { actionById } from '@/lib/actions.ts';
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { clusterColor } from '@/lib/colors.ts';
 import { gridTemplate, minWidthOf } from '@/lib/columns.ts';
-import { editRequest, openObject } from '@/lib/drawer.ts';
+import { editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
 import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/lib/format.ts';
-import { setListNav, setPageKeyHandler } from '@/lib/keys.ts';
+import { focusDrawer, setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { emptyKindOf, loadingNames } from '@/lib/loading.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
@@ -49,6 +49,7 @@ const table = useTableStore();
 const clusters = useClustersStore();
 const appUi = useUiStore();
 const router = useRouter();
+const route = useRoute();
 const ui = computed(() => table.of(props.gvr));
 
 const HEADER_H = ROW_H_DESKTOP;
@@ -114,6 +115,12 @@ let nowMs = Date.now();
 
 /** The focused row is rendered: the table drops its own focus ring (app.scss `.scroller.rowfocus`). */
 const focusInView = computed(() => slice.value.some(it => it.foc));
+// While a drawer is shown and the list lacks DOM focus, its focused-row ring is dimmed. Changes on focus changes only.
+const drawerShown = computed(() => !!(route.query.c && route.query.n));
+const listFocused = shallowRef(false);
+function onListFocusOut(e: FocusEvent) {
+    listFocused.value = e.relatedTarget instanceof Node && !!scroller.value?.contains(e.relatedTarget);
+}
 
 /** Row elements are keyed by slot, not by index, so one that scrolls out is reused for one that scrolls in (lib/row-slots.ts). */
 const rowSlots = new RowSlots();
@@ -364,11 +371,13 @@ function openPending() {
 
 // ---- interaction ----
 
-function openRow(id: number, tab?: DrawerTab) {
+/** `fromKey`: a list key opened it, so focus moves into the drawer even when it already showed this object (a click on the open row keeps the list). */
+function openRow(id: number, tab?: DrawerTab, fromKey = false) {
     const row = props.handle.rows.get(id);
     if (!row) return;
     ui.value.focusId = id;
-    void openObject(router, refOf(row), tab);
+    const done = openObject(router, refOf(row), tab);
+    if (fromKey) void done.then(() => nextTick(focusDrawer));
 }
 
 let longPressed = false;
@@ -476,7 +485,31 @@ function focusList(first: boolean): boolean {
     return true;
 }
 
-setListNav({ focusList, owns: el => el instanceof Node && !!scroller.value?.contains(el) });
+/**
+ * The drawer closed: hand focus back to the list. The remembered focused row stays; with none (after a jump or deep link) it is the
+ * closed object's row when loaded. Never scrolls to an unloaded row.
+ */
+function restoreFocus(ref: ObjectRef | null) {
+    const el = scroller.value;
+    if (!el) return;
+    const h = props.handle;
+    const p = props.plan;
+    if (!ui.value.focusId && ref && p.nameIdx >= 0) {
+        for (const id of h.ids) {
+            const row = h.rows.get(id);
+            if (!row || row[p.nameIdx] !== ref.name) continue;
+            if (p.nsIdx >= 0 && ((row[p.nsIdx] as string) || undefined) !== ref.namespace) continue;
+            if (p.clusterIdx >= 0 && row[p.clusterIdx] !== ref.cluster) continue;
+            ui.value.focusId = id;
+            break;
+        }
+    }
+    el.focus({ preventScroll: true });
+    const k = ui.value.focusId ? h.ids.indexOf(ui.value.focusId) : -1;
+    if (k >= 0) virtualizer.value.scrollToIndex(h.offset.value + k, { align: 'auto' });
+}
+
+setListNav({ focusList, restoreFocus, owns: el => el instanceof Node && !!scroller.value?.contains(el) });
 
 /** The focused row (a loaded one), with its object ref. */
 function focusedRow(): { row: Row; ref: ObjectRef } | null {
@@ -533,13 +566,14 @@ async function openNodeOfOpenPod(pod: ObjectRef) {
 }
 
 /** k9s-style row keys (`rowIntent` maps them). Each uses the existing action or drawer path; true when the key was taken. */
-function rowKey(e: KeyboardEvent): boolean {
+function rowKey(e: KeyboardEvent, inDrawer = false): boolean {
     const intent = rowIntent(e);
     if (!intent) return false;
-    const f = focusedRow();
+    // From the drawer the keys act on the open object only, never the focused row or the selection.
+    const f = inDrawer ? null : focusedRow();
     // The focused row, else the object open in the drawer (like y/e/d): after a jump the target page has no row focus yet.
     const target = f?.ref ?? parseDrawer(props.gvr, router.currentRoute.value.query)?.ref;
-    const sel = ui.value.selected;
+    const sel = inDrawer ? new Map<string, ObjectRef>() : ui.value.selected;
     switch (intent) {
         case 'delete':
         case 'restart': {
@@ -563,7 +597,7 @@ function rowKey(e: KeyboardEvent): boolean {
         case 'yaml': {
             if (!tabsFor(props.gvr).includes('yaml')) return false;
             if (f) {
-                openRow(ui.value.focusId, 'yaml');
+                openRow(ui.value.focusId, 'yaml', true);
                 return true;
             }
             const open = parseDrawer(props.gvr, router.currentRoute.value.query);
@@ -594,26 +628,45 @@ function rowKey(e: KeyboardEvent): boolean {
     }
 }
 
-setPageKeyHandler(e => {
-    if (e.ctrlKey || (e.shiftKey && (e.key === 'J' || e.key === 'F'))) return rowKey(e);
+/** Switch the open object to a tab (the drawer owns the keyboard: no focused row involved). */
+function openInDrawer(tab: DrawerTab): boolean {
+    const open = parseDrawer(props.gvr, router.currentRoute.value.query);
+    if (!open || !tabsFor(props.gvr).includes(tab)) return false;
+    void openObject(router, open.ref, tab, true);
+    return true;
+}
+
+setPageKeyHandler((e, scope) => {
+    const inDrawer = scope === 'drawer';
+    if (e.ctrlKey || (e.shiftKey && (e.key === 'J' || e.key === 'F'))) return rowKey(e, inDrawer);
     switch (e.key) {
         case 'j':
         case 'ArrowDown':
+            if (inDrawer) return false;
             moveFocus(1);
             return true;
         case 'k':
         case 'ArrowUp':
+            if (inDrawer) return false;
             moveFocus(-1);
             return true;
         case 'x':
+            if (inDrawer) return false;
             if (ui.value.focusId) toggle(ui.value.focusId);
             return true;
         case 'l':
         case 's': {
             // `l` opens the Logs tab, `s` the Shell tab of the focused row, where the kind has one.
             const tab: DrawerTab = e.key === 'l' ? 'logs' : 'shell';
+            if (inDrawer) {
+                if (tab === 'shell') shellRequest.value = true;
+                if (openInDrawer(tab)) return true;
+                shellRequest.value = false;
+                return false;
+            }
             if (!ui.value.focusId || !tabsFor(props.gvr).includes(tab)) return false;
-            openRow(ui.value.focusId, tab);
+            if (tab === 'shell') shellRequest.value = true;
+            openRow(ui.value.focusId, tab, true);
             return true;
         }
         case 'e':
@@ -622,8 +675,13 @@ setPageKeyHandler(e => {
             const tab: DrawerTab = e.key === 'e' ? 'yaml' : 'overview';
             if (!tabsFor(props.gvr).includes(tab)) return false;
             if (e.key === 'e') editRequest.value = true;
+            if (inDrawer) {
+                if (openInDrawer(tab)) return true;
+                editRequest.value = false;
+                return false;
+            }
             if (ui.value.focusId && props.handle.rows.has(ui.value.focusId)) {
-                openRow(ui.value.focusId, tab);
+                openRow(ui.value.focusId, tab, true);
                 return true;
             }
             const open = parseDrawer(props.gvr, router.currentRoute.value.query);
@@ -639,10 +697,11 @@ setPageKeyHandler(e => {
         case 'n':
         case 'o':
         case 'r':
-            return rowKey(e);
+            return rowKey(e, inDrawer);
         case 'Enter':
+            if (inDrawer) return false;
             if (ui.value.focusId && document.activeElement?.tagName !== 'BUTTON' && document.activeElement?.tagName !== 'A') {
-                openRow(ui.value.focusId);
+                openRow(ui.value.focusId, undefined, true);
                 return true;
             }
             return false;
@@ -806,12 +865,14 @@ function metricText(c: ColPlan, row: Row): string {
     <div
         ref="scroller"
         class="scroller"
-        :class="{ phone: isPhone, rowfocus: focusInView }"
+        :class="{ phone: isPhone, rowfocus: focusInView, blurred: drawerShown && !listFocused }"
         :style="{ '--row-h': rowH + 'px', '--cols': plan.grid, '--minw': plan.minWidth + 'px' }"
         role="table"
         :aria-rowcount="handle.total.value + 1"
         :aria-label="title"
         tabindex="0"
+        @focusin="listFocused = true"
+        @focusout="onListFocusOut"
     >
         <div v-if="!isPhone" :key="planKey" class="tr th" role="row">
             <span role="columnheader"
