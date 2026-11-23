@@ -79,6 +79,7 @@ If you can only access some namespaces, v8s watches the core kinds in a few name
 v8s limits itself to 20 reads per second (burst 40) and at most 96 watches per cluster and identity, uses streaming lists where available, and honors `429` with `Retry-After`. If a cluster is still slow:
 
 - Watch the sync progress in the toolbar (`syncing prod-eu · 4,210`). Large clusters take seconds, not milliseconds, to sync the first time; rows appear as they load.
+- A chip that stays at `loading secrets…` (or another type) means the API server is slow to list that type, often Helm release Secrets. The agent log names the cause: `slow discovery`, `discovery failed` (the type is not placed until discovery works), `first list failing` (the list returns an error other than a refusal and is retried; the line carries the error) or `slow first list`.
 - Check the control plane. On very large or busy clusters the API server may be throttling. API Priority and Fairness matches users and groups, not user agents, so v8s traffic is shaped like your own `kubectl` traffic. To isolate it, give your team's identities their own FlowSchema.
 - Behind a gateway, every request is authorized and recorded, which adds latency. Long-lived watches are re-established about every 30 minutes.
 - Fewer clusters at once means less work. Deselect the ones you are not using.

@@ -50,12 +50,25 @@ function isEditable(t: EventTarget | null): boolean {
     return false;
 }
 
-/** Esc order from the design system: clear filter, then selection, then close the drawer. */
-export function escapeChain(): boolean {
-    return escapeStep() !== null;
+/**
+ * Esc order from the design system: an open drawer closes first (unless focus is in the page's search field), then the filter
+ * clears, then the selection. `target` is where Esc was pressed.
+ */
+export function escapeChain(target: EventTarget | null = null): boolean {
+    return escapeStep(target) !== null;
 }
 
-function escapeStep(): 'filter' | 'other' | null {
+function isFilterField(t: EventTarget | null): boolean {
+    return t instanceof HTMLElement && t.id === FILTER_ID;
+}
+
+function escapeStep(target: EventTarget | null): 'filter' | 'other' | null {
+    // The drawer is the layer on top: Esc dismisses it, and the search stays as typed. Only Esc in the search field itself clears
+    // the search (then blurs it), whether or not a drawer is open.
+    if (!isFilterField(target) && isDrawerOpen(router)) {
+        void closeDrawer(router);
+        return 'other';
+    }
     if (listNav?.filterText?.()) {
         listNav.clearFilter?.();
         return 'filter';
@@ -109,7 +122,7 @@ export function installGlobalKeys(focusFilter: () => void): () => void {
                 sidebar.open = false;
             } else {
                 const fromList = !isEditable(e.target) && (e.target === document.body || !!listNav?.owns(e.target));
-                const step = escapeStep();
+                const step = escapeStep(e.target);
                 if (step === null) {
                     if (isEditable(e.target)) (e.target as HTMLElement).blur();
                 } else if (step === 'filter' && fromList) {

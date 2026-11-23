@@ -7,7 +7,25 @@ release notes when the tag has no annotation.
 
 ### Added
 
+- YAML tab: a **Wrap** toggle for long lines, remembered per browser.
+- YAML tab: a **Pretty** toggle for ConfigMaps. It indents JSON values (also double-encoded ones) and shows multi-line values as readable blocks. It is remembered per browser.
+- YAML tab: Secrets get a **Decoded** toggle, on by default: once revealed, values show as text (`stringData`) with JSON indented. A Secret's tab has one toolbar, with the values tag and Reveal / Mask in it (Reveal all and Mask again are now Reveal and Mask), and the YAML toolbar no longer shows a `read-only` tag.
+- The owners on an object's Overview tab are links: click one to open it in the drawer, like `Shift+J`. The Related tab's **Open** now also finds a cluster-scoped owner (a Node owning a mirror pod).
 - `:ns` takes comma-separated lists and `*` patterns: `:ns pay*`, `:ns shop,pay*,api`, `:ns +kube-*`, `:ns -team-*`. A pattern expands against the namespaces v8s knows when you run it; completion shows how many it matches.
+
+### Changed
+
+- Editing a masked Secret now reads **Reveal and edit**: it reveals the values first, so you never edit placeholders. With Decoded on, a revealed Secret opens in decoded form (`stringData`).
+- The update check now reads `v8s.io/release.json` every 15 minutes instead of asking the GitHub API once a day, so a new release shows up within about 20 minutes of being published. Hosted servers with an egress allowlist need `v8s.io` instead of `api.github.com`.
+- With the object drawer open, `Esc` closes it and keeps your search; only `Esc` in the search field clears the search.
+- Opening another object while the drawer is open keeps the tab you were on (Logs, YAML, …) when that object has it.
+
+### Fixed
+
+- A list that could not load now loads on its own when that can change: Secrets your read context may not list appear as soon as you elevate the cluster, and a type none of the selected clusters served appears once you select one that does (or its CRD is installed), instead of staying empty until you leave the page. A list you are not allowed to read now says so instead of "None of the selected clusters serves …".
+- Elevating or reverting a cluster shows on its status chip at once (a spinner and `elevating…` / `reverting…`) until the cluster switches, and its open lists start reloading at once instead of after that cluster's API discovery (half a minute or more when discovery had to be retried).
+- A list that is still loading on a cluster now says so (`Loading secrets from prod-eu…`, and `loading secrets…` on that cluster's chip) instead of `No secrets.`; the chip used to say `synced` as soon as the cluster's pods had loaded. This shows when you first open a large list such as Secrets, and right after elevating.
+- You can open a shell in a terminating pod again (its containers usually still run, and that is often how you find out why it is stuck). The Shell tab notes that the shell ends when the containers stop.
 
 ## 0.8.0 — 2026-11-22
 

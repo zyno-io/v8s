@@ -2,10 +2,10 @@ import type { Agent, Settings, UpdateStatus } from '@v8s/client';
 
 import { shallowRef, watch } from 'vue';
 
-/** The newer stable release the agent found, if any. The agent does the GitHub check; the UI only asks it. */
+/** The newer stable release the agent found, if any. The agent checks v8s.io/release.json; the UI only asks it. */
 export const updateStatus = shallowRef<UpdateStatus | null>(null);
 
-const HOURLY = 60 * 60 * 1000;
+const POLL_MS = 5 * 60 * 1000;
 
 /** "v8s 0.4.0" for tooltips and menus; just "v8s" until the agent has said its version. */
 export function versionTitle(v: string | null | undefined): string {
@@ -30,8 +30,8 @@ export function pendingUpdate(s: UpdateStatus | null | undefined, dismissed: str
 }
 
 /**
- * Keeps `updateStatus` current: asks now, after every reconnect (a restarted agent may know more) and hourly (the agent
- * caches its own GitHub answer, so this is a local call). Errors are swallowed; the ref only changes when the answer does.
+ * Keeps `updateStatus` current: asks now, after every reconnect (a restarted agent may know more) and every 5 minutes (the agent
+ * caches its own v8s.io answer, so this is a local call). Errors are swallowed; the ref only changes when the answer does.
  * Returns a stop function.
  */
 export function watchUpdates(agent: Pick<Agent, 'call' | 'reconnects'>): () => void {
@@ -48,7 +48,7 @@ export function watchUpdates(agent: Pick<Agent, 'call' | 'reconnects'>): () => v
     };
     void poll();
     const stopWatch = watch(agent.reconnects, () => void poll());
-    const timer = setInterval(() => void poll(), HOURLY);
+    const timer = setInterval(() => void poll(), POLL_MS);
     return () => {
         stopWatch();
         clearInterval(timer);

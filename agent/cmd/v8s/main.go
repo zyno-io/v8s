@@ -68,7 +68,7 @@ func runAgent(args []string, hooks agentHooks) error {
 	staticDir := fs.String("static-dir", "", "serve UI files from this directory at /")
 	devToken := fs.String("dev-token", "", "fixed token (only with --fake)")
 	settingsPath := fs.String("settings", "", "settings file (default: <user config dir>/v8s/settings.json; memory-only with --fake unless set)")
-	noUpdateCheck := fs.Bool("no-update-check", false, "do not check GitHub for a newer release (also: V8S_UPDATE_CHECK=off)")
+	noUpdateCheck := fs.Bool("no-update-check", false, "do not check v8s.io for a newer release (also: V8S_UPDATE_CHECK=off)")
 	lifeline := fs.Bool("stdin-lifeline", false, "exit when stdin reaches EOF")
 	var origins stringList
 	fs.Var(&origins, "allowed-origin", "allowed WebSocket Origin (repeatable)")
@@ -136,7 +136,7 @@ func runAgent(args []string, hooks agentHooks) error {
 		log.Info("fake mode", "clusters", len(src.Clusters()))
 	}
 	// Never in fake mode (e2e/perf/screenshots must not reach the network). The cache sits beside settings.json so
-	// each desktop launch does not call GitHub again.
+	// a desktop launch within 15 minutes of the last check does not call v8s.io again.
 	var chk *updatecheck.Checker
 	updateCheck := "off"
 	switch {

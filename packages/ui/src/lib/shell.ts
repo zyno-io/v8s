@@ -61,14 +61,21 @@ export function containerChoice(parsed: Obj): ContainerChoice {
     return { names, initial };
 }
 
-/** Why Connect is disabled, or '' when a shell can be opened. */
+/**
+ * Why Connect is disabled, or '' when a shell can be opened. A terminating pod is not blocked: its containers usually still run
+ * (often the reason to shell in is to see why it is stuck terminating), and exec fails on its own once they have stopped.
+ */
 export function connectBlocker(parsed: Obj): string {
     if (!parsed) return 'Pod not loaded yet';
     const phase = String(asObj(parsed.status)?.phase ?? '');
-    if (asObj(parsed.metadata)?.deletionTimestamp) return 'Pod is terminating';
     if (phase && phase !== 'Running') return `Pod is ${phase}, not Running`;
     if (!containerChoice(parsed).names.length) return 'Pod has no containers';
     return '';
+}
+
+/** A note shown beside Connect that does not block it ('' for none). */
+export function connectNote(parsed: Obj): string {
+    return asObj(asObj(parsed)?.metadata)?.deletionTimestamp ? 'Pod is terminating: the shell ends when its containers stop' : '';
 }
 
 /** True when an exit looks like the container has no shell (distroless): offer the debug container. */

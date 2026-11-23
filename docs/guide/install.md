@@ -142,7 +142,7 @@ That produces an unsigned app in `packages/desktop/release/`.
 
 The CLI and container do not update themselves. Download the new archive, or pull the new image tag.
 
-v8s checks GitHub once a day for a newer stable release. When there is one, an **Update** pill appears in the top bar with a link to the release notes, and **Dismiss** hides it until the next release. Hover the logo to see the running version. To turn the check off, pass `--no-update-check` or set `V8S_UPDATE_CHECK=off` (the desktop app passes its environment on; on macOS an app opened from Finder or the Dock does not see your shell profile, so use `launchctl setenv V8S_UPDATE_CHECK off` or start it from a terminal); on a hosted server set `updateCheck: false`. Nothing is downloaded or installed automatically.
+v8s checks `https://v8s.io/release.json` every 15 minutes for a newer stable release (a new release shows up within about 20 minutes of being published). When there is one, an **Update** pill appears in the top bar with a link to the release notes, and **Dismiss** hides it until the next release. Hover the logo to see the running version. To turn the check off, pass `--no-update-check` or set `V8S_UPDATE_CHECK=off` (the desktop app passes its environment on; on macOS an app opened from Finder or the Dock does not see your shell profile, so use `launchctl setenv V8S_UPDATE_CHECK off` or start it from a terminal); on a hosted server set `updateCheck: false`. Nothing is downloaded or installed automatically.
 
 The desktop app ships its UI and agent together, so they always match. Install a newer installer over the old one to update; settings, groups, stars, and bookmarks live in your user config directory and are kept.
 

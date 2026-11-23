@@ -29,7 +29,7 @@ v8s reads logs live from the pod. It stores nothing: when a pod is gone, so is i
 
 ## Pod shell and debug containers
 
-Open a pod and choose the **Shell** tab, or press `s` on the pod's row. A shell opens only when you press **Connect**, and **Disconnect** ends it.
+Open a pod and choose the **Shell** tab, or press `s` on the pod's row. A shell opens only when you press **Connect**, and **Disconnect** ends it. A terminating pod can still be shelled into while its containers run (useful to see why it is stuck), and the shell ends when they stop.
 
 - v8s tries `/bin/bash`, then `/bin/sh`, then `/busybox/sh` in the container you selected.
 - The terminal is a full terminal: resize, UTF-8, copy on select.

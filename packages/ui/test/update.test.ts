@@ -58,7 +58,7 @@ describe('watchUpdates', () => {
         vi.useRealTimers();
     });
 
-    it('asks on start, on a reconnect and hourly', async () => {
+    it('asks on start, on a reconnect and every 5 minutes', async () => {
         answers = [{}, { latest: '0.5.0', url: 'u' }, {}];
         stop = watchUpdates(agent());
         await tick();
@@ -69,7 +69,7 @@ describe('watchUpdates', () => {
         await tick();
         expect(call).toHaveBeenCalledTimes(2);
         expect(updateStatus.value).toEqual({ latest: '0.5.0', url: 'u' });
-        await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
         expect(call).toHaveBeenCalledTimes(3);
         expect(updateStatus.value).toBeNull();
     });
@@ -80,9 +80,9 @@ describe('watchUpdates', () => {
         await tick();
         const first = updateStatus.value;
         expect(first).not.toBeNull();
-        await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
         expect(updateStatus.value).toBe(first);
-        await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
         expect(updateStatus.value).toBeNull();
     });
 
@@ -91,7 +91,7 @@ describe('watchUpdates', () => {
         stop = watchUpdates(agent());
         await tick();
         expect(updateStatus.value).toBeNull();
-        await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
         expect(updateStatus.value?.latest).toBe('0.6.0');
     });
 
@@ -100,7 +100,7 @@ describe('watchUpdates', () => {
         await tick();
         stop();
         reconnects.value++;
-        await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+        await vi.advanceTimersByTimeAsync(2 * 5 * 60 * 1000);
         expect(call).toHaveBeenCalledTimes(1);
     });
 });

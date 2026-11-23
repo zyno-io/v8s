@@ -117,6 +117,7 @@ export {
     ExposureService,
     ExposureUnknown,
     HelmGVR,
+    MaskedValue,
     MaxObjectEvents,
     ProblemsGVR,
     SourceKubescape,
