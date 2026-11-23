@@ -400,6 +400,8 @@ async function main() {
             await page.getByRole('button', { name: /Namespace: 2 selected/ }).waitFor();
             await run('ns -payments');
             await page.getByRole('button', { name: /Namespace: kube-system/ }).waitFor();
+            await run('ns kube-*,payments');
+            await page.getByRole('button', { name: /Namespace: \d+ selected/ }).waitFor();
             await run('ns payments');
             await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
         });

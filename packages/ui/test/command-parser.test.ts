@@ -138,9 +138,41 @@ describe('parseCommand', () => {
     });
 
     it(':ns and problems', () => {
-        expect(parseCommand('ns payments', ctx)).toEqual({ type: 'ns', namespace: 'payments' });
-        expect(parseCommand('ns all', ctx)).toEqual({ type: 'ns', namespace: null });
-        expect(parseCommand('ns a b', ctx).type).toBe('error');
+        expect(parseCommand('ns payments', ctx)).toEqual({ type: 'ns', namespaces: ['payments'] });
+        expect(parseCommand('ns all', ctx)).toEqual({ type: 'ns', namespaces: null });
+    });
+    it(':ns takes comma lists and * patterns', () => {
+        const c: CommandContext = {
+            ...ctx,
+            namespaces: ['payments', 'pay-api', 'shop', 'kube-system', 'kube-public'],
+            filter: ['shop', 'kube-system']
+        };
+        expect(parseCommand('ns pay*', c)).toEqual({ type: 'ns', namespaces: ['payments', 'pay-api'] });
+        expect(parseCommand('ns shop,pay*,new', c)).toEqual({ type: 'ns', namespaces: ['shop', 'payments', 'pay-api', 'new'] });
+        expect(parseCommand('ns shop, kube-*', c)).toEqual({ type: 'ns', namespaces: ['shop', 'kube-system', 'kube-public'] });
+        expect(parseCommand('ns *-api', c)).toEqual({ type: 'ns', namespaces: ['pay-api'] });
+        expect(parseCommand('ns a.b*', { ...c, namespaces: ['a.b1', 'axb2'] })).toEqual({ type: 'ns', namespaces: ['a.b1'] }); // only * is special
+        expect(parseCommand('ns zz*', c)).toEqual({ type: 'error', message: 'no namespace matches "zz*"' });
+        expect(parseCommand('ns all,shop', c).type).toBe('error');
+        expect(parseCommand('ns ,', c).type).toBe('error');
+        expect(parseCommand('ns +pay*,new', c)).toEqual({ type: 'ns-delta', add: ['payments', 'pay-api', 'new'], remove: [] });
+        expect(parseCommand('ns -kube-*', c)).toEqual({ type: 'ns-delta', add: [], remove: ['kube-system'] }); // - matches the filter
+        expect(parseCommand('ns -pay*', c)).toEqual({ type: 'error', message: 'no namespace in the filter matches "pay*"' });
+    });
+    it(':ns completes after the last comma and counts what a pattern matches', () => {
+        const c: CommandContext = { ...ctx, namespaces: ['payments', 'pay-api', 'shop'], filter: ['shop'] };
+        expect(
+            complete('ns shop,pa', c)
+                .map(x => x.insert)
+                .sort()
+        ).toEqual(['ns shop,pay-api', 'ns shop,payments']);
+        expect(
+            complete('ns +shop,p', c)
+                .map(x => x.insert)
+                .sort()
+        ).toEqual(['ns +shop,pay-api', 'ns +shop,payments']);
+        expect(complete('ns pay*', c)).toEqual([{ label: 'pay*', detail: 'matches 2: payments, pay-api', insert: 'ns pay*' }]);
+        expect(complete('ns shop,', c).map(x => x.label)).not.toContain('shop');
     });
     it(':ns +name / -name add to and remove from the filter', () => {
         expect(parseCommand('ns +payments', ctx)).toEqual({ type: 'ns-delta', add: ['payments'], remove: [] });
@@ -178,7 +210,7 @@ describe('parseCommand', () => {
         const open = { type: 'open-kind', gvr: 'v1/namespaces', plural: 'namespaces' };
         expect(parseCommand('ns', withNs)).toEqual(open);
         expect(parseCommand('namespace', withNs)).toEqual(open);
-        expect(parseCommand('ns payments', withNs)).toEqual({ type: 'ns', namespace: 'payments' });
+        expect(parseCommand('ns payments', withNs)).toEqual({ type: 'ns', namespaces: ['payments'] });
         expect(parseCommand('ns', ctx).type).toBe('error'); // no Namespaces kind served
         // `ns ` (trailing space) is choosing a namespace: not the bare command
         expect(parseCommand('ns ', withNs).type).toBe('error');

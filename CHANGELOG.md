@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- `:ns` takes comma-separated lists and `*` patterns: `:ns pay*`, `:ns shop,pay*,api`, `:ns +kube-*`, `:ns -team-*`. A pattern expands against the namespaces v8s knows when you run it; completion shows how many it matches.
+
 ## 0.8.0 — 2026-11-22
 
 ### Added
