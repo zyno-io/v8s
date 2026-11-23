@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.10.0 — 2026-11-23
+
 ### Added
 
 - Keyboard scrolling in drawer tabs: `↑` `↓` `PgUp` `PgDn` (and `←` `→` `Home` `End`) scroll Logs, YAML and the other tabs without clicking into them first.
