@@ -5,6 +5,10 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Changed
+
+- The update check now reads `v8s.io/release.json` every 15 minutes instead of asking the GitHub API once a day, so a new release shows up within about 20 minutes of being published. Hosted servers with an egress allowlist need `v8s.io` instead of `api.github.com`.
+
 ## 0.8.0 — 2026-11-22
 
 ### Added

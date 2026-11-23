@@ -250,10 +250,10 @@ The flows finish with a small HTML page that navigates client-side to `return` (
 
 ## Update check
 
-The agent, not the browser, asks GitHub (`GET api.github.com/repos/zyno-io/v8s/releases/latest`; the pages' CSP is `connect-src 'self'`). One request per agent per day is shared by every connected UI, and the UI reads the cached answer with `update.status`. `Hello.agentVersion` already carries the running version.
+The agent, not the browser, asks v8s.io (`GET https://v8s.io/release.json`, a static `{"version": "X.Y.Z", ...}` the site publishes once the GitHub release exists; the pages' CSP is `connect-src 'self'`). One request per agent per 15 minutes is shared by every connected UI, and the UI reads the cached answer with `update.status`. `Hello.agentVersion` already carries the running version.
 
-- **Schedule.** At start, unless a cached answer is under 24 h old, then every 24 h. A failure backs off 1 h, 2 h, 4 h, up to 24 h. Requests send `If-None-Match`, a `User-Agent` of `v8s` and no version or identifiers; the response is read for `tag_name` only, and the release URL is built by the agent.
-- **Cache.** Desktop and `serve`: `update-check.json` beside `settings.json` (so each launch does not call GitHub). Hosted: memory only.
+- **Schedule.** At start, unless a cached answer is under 15 min old, then every 15 min. A failure backs off 5 min, 10 min, up to 15 min. Requests send `If-None-Match`, a `User-Agent` of `v8s` and no version or identifiers; the response is read for `version` only (it must be a stable semver), and the release URL is built by the agent.
+- **Cache.** Desktop and `serve`: `update-check.json` beside `settings.json` (so a launch within 15 minutes of the last check does not call v8s.io). Hosted: memory only.
 - **Rule.** Only stable releases are offered, and only when newer than the running version (`0.5.0-rc1` is offered `0.5.0`; a release that is older is ignored). Development builds (`0.0.0-*`), builds made after a tag (`0.4.0-3-gabc1234`, `-dirty`) and anything that is not a version never check.
 - **Opt-out.** `--no-update-check` (`serve`, `agent`), `V8S_UPDATE_CHECK=off` (any mode, and the only switch for the desktop app), or `updateCheck: false` in the hosted config.
 - **Fake mode** never checks, so tests and screenshots make no network request.

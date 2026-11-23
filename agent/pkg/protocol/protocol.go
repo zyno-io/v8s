@@ -605,7 +605,7 @@ type SearchParams struct {
 // ---- update check ---------------------------------------------------------------------
 
 // UpdateStatus answers update.status: the newest stable v8s release when it is newer than this agent. The agent
-// checks GitHub itself; the request only waits on the network for this process's first check (≤10 s). Empty when
+// checks v8s.io/release.json itself; the request only waits on the network for this process's first check (≤10 s). Empty when
 // this build is current, the check is off, this is a development/branch build, or no check has succeeded yet.
 type UpdateStatus struct {
 	Latest string `msgpack:"latest,omitempty" json:"latest,omitempty"` // "0.5.0" (no "v")

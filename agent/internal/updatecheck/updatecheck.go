@@ -1,6 +1,6 @@
-// Package updatecheck asks GitHub, at most about once a day, whether a newer stable v8s release exists. The
-// result is cached in memory (and optionally a file) and read by the update.status request; no render or
-// request path touches the network.
+// Package updatecheck asks v8s.io (a static release.json published with the site once a release exists), every
+// 15 minutes by default, whether a newer stable v8s release exists. The result is cached in memory (and optionally a
+// file) and read by the update.status request; no render or request path touches the network.
 package updatecheck
 
 import (
@@ -27,13 +27,16 @@ type Options struct {
 	Current   string        // version.Version
 	Repo      string        // default "zyno-io/v8s"
 	CachePath string        // "" = memory only
-	Interval  time.Duration // default 24h
-	RetryMin  time.Duration // default 1h (tests shrink)
-	API       string        // default "https://api.github.com" (tests: httptest URL)
+	Interval  time.Duration // default 15m
+	RetryMin  time.Duration // default 5m (tests shrink)
+	URL       string        // default DefaultURL (tests: httptest URL)
 	HTTP      *http.Client  // default &http.Client{Timeout: 10 * time.Second} (default transport: honors HTTPS_PROXY)
 	Now       func() time.Time
 	Log       *slog.Logger
 }
+
+// DefaultURL is the static file the site publishes; its shape is {"version": "X.Y.Z"} (sites/www/src/pages/release.json.ts).
+const DefaultURL = "https://v8s.io/release.json"
 
 // statusWait bounds how long Status waits for this process's first check.
 const statusWait = 10 * time.Second
@@ -91,13 +94,13 @@ func New(o Options) *Checker {
 		o.Repo = "zyno-io/v8s"
 	}
 	if o.Interval <= 0 {
-		o.Interval = 24 * time.Hour
+		o.Interval = 15 * time.Minute
 	}
 	if o.RetryMin <= 0 {
-		o.RetryMin = time.Hour
+		o.RetryMin = 5 * time.Minute
 	}
-	if o.API == "" {
-		o.API = "https://api.github.com"
+	if o.URL == "" {
+		o.URL = DefaultURL
 	}
 	if o.HTTP == nil {
 		o.HTTP = &http.Client{Timeout: 10 * time.Second}
@@ -232,7 +235,7 @@ func (c *Checker) Run(ctx context.Context) {
 	}
 }
 
-// backoff is RetryMin doubled per prior failure, capped at Interval (24h by default).
+// backoff is RetryMin doubled per prior failure, capped at Interval (15m by default).
 func (c *Checker) backoff(failures int) time.Duration {
 	d := c.o.RetryMin
 	for i := 1; i < failures && d < c.o.Interval; i++ {
@@ -271,12 +274,10 @@ func (c *Checker) check(ctx context.Context) time.Duration {
 }
 
 func (c *Checker) fetch(ctx context.Context, etag string) (tag, newETag string, notModified bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.o.API, "/")+"/repos/"+c.o.Repo+"/releases/latest", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.o.URL, nil)
 	if err != nil {
 		return "", "", false, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "v8s")
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
@@ -294,17 +295,17 @@ func (c *Checker) fetch(ctx context.Context, etag string) (tag, newETag string, 
 		return "", "", true, nil
 	case http.StatusOK:
 	default:
-		return "", "", false, fmt.Errorf("github: %s", resp.Status)
+		return "", "", false, fmt.Errorf("update check: %s", resp.Status)
 	}
 	var body struct {
-		TagName string `json:"tag_name"`
+		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
 		return "", "", false, err
 	}
-	v, err := stable(body.TagName)
+	v, err := stable(body.Version)
 	if err != nil {
-		return "", "", false, fmt.Errorf("github: unusable tag %q", body.TagName)
+		return "", "", false, fmt.Errorf("update check: unusable version %q", body.Version)
 	}
 	return v.String(), resp.Header.Get("ETag"), false, nil
 }

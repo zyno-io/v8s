@@ -16,7 +16,7 @@ web
 Astro (static output, npm), pinned by the owner: the same setup as `siple-web` (siple.app):
 `src/{components,data,layouts,lib,pages,scripts,styles}`, Playwright VRT, `scripts/og.mjs`, GitHub Actions
 (`.github/workflows/www.yml` in the v8s repo) publishing `dist/` to ZynoHosting (`www-staging.v8s.io` automatically from `main`,
-`v8s.io` on release tags). Domain: `v8s.io`.
+`v8s.io` dispatched by release.yml once a release is published). Domain: `v8s.io`.
 
 ## Users
 
