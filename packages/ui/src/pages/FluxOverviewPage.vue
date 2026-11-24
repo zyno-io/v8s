@@ -253,7 +253,7 @@ const controllerGroups = computed(() => {
 });
 
 function go(gvr: string, tones: number[]) {
-    table.clearFilters(gvr);
+    table.clearKindFilters(gvr);
     table.of(gvr).tones = tones;
     void router.push(gvrPath(gvr));
 }

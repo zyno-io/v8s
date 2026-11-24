@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    compactFilters,
     connectionKey,
     matchGroup,
     moveEntry,
-    setKindFilter,
     touchEntry,
     parseEntries,
     parseSelection,
@@ -60,48 +58,53 @@ describe('resolveChecked', () => {
 });
 
 describe('namespace entries', () => {
-    it('compacts empty filters', () => {
-        expect(compactFilters({ 'v1/pods': [], 'v1/secrets': ['x'] })).toEqual({ 'v1/secrets': ['x'] });
-        expect(compactFilters({ 'v1/pods': [] })).toBeNull();
-    });
     it('moves a key to the front and trims to the bound', () => {
-        let e = upsertEntry([], 'a', { g: ['1'] }, 3);
-        e = upsertEntry(e, 'b', { g: ['2'] }, 3);
-        e = upsertEntry(e, 'c', { g: ['3'] }, 3);
-        e = upsertEntry(e, 'a', { g: ['9'] }, 3);
-        expect(e.map(x => x.key)).toEqual(['a', 'c', 'b']);
-        e = upsertEntry(e, 'd', { g: ['4'] }, 3);
+        let e = upsertEntry([], 'a', ['1'], 3);
+        e = upsertEntry(e, 'b', ['2'], 3);
+        e = upsertEntry(e, 'c', ['3'], 3);
+        e = upsertEntry(e, 'a', ['9'], 3);
+        expect(e).toEqual([
+            { key: 'a', ns: ['9'] },
+            { key: 'c', ns: ['3'] },
+            { key: 'b', ns: ['2'] }
+        ]);
+        e = upsertEntry(e, 'd', ['4'], 3);
         expect(e.map(x => x.key)).toEqual(['d', 'a', 'c']);
     });
-    it('removes a key when its filters are cleared', () => {
-        expect(upsertEntry([{ key: 'a', ns: { g: ['1'] } }], 'a', null)).toEqual([]);
+    it('removes a key when its filter is cleared', () => {
+        expect(upsertEntry([{ key: 'a', ns: ['1'] }], 'a', [])).toEqual([]);
     });
     it('parses stored entries defensively', () => {
         expect(parseEntries('x')).toEqual([]);
-        expect(parseEntries([{ key: 'a', ns: { g: ['1'], h: 'bad' } }, { key: 1 }, { key: 'b', ns: { g: [] } }])).toEqual([
-            { key: 'a', ns: { g: ['1'] } }
+        expect(
+            parseEntries([{ key: 'a', ns: ['1'] }, { key: 1, ns: ['x'] }, { key: 'b', ns: [] }, { key: 'c', ns: ['ok', 2] }, { key: 'd' }])
+        ).toEqual([{ key: 'a', ns: ['1'] }]);
+    });
+    it('migrates per-kind filters from before the filter was shared: the Pods filter, else the first kind with one', () => {
+        expect(
+            parseEntries([
+                { key: 'a', ns: { 'apps/v1/deployments': ['d'], 'v1/pods': ['p1', 'p2'] } },
+                { key: 'b', ns: { 'v1/pods': [], 'v1/secrets': 'bad', 'apps/v1/deployments': ['d'] } },
+                { key: 'c', ns: { 'v1/pods': [] } }
+            ])
+        ).toEqual([
+            { key: 'a', ns: ['p1', 'p2'] },
+            { key: 'b', ns: ['d'] }
         ]);
     });
 });
 
 describe('entry updates', () => {
-    const e = (key: string, ns: Record<string, string[]>) => ({ key, ns });
-    it('sets one kind without touching the others, and removes an emptied entry', () => {
-        const base = [e('a', { p: ['1'], q: ['2'] })];
-        expect(setKindFilter(base, 'a', 'p', ['9'])).toEqual([e('a', { q: ['2'], p: ['9'] })]);
-        expect(setKindFilter(base, 'a', 'p', [])).toEqual([e('a', { q: ['2'] })]);
-        expect(setKindFilter([e('a', { p: ['1'] })], 'a', 'p', [])).toEqual([]);
-        expect(setKindFilter([], 'b', 'p', ['1'])).toEqual([e('b', { p: ['1'] })]);
-    });
+    const e = (key: string, ns: string[]) => ({ key, ns });
     it('touches a key to the front without changing it', () => {
-        const base = [e('a', { p: ['1'] }), e('b', { p: ['2'] })];
+        const base = [e('a', ['1']), e('b', ['2'])];
         expect(touchEntry(base, 'b').map(x => x.key)).toEqual(['b', 'a']);
         expect(touchEntry(base, 'zz')).toEqual(base);
     });
     it('moves an entry to a new key, replacing what the new key held', () => {
-        const base = [e('g:x', { p: ['old'] }), e('a,b', { p: ['1'] })];
-        expect(moveEntry(base, 'a,b', 'g:x', { p: ['1'] })).toEqual([e('g:x', { p: ['1'] })]);
-        expect(moveEntry(base, 'a,b', 'g:y', null)).toEqual([e('g:x', { p: ['old'] })]);
+        const base = [e('g:x', ['old']), e('a,b', ['1'])];
+        expect(moveEntry(base, 'a,b', 'g:x', ['1'])).toEqual([e('g:x', ['1'])]);
+        expect(moveEntry(base, 'a,b', 'g:y', [])).toEqual([e('g:x', ['old'])]);
     });
 });
 
@@ -128,10 +131,10 @@ describe('route memory', () => {
 });
 
 describe('renameGroupEntries', () => {
-    const e = (key: string, ns: Record<string, string[]>) => ({ key, ns });
-    it("moves a renamed group's filters to the new name, and is a no-op without them", () => {
-        const base = [e('a,b', { p: ['1'] }), e('g:duo', { p: ['2'] })];
-        expect(renameGroupEntries(base, 'duo', 'pair')).toEqual([e('g:pair', { p: ['2'] }), e('a,b', { p: ['1'] })]);
+    const e = (key: string, ns: string[]) => ({ key, ns });
+    it("moves a renamed group's filter to the new name, and is a no-op without it", () => {
+        const base = [e('a,b', ['1']), e('g:duo', ['2'])];
+        expect(renameGroupEntries(base, 'duo', 'pair')).toEqual([e('g:pair', ['2']), e('a,b', ['1'])]);
         expect(renameGroupEntries(base, 'other', 'x')).toEqual(base);
     });
 });

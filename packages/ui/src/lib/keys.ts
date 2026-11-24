@@ -140,10 +140,9 @@ function namespaceKey(e: KeyboardEvent): boolean {
     // Problems has no namespace menu on screen, so a filter set there would be invisible.
     if (!gvr || gvr === ProblemsGVR || kinds.value.find(k => k.gvr === gvr)?.namespaced === false) return false;
     if (e.repeat) return true;
-    const st = table.of(gvr);
     const next = key === '0' ? [] : recentNamespaces()[Number(key) - 1];
     // Unchanged: no new array, which would reset the selection and re-query the view.
-    if (next && !sameSet(next, st.namespaces)) st.namespaces = [...next];
+    if (next && !sameSet(next, table.namespaces)) table.namespaces = [...next];
     return true;
 }
 

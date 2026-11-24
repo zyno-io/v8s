@@ -23,7 +23,7 @@ Every resource list is the same component, so the controls work everywhere.
 - **Tone chips.** Where a type has a status, chips such as success, warning, and danger appear with live counts. Toggle them to show only broken or only healthy rows. Status is always a word, never colour alone: `CrashLoopBackOff`, `Running`, `Suspended`.
 - **Columns.** Use **Columns** to hide or show columns, and drag column edges to resize. Your layout is remembered per resource type.
 - **Cluster column.** The cluster column (a short tag with the cluster name) appears only when more than one cluster is selected.
-- **Namespace filter.** Set it from the namespace menu or with `:ns`. The menu lists the namespaces you picked under **Selected**, below the scrolling list, so they stay in view while you search; click one there to remove it.
+- **Namespace filter.** Set it from the namespace menu or with `:ns`. It is one filter for every resource type: switching from Pods to Deployments, Services or a CRD (from the sidebar, `:<type>`, search or an Overview link) keeps the namespaces you picked. Cluster-scoped types such as Nodes ignore it and keep it for the next namespaced list. The menu lists the namespaces you picked under **Selected**, below the scrolling list, so they stay in view while you search; click one there to remove it.
 - **Selection.** Select rows with `x` or the checkboxes. A bulk action bar appears at the bottom with the actions that apply to every selected row, such as Restart or Delete.
 - **Syncing.** While a cluster is still loading, its rows stream in and the toolbar shows a progress tag such as `syncing prod-eu · 4,210`. There is no full-table spinner. A list that has not finished loading on a cluster says so instead of "No …": the table reads `Loading secrets from prod-eu…` and that cluster's chip reads `loading secrets…` until the rows arrive.
 
@@ -103,7 +103,7 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 
 | Command                | Effect                                                    |
 | ---------------------- | --------------------------------------------------------- |
-| `:po`                  | Open pods, keeping their namespace filter                 |
+| `:po`                  | Open pods, keeping the namespace filter                   |
 | `:po payments`         | Open pods in the `payments` namespace                     |
 | `:po shop,pay*`        | Open pods in several namespaces, as `:ns` takes them      |
 | `:po *` or `:po all`   | Open pods in all namespaces                               |
@@ -116,7 +116,7 @@ Type a resource type by its plural, kind, or short name. `po`, `pods`, `pod`, `d
 | Command              | Effect                                                 |
 | -------------------- | ------------------------------------------------------ |
 | `:ns`                | Open the Namespaces list (same as `:namespaces`)       |
-| `:ns payments`       | Filter the current view to a namespace                 |
+| `:ns payments`       | Filter to a namespace (every list)                     |
 | `:ns shop,pay*`      | Filter to several namespaces; `*` matches any text     |
 | `:ns +shop`          | Add `shop` to the namespace filter                     |
 | `:ns -shop`          | Remove `shop` from the namespace filter                |
@@ -177,7 +177,7 @@ These are remembered per browser, in its local storage, with nothing to set up:
 
 - **The cluster selection.** See [Choose clusters](/guide/clusters#choose-clusters). It is pre-ticked on the next launch, not connected.
 - **The last page.** Opening the app at its root address (`/`) takes you to the page you were last on, including its query (a filter in the URL, for instance). The open object in the drawer is not restored. Only the first load does this: going to `/` from inside the app still lands on the default page (Pods, or Problems on a phone), and Overview is always one click away in the sidebar.
-- **Namespace filters.** Each set of connected clusters has its own namespace filters, for every resource type, and its own [recent namespaces](#recent-namespaces) for `1`–`9`. Switch to another set and its filters load (none if you haven't used it); switch back and yours return. A set that is exactly a group is remembered as that group, so it keeps its filters when the group's membership changes. The 50 most recently used sets are kept.
+- **Namespace filter.** Each set of connected clusters has its own namespace filter and its own [recent namespaces](#recent-namespaces) for `1`–`9`. Switch to another set and its filter loads (none if you haven't used it); switch back and yours returns. A set that is exactly a group is remembered as that group, so it keeps its filter when the group's membership changes. The 50 most recently used sets are kept.
 
 If the browser blocks local storage, none of this is saved and v8s works as it did before.
 

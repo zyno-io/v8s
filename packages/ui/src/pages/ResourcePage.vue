@@ -97,7 +97,9 @@ const unavailable = computed(() => handle.columns.value !== null && handle.colum
 const refused = computed(() => handle.error.value?.code === 'forbidden');
 const canElevate = computed(() => clusters.states.some(s => !s.elevated && !!clusters.writeContextOf(s.id)));
 
-const filtered = computed(() => isFiltered(state));
+// A computed, so a kinds reload (which namespacesOf reads) with the same filter does not reset the selection.
+const nsFilter = computed(() => table.namespacesOf(props.gvr));
+const filtered = computed(() => isFiltered(state, nsFilter.value));
 const summary = computed(() => {
     const n = clusters.activeIds.length;
     const scope = isPhone.value ? '' : ` in ${n} cluster${n === 1 ? '' : 's'}`;
@@ -177,7 +179,7 @@ const selected = computed<ObjectRef[]>(() => [...state.selected.values()]);
 // Bulk actions across clusters are desktop-only: too easy to fat-finger on a phone.
 const crossCluster = computed(() => isPhone.value && new Set(selected.value.map(r => r.cluster)).size > 1);
 watch(
-    () => [state.text, state.namespaces, state.tones, state.sort],
+    () => [state.text, nsFilter.value, state.tones, state.sort],
     () => table.resetInteraction(props.gvr)
 );
 // A row key's action (Ctrl+D, r, Shift+F) is a one-shot request: never replay it after leaving this type.
@@ -303,7 +305,7 @@ function star() {
                 />
                 <span class="kbd">/</span>
             </label>
-            <NamespaceMenu v-if="namespaced" :gvr="gvr" />
+            <NamespaceMenu v-if="namespaced" />
             <label v-for="c in hasTone ? chips : []" :key="c.key" class="chip-wrap">
                 <input class="sr-only chip-input" type="checkbox" :checked="state.tones.includes(c.tone)" @change="table.toggleTone(gvr, c.tone)" />
                 <span class="chip" :class="{ on: state.tones.includes(c.tone) }">

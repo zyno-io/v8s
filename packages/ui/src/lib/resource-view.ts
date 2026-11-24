@@ -19,7 +19,9 @@ export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
     const table = useTableStore();
     const state = table.of(gvr);
     const initialLimit = () => windowPad() * 2 + 60;
-    const query = computed(() => stateQuery(gvr, state));
+    // The shared namespace filter, or none for a cluster-scoped kind (known once the kinds load; namespaced until then).
+    const namespaces = computed(() => table.namespacesOf(gvr));
+    const query = computed(() => stateQuery(gvr, state, namespaces.value));
 
     const handle = agent.subscribeView(query.value, { offset: 0, limit: initialLimit() }, { usage: opts?.usage });
     const counts: Record<string, ViewHandle> = {};
@@ -28,7 +30,7 @@ export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
     function ensureCounts() {
         if (Object.keys(counts).length) return;
         for (const c of chips)
-            counts[c.key] = agent.subscribeView(buildQuery(gvr, state.text, state.namespaces, [c.tone], []), { offset: 0, limit: 1 });
+            counts[c.key] = agent.subscribeView(buildQuery(gvr, state.text, namespaces.value, [c.tone], []), { offset: 0, limit: 1 });
     }
     watch(
         () => handle.columns.value,
@@ -50,7 +52,7 @@ export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     watch(
-        () => [state.text, state.namespaces] as const,
+        () => [state.text, namespaces.value] as const,
         ([text, ns]) => {
             clearTimeout(timer);
             timer = setTimeout(() => {

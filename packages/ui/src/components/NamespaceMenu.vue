@@ -7,9 +7,8 @@ import { namespaceNames } from '@/lib/namespaces.ts';
 import { recordRecentNamespaces, sameSet } from '@/lib/recent-namespaces.ts';
 import { useTableStore } from '@/stores/table.ts';
 
-const props = defineProps<{ gvr: string }>();
+// The filter is shared by every kind (stores/table.ts), so this menu shows and edits the same selection on every list.
 const table = useTableStore();
-const ui = computed(() => table.of(props.gvr));
 
 const open = ref(false);
 const q = ref('');
@@ -18,7 +17,7 @@ const searchEl = ref<HTMLInputElement | null>(null);
 const btnEl = ref<HTMLButtonElement | null>(null);
 
 const label = computed(() => {
-    const n = ui.value.namespaces;
+    const n = table.namespaces;
     return n.length === 0 ? 'all' : n.length === 1 ? n[0] : `${n.length} selected`;
 });
 const shown = computed(() => {
@@ -26,10 +25,10 @@ const shown = computed(() => {
     return t ? all.value.filter(n => n.toLowerCase().includes(t)) : all.value;
 });
 
-const picked = computed(() => ui.value.namespaces.map(ns => ({ key: ns, label: ns })));
+const picked = computed(() => table.namespaces.map(ns => ({ key: ns, label: ns })));
 
 function readNamespaces() {
-    all.value = namespaceNames(getNamespacesView(), ui.value.namespaces);
+    all.value = namespaceNames(getNamespacesView(), table.namespaces);
 }
 // While open, follow the namespaces view: a cluster that connects (or a namespace created) shows up without reopening. Cheap: one row
 // per namespace, and only while the menu is open.
@@ -41,7 +40,7 @@ watch(
 // The filter when the menu opened: closing it after a change makes the new set the most recent (keys 1–9), once, not per click.
 let atOpen: readonly string[] = [];
 function dismissed() {
-    const now = ui.value.namespaces;
+    const now = table.namespaces;
     if (now.length && !sameSet(now, atOpen)) recordRecentNamespaces(now);
 }
 onBeforeUnmount(() => open.value && dismissed());
@@ -49,7 +48,7 @@ onBeforeUnmount(() => open.value && dismissed());
 async function toggleMenu() {
     if (open.value) return close();
     open.value = true;
-    atOpen = [...ui.value.namespaces];
+    atOpen = [...table.namespaces];
     readNamespaces();
     q.value = '';
     await nextTick();
@@ -61,8 +60,8 @@ function close() {
     btnEl.value?.focus();
 }
 function toggle(ns: string) {
-    const cur = ui.value.namespaces;
-    ui.value.namespaces = cur.includes(ns) ? cur.filter(x => x !== ns) : [...cur, ns];
+    const cur = table.namespaces;
+    table.namespaces = cur.includes(ns) ? cur.filter(x => x !== ns) : [...cur, ns];
 }
 </script>
 
@@ -84,14 +83,14 @@ function toggle(ns: string) {
                 <ul>
                     <li v-for="ns in shown" :key="ns">
                         <label class="opt"
-                            ><input class="cb" type="checkbox" :checked="ui.namespaces.includes(ns)" @change="toggle(ns)" />{{ ns }}</label
+                            ><input class="cb" type="checkbox" :checked="table.namespaces.includes(ns)" @change="toggle(ns)" />{{ ns }}</label
                         >
                     </li>
                     <li v-if="!shown.length" class="muted none">{{ all.length ? 'No matches' : 'No namespaces loaded yet' }}</li>
                 </ul>
                 <SelectedChips :items="picked" label="Selected" @remove="toggle" />
                 <div class="foot">
-                    <button class="btn ghost sm" type="button" :disabled="!ui.namespaces.length" @click="ui.namespaces = []">Clear</button>
+                    <button class="btn ghost sm" type="button" :disabled="!table.namespaces.length" @click="table.namespaces = []">Clear</button>
                     <div class="grow"></div>
                     <button class="btn sm" type="button" @click="close">Done</button>
                 </div>

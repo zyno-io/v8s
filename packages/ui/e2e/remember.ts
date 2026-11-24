@@ -103,6 +103,32 @@ async function main() {
                 await page.getByRole('button', { name: new RegExp(`Namespace: ${ns}`) }).waitFor({ timeout: 20000 });
             });
 
+            await step('the namespace filter stays when switching resource types (sidebar, a cluster-scoped kind, :<type>)', async () => {
+                const label = (await page.getByRole('button', { name: /Namespace: (?!all)/ }).innerText()).trim();
+                await page
+                    .getByRole('link', { name: /^Deployments/ })
+                    .first()
+                    .click();
+                await page.waitForURL(/\/r\/apps\/v1\/deployments/);
+                await page.getByRole('button', { name: label }).waitFor();
+                // Nodes are cluster-scoped: no menu, and the list is not filtered by namespace.
+                await page
+                    .getByRole('link', { name: /^Nodes/ })
+                    .first()
+                    .click();
+                await page.waitForURL(/\/nodes/);
+                await firstRow(page).waitFor({ timeout: 30000 });
+                assert.equal(await page.getByRole('button', { name: /^Namespace:/ }).count(), 0);
+                await page.keyboard.press(':');
+                await page.getByLabel('Command', { exact: true }).fill('svc');
+                await page.getByLabel('Command', { exact: true }).press('Enter');
+                await page.waitForURL(/\/r\/v1\/services/);
+                await page.getByRole('button', { name: label }).waitFor();
+                await page.getByRole('link', { name: /^Pods/ }).first().click();
+                await page.waitForURL(/\/pods/);
+                await page.getByRole('button', { name: label }).waitFor();
+            });
+
             await step('renaming the group keeps the filter (same clusters, new key)', async () => {
                 await page.locator('.cluster-btn').click();
                 const d = dialogOf(page);

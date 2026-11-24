@@ -33,7 +33,8 @@ export function useProblemsView() {
     const store = useProblemsStore();
     const table = useTableStore();
     const clusters = useClustersStore();
-    const nsState = table.of(ProblemsGVR);
+    // Problems shows no namespace menu, so the shared filter does not apply here (takesNamespaces); kept as the one switch for it.
+    const nsFilter = () => table.namespacesOf(ProblemsGVR);
 
     // ---- classes (chip counts, switches, unavailable checks) ----
     const classes = shallowRef<ProblemsClassesResult | null>(null);
@@ -59,13 +60,13 @@ export function useProblemsView() {
         severity: store.severity,
         showAcked: store.showAcked,
         text: store.text,
-        namespaces: nsState.namespaces
+        namespaces: nsFilter()
     }));
 
     const namespaceView = getNamespacesView();
     const namespaceKeys = computed(() => {
         void namespaceView.version.value;
-        return nsState.namespaces.length ? [...nsState.namespaces] : namespaceNames(namespaceView);
+        return nsFilter().length ? [...nsFilter()] : namespaceNames(namespaceView);
     });
     const namespaceTooMany = computed(() => namespaceKeys.value.length > MAX_GROUP_KEYS);
 

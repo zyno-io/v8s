@@ -2,6 +2,7 @@
 import type { ProblemsEvidenceResult, Row } from '@v8s/client';
 
 import { useVirtualizer } from '@tanstack/vue-virtual';
+import { ProblemsGVR } from '@v8s/client';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -733,7 +734,7 @@ onBeforeUnmount(() => {
 });
 
 // ---- empty states ----
-const filtered = computed(() => !!(store.families.length || store.text || store.severity !== 'all' || table.of('v8s/v1/problems').namespaces.length));
+const filtered = computed(() => !!(store.families.length || store.text || store.severity !== 'all' || table.namespacesOf(ProblemsGVR).length));
 const emptyKind = computed(() => {
     if (!clusters.activeIds.length) return 'no-clusters';
     if (h.total.value > 0) return '';
@@ -991,7 +992,7 @@ defineExpose({ scroller });
                     type="button"
                     @click="
                         store.clearFilters();
-                        table.of('v8s/v1/problems').namespaces = [];
+                        table.clearFilters(ProblemsGVR);
                     "
                 >
                     Clear filters

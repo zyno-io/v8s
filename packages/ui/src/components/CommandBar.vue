@@ -36,7 +36,7 @@ const ctx = computed<CommandContext>(() => ({
 function currentFilter(): readonly string[] {
     const r = router.currentRoute.value;
     const gvr = gvrFromRoute(r.path, r.params);
-    return gvr ? table.of(gvr).namespaces : [];
+    return gvr ? table.namespacesOf(gvr) : [];
 }
 
 const items = computed(() => complete(input.value, ctx.value));

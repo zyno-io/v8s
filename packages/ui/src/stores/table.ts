@@ -1,7 +1,10 @@
 import type { ObjectRef, Sort, ViewQuery } from '@v8s/client';
 
+import { ProblemsGVR } from '@v8s/client';
 import { defineStore } from 'pinia';
-import { effectScope, ref, shallowReactive, watch } from 'vue';
+import { ref, shallowReactive, shallowRef } from 'vue';
+
+import { kinds } from '@/lib/agent.ts';
 
 export interface ToneChip {
     key: string;
@@ -59,10 +62,12 @@ export const selectionKey = (r: Pick<ObjectRef, 'cluster' | 'namespace' | 'name'
 
 export type SelectionRefs = ReadonlyMap<string, ObjectRef>;
 
-/** Per-kind UI state. Selection is by object identity; refs are snapshotted when a row is selected (a few bytes each, never rows). */
+/**
+ * Per-kind UI state. Selection is by object identity; refs are snapshotted when a row is selected (a few bytes each, never rows).
+ * The namespace filter is not here: it is one selection shared by every kind (`useTableStore().namespaces`).
+ */
 export interface TableState {
     text: string;
-    namespaces: string[];
     tones: number[];
     sort: Sort[];
     selected: SelectionRefs;
@@ -71,15 +76,23 @@ export interface TableState {
 }
 
 function fresh(): TableState {
-    return shallowReactive<TableState>({ text: '', namespaces: [], tones: [], sort: [], selected: new Map(), focusId: 0, pendingOpen: null });
+    return shallowReactive<TableState>({ text: '', tones: [], sort: [], selected: new Map(), focusId: 0, pendingOpen: null });
 }
 
-export function isFiltered(s: TableState): boolean {
-    return !!s.text || s.namespaces.length > 0 || s.tones.length > 0;
+const NO_NAMESPACES: readonly string[] = Object.freeze([]);
+
+/** Whether the shared namespace filter applies to `gvr`: not to cluster-scoped kinds, nor to Problems (which shows no namespace menu). */
+export function takesNamespaces(gvr: string): boolean {
+    return gvr !== ProblemsGVR && kinds.value.find(k => k.gvr === gvr)?.namespaced !== false;
 }
 
-export function stateQuery(gvr: string, s: TableState): ViewQuery {
-    return buildQuery(gvr, s.text, s.namespaces, s.tones, s.sort);
+/** `namespaces` is the filter in effect for the kind (see `useTableStore().namespacesOf`). */
+export function isFiltered(s: TableState, namespaces: readonly string[]): boolean {
+    return !!s.text || namespaces.length > 0 || s.tones.length > 0;
+}
+
+export function stateQuery(gvr: string, s: TableState, namespaces: readonly string[]): ViewQuery {
+    return buildQuery(gvr, s.text, namespaces, s.tones, s.sort);
 }
 
 export const useTableStore = defineStore('table', () => {
@@ -87,42 +100,30 @@ export const useTableStore = defineStore('table', () => {
     /** The gvr whose page is on screen; the command bar, Esc chain and palette act on it. */
     const currentGvr = ref('');
 
-    // Namespace filters are remembered per cluster set (lib/namespace-memory.ts), which listens here. The watchers live in a detached scope:
-    // a state is created lazily from whichever component first asks for it, and must outlive that component.
-    const scope = effectScope(true);
-    const nsListeners: ((gvr: string) => void)[] = [];
-    const onNamespacesChange = (fn: (gvr: string) => void) => void nsListeners.push(fn);
+    /**
+     * The namespace filter: one selection for every kind, so switching kinds (sidebar, `:<type>`, palette, overview links) keeps it.
+     * Remembered per cluster set (lib/namespace-memory.ts). Assign a new array to change it; an unchanged filter keeps its identity so
+     * views are not re-queried.
+     */
+    const namespaces = shallowRef<string[]>([]);
 
     function of(gvr: string): TableState {
         let s = states.get(gvr);
         if (!s) {
-            const created = fresh();
-            s = created;
+            s = fresh();
             states.set(gvr, s);
-            scope.run(() =>
-                watch(
-                    () => created.namespaces,
-                    () => nsListeners.forEach(fn => fn(gvr))
-                )
-            );
         }
         return s;
     }
 
-    /** Every kind's namespace filter, for persistence. */
-    function namespaceFilters(): Record<string, string[]> {
-        const out: Record<string, string[]> = {};
-        for (const [gvr, s] of states) out[gvr] = s.namespaces;
-        return out;
+    /** The namespace filter in effect for `gvr`: the shared one, or none for kinds it does not apply to. Stable identity. */
+    function namespacesOf(gvr: string): readonly string[] {
+        return takesNamespaces(gvr) ? namespaces.value : NO_NAMESPACES;
     }
 
-    /** Replaces every kind's namespace filter with `filters` (kinds not listed are cleared). */
-    function applyNamespaceFilters(filters: Readonly<Record<string, readonly string[]>>) {
-        for (const [gvr, s] of states) if (!(gvr in filters) && s.namespaces.length) s.namespaces = [];
-        for (const [gvr, list] of Object.entries(filters)) {
-            const s = of(gvr);
-            if (s.namespaces.join('\n') !== list.join('\n')) s.namespaces = [...list];
-        }
+    /** Sets the shared filter; no-op (same array) when the list is unchanged. */
+    function setNamespaces(list: readonly string[]) {
+        if (list.join('\n') !== namespaces.value.join('\n')) namespaces.value = [...list];
     }
 
     function select(gvr: string, ref: ObjectRef) {
@@ -153,25 +154,31 @@ export const useTableStore = defineStore('table', () => {
         const s = of(gvr);
         s.sort = nextSort(s.sort, col, additive);
     }
-    function clearFilters(gvr: string) {
+    /** Clears the kind's text and status filters; the shared namespace filter stays (it is not this kind's to drop). */
+    function clearKindFilters(gvr: string) {
         const s = of(gvr);
         s.text = '';
-        s.namespaces = [];
         s.tones = [];
+    }
+    /** "Clear filters": the kind's own filters and the namespace filter in effect for it. */
+    function clearFilters(gvr: string) {
+        clearKindFilters(gvr);
+        if (namespacesOf(gvr).length) namespaces.value = [];
     }
 
     return {
         currentGvr,
+        namespaces,
         of,
-        onNamespacesChange,
-        namespaceFilters,
-        applyNamespaceFilters,
+        namespacesOf,
+        setNamespaces,
         select,
         setSelected,
         clearSelection,
         resetInteraction,
         toggleTone,
         sortBy,
+        clearKindFilters,
         clearFilters
     };
 });

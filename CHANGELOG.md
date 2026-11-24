@@ -5,6 +5,13 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Changed
+
+- The namespace filter is one selection for every resource type: switching from Pods to Deployments, Services or any other list (sidebar,
+  `:<type>`, search, Overview and Flux links) keeps the namespaces you picked, instead of each type having its own. Cluster-scoped types
+  such as Nodes ignore it without clearing it. Only naming namespaces (`:po payments`, `:ns …`, the menu, `0`–`9`) or **Clear filters**
+  changes it. Remembered filters from earlier versions carry over as the Pods filter.
+
 ## 0.10.0 — 2026-11-23
 
 ### Added
