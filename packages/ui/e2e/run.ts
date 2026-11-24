@@ -404,6 +404,9 @@ async function main() {
             await page.getByRole('button', { name: /Namespace: \d+ selected/ }).waitFor();
             await run('ns payments');
             await page.getByRole('button', { name: /Namespace: payments/ }).waitFor();
+            // The filter is shared by every kind: clear it so the steps below see whole lists.
+            await run('ns *');
+            await page.getByRole('button', { name: /Namespace: all/ }).waitFor();
         });
 
         await step('global search opens the object drawer', async () => {

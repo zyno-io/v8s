@@ -47,7 +47,7 @@ function saveWidth(key: string, width: number) {
                     spellcheck="false"
                 />
             </label>
-            <NamespaceMenu v-if="namespaced" :gvr="gvr" />
+            <NamespaceMenu v-if="namespaced" />
             <div class="grow"></div>
             <span class="muted count" role="status">{{ formatCount(handle.total.value) }} {{ title.toLowerCase() }}</span>
         </div>

@@ -140,7 +140,7 @@ const ipRows = computed<Item[]>(() =>
                   if (a.type === 'open') {
                       void openObject(router, a.ref);
                   } else {
-                      table.clearFilters(a.gvr);
+                      table.clearKindFilters(a.gvr);
                       table.of(a.gvr).text = a.text;
                       void router.push(gvrPath(a.gvr));
                   }

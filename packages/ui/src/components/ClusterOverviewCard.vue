@@ -149,12 +149,12 @@ const capCells = computed(() => [
 ]);
 
 function goPods(tones: number[]) {
-    table.clearFilters(PODS_GVR);
+    table.clearKindFilters(PODS_GVR);
     table.of(PODS_GVR).tones = tones;
     void router.push('/pods');
 }
 function goHealth(h: Health, tones: number[]) {
-    table.clearFilters(h.gvr);
+    table.clearKindFilters(h.gvr);
     table.of(h.gvr).tones = tones;
     void router.push(gvrPath(h.gvr));
 }

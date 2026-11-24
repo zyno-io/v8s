@@ -275,7 +275,7 @@ describe('namespace digits', () => {
     });
 
     it('1–9 apply the recent sets without reordering them; 0 clears the filter', () => {
-        const st = useTableStore().of('v1/pods');
+        const st = useTableStore();
         for (const [k, want] of [
             ['1', ['b', 'c']],
             ['2', ['a']],
@@ -300,17 +300,17 @@ describe('namespace digits', () => {
         const table = useTableStore();
         table.currentGvr = ProblemsGVR;
         expect(key('1', body).preventDefault).not.toHaveBeenCalled();
-        expect(table.of(ProblemsGVR).namespaces).toEqual([]);
+        expect(table.namespaces).toEqual([]);
     });
 
     it('leaves cluster-scoped kinds and typing alone', () => {
         const table = useTableStore();
         key('1', filter);
-        expect(table.of('v1/pods').namespaces).toEqual([]);
+        expect(table.namespaces).toEqual([]);
         kinds.value = [{ gvr: 'v1/nodes', namespaced: false } as never];
         table.currentGvr = 'v1/nodes';
         expect(key('1', body).preventDefault).not.toHaveBeenCalled();
-        expect(table.of('v1/nodes').namespaces).toEqual([]);
+        expect(table.namespaces).toEqual([]);
     });
 });
 
@@ -370,9 +370,9 @@ describe('drawer scope', () => {
         setListNav(nav());
         const st = useTableStore();
         st.currentGvr = 'v1/pods';
-        st.of('v1/pods').namespaces = ['keep'];
+        st.namespaces = ['keep'];
         key('0', body);
-        expect(st.of('v1/pods').namespaces).toEqual(['keep']);
+        expect(st.namespaces).toEqual(['keep']);
     });
 
     it('a closed drawer behaves as the list', () => {

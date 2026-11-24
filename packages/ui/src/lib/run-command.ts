@@ -2,7 +2,7 @@ import type { Router } from 'vue-router';
 
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useSettingsStore } from '@/stores/settings.ts';
-import { useTableStore } from '@/stores/table.ts';
+import { takesNamespaces, useTableStore } from '@/stores/table.ts';
 import { useUiStore } from '@/stores/ui.ts';
 
 import type { Command } from './command-parser.ts';
@@ -12,6 +12,11 @@ import { kindLabel, labelFromGvr } from './kinds.ts';
 import { errorText } from './mutations.ts';
 import { recordRecentNamespaces } from './recent-namespaces.ts';
 import { gvrFromRoute, gvrPath } from './route.ts';
+
+const kindName = (gvr: string): string => {
+    const k = kinds.value.find(x => x.gvr === gvr);
+    return k ? kindLabel(k) : labelFromGvr(gvr);
+};
 
 /** Applies a parsed command. Returns an error message to show inline, or null when the bar should close. */
 export async function runCommand(cmd: Command, router: Router): Promise<string | null> {
@@ -43,16 +48,18 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
         }
         case 'ns':
             if (!here) return 'open a resource list first';
-            table.of(here).namespaces = cmd.namespaces ?? [];
+            // The filter would be invisible here and change the next list instead; the digit keys refuse too.
+            if (!takesNamespaces(here)) return `${kindName(here)} are not in namespaces`;
+            table.namespaces = cmd.namespaces ?? [];
             // Naming namespaces makes them the most recent set (keys 1–9); `all` / `*` does not.
             if (cmd.namespaces) recordRecentNamespaces(cmd.namespaces);
             return null;
         case 'ns-delta': {
             if (!here) return 'open a resource list first';
-            const st = table.of(here);
-            const next = st.namespaces.filter(n => !cmd.remove.includes(n));
+            if (!takesNamespaces(here)) return `${kindName(here)} are not in namespaces`;
+            const next = table.namespaces.filter(n => !cmd.remove.includes(n));
             for (const n of cmd.add) if (!next.includes(n)) next.push(n);
-            st.namespaces = next;
+            table.namespaces = next;
             recordRecentNamespaces(next);
             return null;
         }
@@ -80,12 +87,10 @@ export async function runCommand(cmd: Command, router: Router): Promise<string |
         case 'open-kind': {
             await router.push(gvrPath(cmd.gvr));
             const st = table.of(cmd.gvr);
-            if (cmd.text) {
-                st.namespaces = [];
-                st.text = cmd.text;
-            }
-            if (cmd.namespaces) st.namespaces = [...cmd.namespaces];
-            else if (cmd.namespace) st.namespaces = [cmd.namespace];
+            // The namespace filter is shared and kept across kinds; only namespaces named in the command change it.
+            if (cmd.text) st.text = cmd.text;
+            if (cmd.namespaces) table.namespaces = [...cmd.namespaces];
+            else if (cmd.namespace) table.namespaces = [cmd.namespace];
             if (cmd.namespaces?.length) recordRecentNamespaces(cmd.namespaces);
             else if (cmd.namespace) recordRecentNamespaces([cmd.namespace]);
             if (cmd.name) {

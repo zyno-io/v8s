@@ -51,6 +51,8 @@ const appUi = useUiStore();
 const router = useRouter();
 const route = useRoute();
 const ui = computed(() => table.of(props.gvr));
+// A computed, so a kinds reload (which namespacesOf reads) with the same filter neither scrolls to the top nor resets the selection.
+const nsFilter = computed(() => table.namespacesOf(props.gvr));
 
 const HEADER_H = ROW_H_DESKTOP;
 const EMPTY_ROW = Object.freeze([]) as unknown as Row;
@@ -345,7 +347,7 @@ watch(isPhone, () => {
 });
 
 watch(
-    () => [ui.value.text, ui.value.namespaces, ui.value.tones, ui.value.sort],
+    () => [ui.value.text, nsFilter.value, ui.value.tones, ui.value.sort],
     () => {
         anchor.id = 0;
         queryPending = true;
@@ -841,7 +843,7 @@ const emptyKind = computed(() =>
         clusters: clusters.activeIds.length,
         total: props.handle.total.value,
         version: props.handle.version.value,
-        filtered: isFiltered(ui.value),
+        filtered: isFiltered(ui.value, nsFilter.value),
         loading: loadingIds.value.length,
         switching: clusters.activeIds.some(id => clusters.switching(id) !== ''),
         syncing: clusters.states.some(st => st.phase === 'syncing' || st.phase === 'connecting')

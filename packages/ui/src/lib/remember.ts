@@ -8,12 +8,10 @@ export type Groups = Readonly<Record<string, readonly string[]>>;
 /** What is remembered of a selection: a group name when it equalled that group's members, else the cluster ids. */
 export type StoredSelection = { group: string } | { ids: string[] };
 
-/** Namespace filters of one cluster set, per resource kind (gvr). Only non-empty filters are kept. */
-export type NamespaceFilters = Record<string, string[]>;
-
+/** The namespace filter of one cluster set (shared by every kind). Only non-empty filters are kept. */
 export interface NamespaceEntry {
     key: string;
-    ns: NamespaceFilters;
+    ns: string[];
 }
 
 export const KEY_SELECTION = 'v8s:selection';
@@ -80,22 +78,10 @@ export function resolveChecked(
 
 // ---- namespace filters per connection key ----
 
-/** Drops empty filters; null when nothing is left. */
-export function compactFilters(ns: Readonly<Record<string, readonly string[]>>): NamespaceFilters | null {
-    const out: NamespaceFilters = {};
-    for (const [gvr, list] of Object.entries(ns)) if (list.length) out[gvr] = [...list];
-    return Object.keys(out).length ? out : null;
-}
-
-/** Puts `key` first (most recently used) with `ns`, or removes it when `ns` is null; keeps at most `max` entries. */
-export function upsertEntry(
-    entries: readonly NamespaceEntry[],
-    key: string,
-    ns: NamespaceFilters | null,
-    max = MAX_NAMESPACE_KEYS
-): NamespaceEntry[] {
+/** Puts `key` first (most recently used) with `ns`, or removes it when `ns` is empty; keeps at most `max` entries. */
+export function upsertEntry(entries: readonly NamespaceEntry[], key: string, ns: readonly string[], max = MAX_NAMESPACE_KEYS): NamespaceEntry[] {
     const rest = entries.filter(e => e.key !== key);
-    return (ns ? [{ key, ns }, ...rest] : rest).slice(0, max);
+    return (ns.length ? [{ key, ns: [...ns] }, ...rest] : rest).slice(0, max);
 }
 
 /** Moves `key` to the front (a use, not a change); no-op when it has no entry. */
@@ -104,16 +90,8 @@ export function touchEntry(entries: readonly NamespaceEntry[], key: string): Nam
     return e ? upsertEntry(entries, key, e.ns) : [...entries];
 }
 
-/** Sets one kind's filter inside `key`'s entry, leaving its other kinds as stored (another tab may have changed them). */
-export function setKindFilter(entries: readonly NamespaceEntry[], key: string, gvr: string, list: readonly string[]): NamespaceEntry[] {
-    const ns: Record<string, readonly string[]> = { ...entries.find(e => e.key === key)?.ns };
-    if (list.length) ns[gvr] = list;
-    else delete ns[gvr];
-    return upsertEntry(entries, key, compactFilters(ns));
-}
-
 /** The same cluster set under a new key (a group was created, renamed or deleted): `ns` replaces whatever `to` held, `from` is dropped. */
-export function moveEntry(entries: readonly NamespaceEntry[], from: string, to: string, ns: NamespaceFilters | null): NamespaceEntry[] {
+export function moveEntry(entries: readonly NamespaceEntry[], from: string, to: string, ns: readonly string[]): NamespaceEntry[] {
     return upsertEntry(
         entries.filter(e => e.key !== from),
         to,
@@ -121,7 +99,7 @@ export function moveEntry(entries: readonly NamespaceEntry[], from: string, to: 
     );
 }
 
-/** A group was renamed: its saved filters follow it (`g:<from>` → `g:<to>`); no-op when it has none. */
+/** A group was renamed: its saved filter follows it (`g:<from>` → `g:<to>`); no-op when it has none. */
 export function renameGroupEntries(entries: readonly NamespaceEntry[], from: string, to: string): NamespaceEntry[] {
     const e = entries.find(x => x.key === 'g:' + from);
     return e ? moveEntry(entries, e.key, 'g:' + to, e.ns) : [...entries];
@@ -132,22 +110,32 @@ export function renameStoredGroup(from: string, to: string): void {
     writeJson(KEY_NAMESPACES, renameGroupEntries(parseEntries(readJson(KEY_NAMESPACES)), from, to));
 }
 
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === 'string');
+
+/**
+ * One stored filter. Before the filter was shared, each kind had its own (`{ gvr: [...] }`); such an entry becomes the Pods filter, or
+ * else the first kind's, so an upgrade keeps the selection people most likely see.
+ */
+function parseFilter(raw: unknown): string[] {
+    if (isStringList(raw)) return raw;
+    if (!raw || typeof raw !== 'object') return [];
+    const legacy = raw as Record<string, unknown>;
+    const pods = legacy['v1/pods'];
+    if (isStringList(pods) && pods.length) return pods;
+    for (const v of Object.values(legacy)) if (isStringList(v) && v.length) return v;
+    return [];
+}
+
 export function parseEntries(raw: unknown): NamespaceEntry[] {
     if (!Array.isArray(raw)) return [];
     const out: NamespaceEntry[] = [];
     for (const e of raw) {
-        if (!e || typeof e.key !== 'string' || !e.ns || typeof e.ns !== 'object') continue;
-        const valid: Record<string, string[]> = {};
-        for (const [gvr, v] of Object.entries(e.ns as Record<string, unknown>)) {
-            if (Array.isArray(v) && v.every(x => typeof x === 'string')) valid[gvr] = v as string[];
-        }
-        const ns = compactFilters(valid);
-        if (ns) out.push({ key: e.key, ns });
+        if (!e || typeof e.key !== 'string') continue;
+        const ns = parseFilter(e.ns);
+        if (ns.length) out.push({ key: e.key, ns });
     }
     return out.slice(0, MAX_NAMESPACE_KEYS);
 }
-
-export const sameFilters = (a: NamespaceFilters | null, b: NamespaceFilters | null): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 // ---- last visited route ----
 
