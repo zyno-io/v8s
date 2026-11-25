@@ -133,7 +133,11 @@ func registerPods() {
 			cUse("memPctReq", "%MEM/R", "%R", UseMemPctReq, "permille", 36, false),
 			cUse("memPctLim", "%MEM/L", "%L", UseMemPctLim, "permille", 36, false),
 			cUse("memPctNode", "%MEM/N", "%N", UseMemPctNode, "permille", 36, true),
-			cDict("node", "Node", 120), hide(cIP("ip", "IP", 120, FPodIP)), narrow(cAge(), 56)},
+			cDict("node", "Node", 120), hide(cIP("ip", "IP", 120, FPodIP)),
+			// The controlling owner (a ReplicaSet, StatefulSet, DaemonSet, Job): the Related tab of a workload filters on it.
+			// Already on every row, so the column costs nothing until a window encodes it.
+			hide(Col{Column: protocol.Column{Key: "owner", Type: protocol.ColDict, Label: "Owner", Width: 200}, Src: SrcOwner, Sortable: true, Filterable: true}),
+			narrow(cAge(), 56)},
 		Usage: "pods",
 		IPs:   true, IPOrder: 10}
 	typed(m, func(l *corev1.PodList) []corev1.Pod { return l.Items }, Project)

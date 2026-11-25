@@ -5,6 +5,12 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- The Related tab of a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job lists its pods (a Deployment's through its ReplicaSets),
+  with readiness, status and node; **Open** opens a pod. Clicking the ready count (`2/3`) in the list, or the `2/3 ready` tag in the
+  drawer, opens that tab. Pods have a hidden **Owner** column (Columns menu).
+
 ### Changed
 
 - The namespace filter is one selection for every resource type: switching from Pods to Deployments, Services or any other list (sidebar,

@@ -15,6 +15,7 @@ import { formatAge } from '@/lib/format.ts';
 import { resolveKind } from '@/lib/kinds.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
+import { listsPods } from '@/lib/related.ts';
 import { ownerTarget } from '@/lib/row-keys.ts';
 import { isVpaGvr, podRequests, VPA_GVR, vpaNameFromAnnotation, vpaRecommendations } from '@/lib/vpa.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
@@ -115,7 +116,18 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
 
         <dl class="grid">
             <dt class="lbl">Status</dt>
-            <dd><span v-if="status" class="tag" :class="status.tone">{{ status.text }}</span><span v-else class="muted">—</span></dd>
+            <dd>
+                <button
+                    v-if="status && listsPods(target.gvr)"
+                    class="tag go"
+                    :class="status.tone"
+                    type="button"
+                    title="Show its pods (Related)"
+                    @click="openObject(router, target, 'related', true)"
+                >
+                    {{ status.text }}</button
+                ><span v-else-if="status" class="tag" :class="status.tone">{{ status.text }}</span><span v-else class="muted">—</span>
+            </dd>
             <dt class="lbl">Cluster</dt>
             <dd>
                 <span class="tag" :class="clusters.tagTone(target.cluster)"
@@ -269,6 +281,20 @@ dd {
     gap: 6px;
     flex-wrap: wrap;
     align-items: center;
+}
+/* A status tag that opens the Related tab: keeps its tone colour, reads as clickable. */
+.go {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.go:hover {
+    text-decoration: underline;
+}
+.go:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
 }
 .own {
     height: auto;

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { ObjectPayload, ObjectRef } from '@v8s/client';
+import type { Filter, ObjectPayload, ObjectRef, ViewHandle } from '@v8s/client';
 
-import { computed, onBeforeUnmount } from 'vue';
+import { computed, onBeforeUnmount, shallowRef, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { getAgent, kinds } from '@/lib/agent.ts';
 import { openObject } from '@/lib/drawer.ts';
+import { listsPods, podsFilter, podsViaReplicaSets } from '@/lib/related.ts';
 import { ownerTarget } from '@/lib/row-keys.ts';
 
 const props = defineProps<{ target: ObjectRef; payload: ObjectPayload }>();
@@ -50,6 +51,69 @@ function openOwned(name: string) {
     if (!owned) return;
     void openObject(router, { cluster: props.target.cluster, gvr: owned.gvr, namespace: props.target.namespace, name });
 }
+
+// ---- Pods ----
+// A workload's pods, from the agent's pods view filtered on the pod's controlling owner: the workload itself, or for a
+// Deployment the ReplicaSets listed above. Only one window of rows crosses the wire, however many pods the cluster has.
+const POD_LIMIT = 100;
+const replicaSets = computed(() => (podsViaReplicaSets(props.target.gvr) ? ownedRows.value.map(r => r.name) : []));
+// Keyed by its JSON so ReplicaSet status updates (same names) don't resubscribe.
+const podsKey = computed(() => JSON.stringify(podsFilter(props.target.gvr, props.target.name ?? '', replicaSets.value)));
+const pods = shallowRef<ViewHandle | null>(null);
+watch(
+    podsKey,
+    key => {
+        const f = JSON.parse(key) as Filter | null;
+        if (!f) {
+            pods.value?.close();
+            pods.value = null;
+            return;
+        }
+        const query = {
+            clusters: [props.target.cluster],
+            gvr: 'v1/pods',
+            namespaces: props.target.namespace ? [props.target.namespace] : [],
+            text: '',
+            filters: [f],
+            sort: []
+        };
+        if (pods.value) pods.value.update({ query });
+        else pods.value = getAgent().subscribeView(query, { offset: 0, limit: POD_LIMIT });
+    },
+    { immediate: true }
+);
+onBeforeUnmount(() => pods.value?.close());
+const showPods = listsPods(props.target.gvr);
+const podRows = computed(() => {
+    const h = pods.value;
+    if (!h) return [];
+    void h.version.value;
+    const cols = h.columns.value ?? [];
+    const at = (key: string) => {
+        const i = cols.findIndex(c => c.key === key);
+        return i >= 0 ? i + 2 : -1;
+    };
+    const ni = at('name'),
+        ri = at('ready'),
+        ci = at('containers'),
+        si = at('status'),
+        ti = at('statusTone'),
+        nodeI = at('node');
+    return [...h.ids]
+        .map(id => h.rows.get(id))
+        .filter(Boolean)
+        .map(r => ({
+            name: String(r![ni]),
+            ready: ri >= 0 && ci >= 0 ? `${String(r![ri])}/${String(r![ci])}` : '',
+            status: si >= 0 ? String(r![si] ?? '') : '',
+            tone: ti >= 0 ? Number(r![ti]) : 0,
+            node: nodeI >= 0 ? String(r![nodeI] ?? '') : ''
+        }));
+});
+const podTotal = computed(() => pods.value?.total.value ?? 0);
+function openPod(name: string) {
+    void openObject(router, { cluster: props.target.cluster, gvr: 'v1/pods', namespace: props.target.namespace, name }, 'overview');
+}
 </script>
 
 <template>
@@ -64,6 +128,20 @@ function openOwned(name: string) {
                     <button v-if="o.to" class="btn sm" type="button" @click="openObject(router, o.to)">Open</button>
                 </li>
             </ul>
+        </section>
+        <section v-if="showPods" data-testid="related-pods">
+            <h3 class="lbl">Pods<template v-if="podTotal"> · {{ podTotal }}</template></h3>
+            <p v-if="!podRows.length" class="muted">None.</p>
+            <ul v-else class="list">
+                <li v-for="p in podRows" :key="p.name">
+                    <span class="mono">{{ p.name }}</span>
+                    <span v-if="p.ready" class="muted mono">{{ p.ready }}</span>
+                    <span class="tag" :class="TONES[p.tone]">{{ p.status || TONES[p.tone] }}</span>
+                    <span v-if="p.node" class="muted">{{ p.node }}</span>
+                    <button class="btn sm" type="button" @click="openPod(p.name)">Open</button>
+                </li>
+            </ul>
+            <p v-if="podTotal > podRows.length && podRows.length" class="muted">Showing the first {{ podRows.length }} of {{ podTotal }}.</p>
         </section>
         <section v-if="owned">
             <h3 class="lbl">Owns · {{ owned.label }}</h3>

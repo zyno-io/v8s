@@ -22,6 +22,7 @@ import { focusDrawer, setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { emptyKindOf, loadingNames } from '@/lib/loading.ts';
 import { errorText } from '@/lib/mutations.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
+import { listsPods } from '@/lib/related.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
 import { keyActionBlocked, ownerRef, requestKeyAction, rowIntent } from '@/lib/row-keys.ts';
 import { RowSlots } from '@/lib/row-slots.ts';
@@ -427,7 +428,15 @@ function onBodyClick(e: MouseEvent) {
     // A click anywhere on the row opens it (docs/guide/resources.md), not just on the name: rows are taller
     // than their text, so a click near a row's edge lands on the row itself. Controls inside a row keep theirs.
     if (t.closest('a, button, select, textarea, [data-noopen]')) return;
-    openRow(id);
+    openRow(id, onReadyCell(t, el) ? 'related' : undefined);
+}
+
+/** A click on a workload's Ready count ("2/3") opens its pods: the drawer's Related tab. Desktop rows only (cells in plan order after the checkbox). */
+function onReadyCell(t: HTMLElement, row: HTMLElement): boolean {
+    if (isPhone.value || !listsPods(props.gvr)) return false;
+    const cell = t.closest<HTMLElement>('[role=cell]');
+    if (!cell || cell.parentElement !== row) return false;
+    return props.plan.cols[Array.prototype.indexOf.call(row.children, cell) - 1]?.key === 'ready';
 }
 
 function onDblClick(e: MouseEvent) {
