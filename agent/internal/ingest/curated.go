@@ -135,7 +135,7 @@ func registerPods() {
 			cUse("memPctNode", "%MEM/N", "%N", UseMemPctNode, "permille", 36, true),
 			cDict("node", "Node", 120), hide(cIP("ip", "IP", 120, FPodIP)),
 			// The controlling owner (a ReplicaSet, StatefulSet, DaemonSet, Job): the Related tab of a workload filters on it.
-			// Already on every row, so the column costs nothing until a window encodes it.
+			// Already on every row (no ingest or memory cost); a window encodes it as one dictionary code per row.
 			hide(Col{Column: protocol.Column{Key: "owner", Type: protocol.ColDict, Label: "Owner", Width: 200}, Src: SrcOwner, Sortable: true, Filterable: true}),
 			narrow(cAge(), 56)},
 		Usage: "pods",

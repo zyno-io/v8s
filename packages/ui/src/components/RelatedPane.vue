@@ -28,7 +28,8 @@ const handle = owned
               namespaces: props.target.namespace ? [props.target.namespace] : [],
               text: props.target.name ?? '',
               filters: [{ col: 'owner', op: 'eq', value: props.target.name ?? '' }],
-              sort: []
+              // Newest first: the window holds the ReplicaSets that have pods even when history exceeds it.
+              sort: [{ col: 'createdAt', desc: true }]
           },
           { offset: 0, limit: 50 }
       )
@@ -111,6 +112,13 @@ const podRows = computed(() => {
         }));
 });
 const podTotal = computed(() => pods.value?.total.value ?? 0);
+/** What to say instead of the list: loading (the ReplicaSets, then the pods), the agent's refusal, or nothing found. */
+const podsNote = computed(() => {
+    const h = pods.value;
+    if (h?.error.value) return `Could not list pods: ${h.error.value.message}`;
+    if ((podsViaReplicaSets(props.target.gvr) && handle && handle.version.value === 0) || (h && h.version.value === 0)) return 'Loading…';
+    return podRows.value.length ? '' : 'None.';
+});
 function openPod(name: string) {
     void openObject(router, { cluster: props.target.cluster, gvr: 'v1/pods', namespace: props.target.namespace, name }, 'overview');
 }
@@ -131,7 +139,7 @@ function openPod(name: string) {
         </section>
         <section v-if="showPods" data-testid="related-pods">
             <h3 class="lbl">Pods<template v-if="podTotal"> · {{ podTotal }}</template></h3>
-            <p v-if="!podRows.length" class="muted">None.</p>
+            <p v-if="podsNote" class="muted">{{ podsNote }}</p>
             <ul v-else class="list">
                 <li v-for="p in podRows" :key="p.name">
                     <span class="mono">{{ p.name }}</span>
