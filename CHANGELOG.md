@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.11.0 — 2026-11-25
+
 ### Added
 
 - The Related tab of a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job lists its pods (a Deployment's through its ReplicaSets),
