@@ -23,12 +23,13 @@ const theme = EditorView.theme({
     '.cm-scroller': { fontFamily: "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace", lineHeight: '1.55' },
     '.cm-content': { caretColor: 'var(--focus)' },
     '.cm-gutters': { backgroundColor: 'var(--bg)', color: 'var(--text3)', border: 'none', borderRight: '1px solid var(--border)' },
-    '.cm-activeLine': { backgroundColor: 'var(--hover)' },
+    // drawSelection paints the selection in a layer behind the text: an opaque active-line background would hide it on that line.
+    '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--text) 4%, transparent)' },
     '.cm-activeLineGutter': { backgroundColor: 'var(--s2)' },
     '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
     // .cm-host clips an outset ring.
     '.cm-scroller:focus-visible': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--accent-soft)' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)' },
     '.cm-cursor': { borderLeftColor: 'var(--focus)' },
     '.cm-selectionMatch': { backgroundColor: 'var(--s3)' },
     '.cm-panels': { backgroundColor: 'var(--bg)', color: 'var(--text)' },
