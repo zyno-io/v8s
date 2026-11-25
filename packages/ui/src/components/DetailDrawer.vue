@@ -17,6 +17,7 @@ import { currentDrawerNav, isEditable, restoreListFocus, setDrawerNav, type Draw
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
+import { listsPods } from '@/lib/related.ts';
 import { gvrFromRoute, HELM_RELEASES_GVR, parseDrawer, tabsFor } from '@/lib/route.ts';
 import { useClustersStore } from '@/stores/clusters.ts';
 import { useIntegrationsStore } from '@/stores/integrations.ts';
@@ -302,7 +303,18 @@ const TAB_LABEL: Record<DrawerTab, string> = {
             </div>
             <div class="title">
                 <h2 class="c">{{ target.name }}</h2>
-                <span v-if="status" class="tag" :class="status.tone">{{ status.text }}</span>
+                <button
+                    v-if="status && listsPods(target.gvr)"
+                    class="tag go"
+                    :class="status.tone"
+                    type="button"
+                    title="Show its pods (Related)"
+                    data-testid="ready-related"
+                    @click="setTab('related')"
+                >
+                    {{ status.text }}
+                </button>
+                <span v-else-if="status" class="tag" :class="status.tone">{{ status.text }}</span>
                 <span v-if="payload?.gitops" class="tag">managed by {{ GITOPS_LABEL[payload.gitops.kind] ?? payload.gitops.kind }}</span>
             </div>
         </header>
@@ -437,6 +449,20 @@ header {
     align-items: center;
     gap: 8px;
     min-width: 0;
+}
+/* A status tag that opens the Related tab: keeps its tone colour, reads as clickable. */
+.go {
+    font: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.go:hover {
+    text-decoration: underline;
+}
+.go:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
 }
 .small {
     font-size: 12px;

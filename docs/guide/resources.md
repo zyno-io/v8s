@@ -64,7 +64,7 @@ Press `Enter` on a row, or click it, to open the drawer. The URL changes with it
 | Flows     | For pods, workloads, Services, and namespaces, when Hubble is detected. See [Network](/guide/network)                      |
 | YAML      | The live object. Read, copy, or edit it                                                                                    |
 | Events    | All events for this object, newest first                                                                                   |
-| Related   | What owns this object and what it owns                                                                                     |
+| Related   | What owns this object and what it owns. For Deployments, StatefulSets, DaemonSets, ReplicaSets and Jobs, their pods        |
 
 The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 

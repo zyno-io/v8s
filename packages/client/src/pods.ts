@@ -25,7 +25,8 @@ export const POD = {
     memPctNode: 22,
     node: 23,
     ip: 24,
-    createdAt: 25
+    owner: 25,
+    createdAt: 26
 } as const;
 
 export const POD_COLUMN_KEYS = [
@@ -52,6 +53,7 @@ export const POD_COLUMN_KEYS = [
     'memPctNode',
     'node',
     'ip',
+    'owner',
     'createdAt'
 ] as const;
 

@@ -376,7 +376,8 @@ var PodColumns = []Column{
 	{Key: "memPctLim", Type: ColInt, Label: "%MEM/L", Short: "%L", Width: 36, Align: "right", Unit: "permille", Metrics: true},
 	{Key: "memPctNode", Type: ColInt, Label: "%MEM/N", Short: "%N", Width: 36, Align: "right", Unit: "permille", Metrics: true, Hidden: true},
 	{Key: "node", Type: ColDict, Label: "Node", Width: 120},
-	{Key: "ip", Type: ColStr, Label: "IP", Width: 120, Hidden: true}, // pod IPs, comma-separated; sorts numerically
+	{Key: "ip", Type: ColStr, Label: "IP", Width: 120, Hidden: true},        // pod IPs, comma-separated; sorts numerically
+	{Key: "owner", Type: ColDict, Label: "Owner", Width: 200, Hidden: true}, // the controlling owner's name (ReplicaSet, StatefulSet, …); filterable
 	{Key: "createdAt", Type: ColTime, Label: "Age", Width: 56, Align: "right"},
 }
 
