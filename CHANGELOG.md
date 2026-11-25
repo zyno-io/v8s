@@ -18,6 +18,11 @@ release notes when the tag has no annotation.
   such as Nodes ignore it without clearing it. Only naming namespaces (`:po payments`, `:ns …`, the menu, `0`–`9`) or **Clear filters**
   changes it. Remembered filters from earlier versions carry over as the Pods filter.
 
+### Fixed
+
+- YAML tab: selected text on the line with the cursor is highlighted again (the current-line background hid it), and selections
+  are easier to see everywhere.
+
 ## 0.10.0 — 2026-11-23
 
 ### Added
