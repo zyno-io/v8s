@@ -927,8 +927,9 @@ async function main() {
             await nsMenu.getByRole('button', { name: 'Done' }).click();
             await page.waitForFunction(
                 () => {
-                    const rows = [...document.querySelectorAll('.scroller .row:not(.sk)')];
-                    return rows.length > 0 && rows.every(r => /node-3(?!\d)/.test(r.textContent ?? ''));
+                    const rows = [...document.querySelectorAll('.table-card .scroller .row:not(.sk)')];
+                    // Cells, not the row's text: textContent runs the node into the next cell ("node-310.64…").
+                    return rows.length > 0 && rows.every(r => [...r.querySelectorAll('[role=cell]')].some(c => c.textContent?.trim() === 'node-3'));
                 },
                 null,
                 { timeout: 15000 }
