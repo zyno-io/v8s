@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.12.0 — 2026-11-26
+
 ### Added
 
 - Pods have a **Node** filter, right of the namespace filter: pick one or more nodes (search narrows the list) to show only the pods
