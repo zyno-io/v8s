@@ -23,6 +23,17 @@ const q = defineModel<string>('query', { default: '' });
 
 const searchEl = ref<HTMLInputElement | null>(null);
 const btnEl = ref<HTMLButtonElement | null>(null);
+// The popover hangs from its button's left edge; a button far right (the Node menu on a phone) shifts it left so it stays on screen.
+const MENU_W = 260;
+const GUTTER = 12;
+const place = ref<{ left: string; width: string }>({ left: '0px', width: MENU_W + 'px' });
+function measure() {
+    const r = btnEl.value?.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const width = Math.min(MENU_W, vw - 2 * GUTTER);
+    const left = r ? Math.min(0, vw - GUTTER - width - r.left) : 0;
+    place.value = { left: left + 'px', width: width + 'px' };
+}
 
 const value = computed(() => {
     const n = props.selected;
@@ -38,6 +49,7 @@ const emptyText = computed(() => (props.options.length || q.value.trim() ? 'No m
 async function toggleMenu() {
     if (open.value) return close();
     q.value = '';
+    measure();
     open.value = true;
     await nextTick();
     searchEl.value?.focus();
@@ -65,6 +77,7 @@ function toggle(v: string) {
             <!-- Digits pick recent namespace sets (lib/keys.ts); not while a menu is choosing by hand. -->
             <div
                 class="floating menu"
+                :style="place"
                 role="dialog"
                 :aria-label="`${label} filter`"
                 @keydown="/^[0-9]$/.test($event.key) && $event.stopPropagation()"
@@ -102,8 +115,6 @@ function toggle(v: string) {
     position: absolute;
     z-index: 21;
     top: 36px;
-    left: 0;
-    width: 260px;
     padding: 8px;
 }
 ul {

@@ -75,6 +75,29 @@ func (e *Engine) colString(c *ingest.Col) func(r *ingest.Row, cl uint16) string 
 	return func(*ingest.Row, uint16) string { return "" }
 }
 
+// cellInSetMin is the `in` list length from which a string-cell filter hashes instead of scanning.
+const cellInSetMin = 16
+
+// cellIn matches rows whose string cell idx is one of vals.
+func cellIn(idx int, vals []string) func(r *ingest.Row, _ uint16) bool {
+	hs := make([]ingest.Str, len(vals))
+	for i, v := range vals {
+		hs[i] = ingest.Intern(v)
+	}
+	switch {
+	case len(hs) == 1:
+		want := hs[0]
+		return func(r *ingest.Row, _ uint16) bool { return r.Cell(idx).S == want }
+	case len(hs) < cellInSetMin:
+		return func(r *ingest.Row, _ uint16) bool { return slices.Contains(hs, r.Cell(idx).S) }
+	}
+	set := make(map[ingest.Str]struct{}, len(hs))
+	for _, h := range hs {
+		set[h] = struct{}{}
+	}
+	return func(r *ingest.Row, _ uint16) bool { _, ok := set[r.Cell(idx).S]; return ok }
+}
+
 // buildMatch compiles the query's membership predicate.
 func (e *Engine) buildMatch(n *Norm) func(r *ingest.Row, cl uint16) bool {
 	var preds []func(r *ingest.Row, cl uint16) bool
@@ -121,6 +144,13 @@ func (e *Engine) buildMatch(n *Norm) func(r *ingest.Row, cl uint16) bool {
 		}
 		if f.c.Src == ingest.SrcName { // hot path: no closure indirection
 			preds = append(preds, func(r *ingest.Row, _ uint16) bool { return slices.Contains(f.vals, r.Name()) })
+			continue
+		}
+		// String cells (the pod's node, a CRD's dict column) are interned: compare handles, not strings. A long `in` list (a node
+		// pool picked from the menu) is a set, so the scan costs about the same for 1 or 500 values; a short one stays a slice scan,
+		// which beats hashing for a few values.
+		if f.c.Src == ingest.SrcCell && f.c.Type != protocol.ColInt && f.c.Type != protocol.ColTime {
+			preds = append(preds, cellIn(f.c.Idx, f.vals))
 			continue
 		}
 		preds = append(preds, func(r *ingest.Row, cl uint16) bool { return slices.Contains(f.vals, get(r, cl)) })

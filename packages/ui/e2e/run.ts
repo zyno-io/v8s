@@ -1041,7 +1041,7 @@ async function main() {
             await ctx.close();
         });
 
-        await step('phone: the pod card shows cpu and memory', async () => {
+        await step('phone: the pod card shows cpu and memory; the node menu fits the screen', async () => {
             const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
             const p = await ctx.newPage();
             await p.goto(stack.url);
@@ -1052,6 +1052,13 @@ async function main() {
             await line.waitFor({ timeout: 30000 });
             assert.match(await line.innerText(), /^cpu \d+m · mem \d+Mi$/);
             await p.screenshot({ path: shot('phone-pods-usage') });
+            // The Node menu's button sits right of the namespace menu: its popover shifts left to stay on screen.
+            await p.getByRole('button', { name: /^Node:/ }).click();
+            const menu = p.getByRole('dialog', { name: 'Node filter' });
+            await menu.getByRole('button', { name: 'Done' }).waitFor();
+            const mb = await menu.boundingBox();
+            assert.ok(mb && mb.x >= 0 && mb.x + mb.width <= 390, `the node menu fits the phone screen (${JSON.stringify(mb)})`);
+            await menu.getByRole('button', { name: 'Done' }).click();
             await ctx.close();
         });
 

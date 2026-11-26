@@ -37,6 +37,7 @@ function stop() {
 }
 watch(open, o => {
     if (!o) return stop();
+    clearTimeout(timer); // opening reset the search: the new view already has the empty query, so no update for it
     all.value = [...state.nodes];
     note.value = undefined;
     view.value = getAgent().subscribeView(nodesQuery(''), { offset: 0, limit: LIMIT });
