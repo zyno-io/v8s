@@ -320,11 +320,23 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     v-if="target.gvr === 'v1/nodes' && target.name"
                     class="tag go"
                     type="button"
-                    title="Show the pods on this node (o)"
+                    title="Go to Pods, filtered to this node (o)"
                     data-testid="node-pods"
                     @click="showPodsOnNode(router, target.name)"
                 >
                     Pods on this node
+                    <svg
+                        class="jump"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        aria-hidden="true"
+                    >
+                        <path d="M3 8h10M9 4l4 4-4 4" />
+                    </svg>
                 </button>
                 <span v-if="payload?.gitops" class="tag">managed by {{ GITOPS_LABEL[payload.gitops.kind] ?? payload.gitops.kind }}</span>
             </div>
@@ -470,6 +482,11 @@ header {
 }
 .go:hover {
     text-decoration: underline;
+}
+/* A tag that leaves the drawer for another page: the arrow says so. */
+.go .jump {
+    margin-left: 3px;
+    vertical-align: -1px;
 }
 .go:focus-visible {
     outline: 2px solid var(--focus);

@@ -914,17 +914,22 @@ async function main() {
             await dlg.waitFor({ state: 'detached' });
         });
 
-        await step('node drawer: "Pods on this node" opens Pods filtered to node-3; the node menu clears it', async () => {
+        await step('node drawer: "Pods on this node" opens Pods filtered to node-3 in every namespace; the node menu clears it', async () => {
+            // Start from a namespace filter (set on Pods: Nodes refuses `:ns`); the jump must drop it.
+            await page.getByTestId('drawer-close').click();
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            await page.keyboard.press(':');
+            await page.getByLabel('Command', { exact: true }).fill('ns payments');
+            await page.getByLabel('Command', { exact: true }).press('Enter');
+            await page.getByRole('button', { name: /^Namespace: payments/ }).waitFor();
+            await openFromTable('nodes', '/r/v1/nodes', /prod-us\s*node-3(?!\d)/, 'node-3');
             await page.getByTestId('node-pods').click();
             await page.waitForURL(/\/pods(?:\?|$)/);
             const nodeBtn = page.getByRole('button', { name: /^Node: node-3/ });
             await nodeBtn.waitFor();
-            // An earlier step's namespace filter would hide node-3's pods in other namespaces.
-            await page.getByRole('button', { name: /^Namespace:/ }).click();
-            const nsMenu = page.getByRole('dialog', { name: 'Namespace filter' });
-            const clear = nsMenu.getByRole('button', { name: 'Clear' });
-            if (await clear.isEnabled()) await clear.click();
-            await nsMenu.getByRole('button', { name: 'Done' }).click();
+            // The jump shows every pod on the node: an earlier step's namespace filter is cleared.
+            await page.getByRole('button', { name: /^Namespace: all/ }).waitFor();
             await page.waitForFunction(
                 () => {
                     const rows = [...document.querySelectorAll('.table-card .scroller .row:not(.sk)')];

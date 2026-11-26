@@ -122,7 +122,7 @@ describe('node filter (Pods)', () => {
         expect(stateQuery('apps/v1/deployments', d, []).filters).toEqual([]);
     });
 
-    it('showPodsOnNode opens Pods on that node only, keeping the namespace filter', async () => {
+    it('showPodsOnNode opens every pod on that node: node set, namespaces and Pods filters cleared', async () => {
         const { showPodsOnNode } = await import('../src/lib/node-pods.ts');
         const t = useTableStore();
         t.namespaces = ['shop'];
@@ -136,7 +136,7 @@ describe('node filter (Pods)', () => {
         expect(s.nodes).toEqual(['node-3']);
         expect(s.text).toBe('');
         expect(s.tones).toEqual([]);
-        expect(t.namespaces).toEqual(['shop']);
+        expect(t.namespaces).toEqual([]);
     });
 });
 
