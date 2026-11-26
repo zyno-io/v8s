@@ -1,6 +1,9 @@
 import type { ViewHandle } from '@v8s/client';
 
-/** Distinct namespace names held by the `v1/namespaces` view, sorted. Reads the window once per call; never per keystroke. */
+/**
+ * Distinct names held by a view's window, sorted: the `v1/namespaces` view, or the node filter's `v1/nodes` view. Reads the window once
+ * per call; never per keystroke.
+ */
 export function namespaceNames(handle: ViewHandle | null, extra: readonly string[] = []): string[] {
     const set = new Set<string>(extra);
     const cols = handle?.columns.value;

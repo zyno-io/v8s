@@ -7,6 +7,7 @@ import ActionBar from '@/components/ActionBar.vue';
 import BusySpinner from '@/components/BusySpinner.vue';
 import ClusterElevateMenu from '@/components/ClusterElevateMenu.vue';
 import NamespaceMenu from '@/components/NamespaceMenu.vue';
+import NodeMenu from '@/components/NodeMenu.vue';
 import ResourceTable from '@/components/ResourceTable.vue';
 import { getPodsAll, kinds } from '@/lib/agent.ts';
 import { phaseColor } from '@/lib/colors.ts';
@@ -179,7 +180,7 @@ const selected = computed<ObjectRef[]>(() => [...state.selected.values()]);
 // Bulk actions across clusters are desktop-only: too easy to fat-finger on a phone.
 const crossCluster = computed(() => isPhone.value && new Set(selected.value.map(r => r.cluster)).size > 1);
 watch(
-    () => [state.text, nsFilter.value, state.tones, state.sort],
+    () => [state.text, nsFilter.value, state.tones, state.nodes, state.sort],
     () => table.resetInteraction(props.gvr)
 );
 // A row key's action (Ctrl+D, r, Shift+F) is a one-shot request: never replay it after leaving this type.
@@ -306,6 +307,7 @@ function star() {
                 <span class="kbd">/</span>
             </label>
             <NamespaceMenu v-if="namespaced" />
+            <NodeMenu v-if="gvr === PODS_GVR" />
             <label v-for="c in hasTone ? chips : []" :key="c.key" class="chip-wrap">
                 <input class="sr-only chip-input" type="checkbox" :checked="state.tones.includes(c.tone)" @change="table.toggleTone(gvr, c.tone)" />
                 <span class="chip" :class="{ on: state.tones.includes(c.tone) }">

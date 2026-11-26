@@ -15,6 +15,7 @@ import { isScrollKey, redirectsScrollKey, scrollStep, type DrawerSpot } from '@/
 import { closeDrawer, editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
 import { currentDrawerNav, isEditable, restoreListFocus, setDrawerNav, type DrawerNav } from '@/lib/keys.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
+import { showPodsOnNode } from '@/lib/node-pods.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
 import { listsPods } from '@/lib/related.ts';
@@ -315,6 +316,28 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     {{ status.text }}
                 </button>
                 <span v-else-if="status" class="tag" :class="status.tone">{{ status.text }}</span>
+                <button
+                    v-if="target.gvr === 'v1/nodes' && target.name"
+                    class="tag go"
+                    type="button"
+                    title="Go to Pods, filtered to this node (o)"
+                    data-testid="node-pods"
+                    @click="showPodsOnNode(router, target.name)"
+                >
+                    Pods on this node
+                    <svg
+                        class="jump"
+                        width="11"
+                        height="11"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        aria-hidden="true"
+                    >
+                        <path d="M3 8h10M9 4l4 4-4 4" />
+                    </svg>
+                </button>
                 <span v-if="payload?.gitops" class="tag">managed by {{ GITOPS_LABEL[payload.gitops.kind] ?? payload.gitops.kind }}</span>
             </div>
         </header>
@@ -459,6 +482,11 @@ header {
 }
 .go:hover {
     text-decoration: underline;
+}
+/* A tag that leaves the drawer for another page: the arrow says so. */
+.go .jump {
+    margin-left: 3px;
+    vertical-align: -1px;
 }
 .go:focus-visible {
     outline: 2px solid var(--focus);

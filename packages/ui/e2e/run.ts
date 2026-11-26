@@ -914,6 +914,40 @@ async function main() {
             await dlg.waitFor({ state: 'detached' });
         });
 
+        await step('node drawer: "Pods on this node" opens Pods filtered to node-3 in every namespace; the node menu clears it', async () => {
+            // Start from a namespace filter (set on Pods: Nodes refuses `:ns`); the jump must drop it.
+            await page.getByTestId('drawer-close').click();
+            await page.getByRole('link', { name: /^Pods/ }).first().click();
+            await page.waitForURL(/\/pods/);
+            await page.keyboard.press(':');
+            await page.getByLabel('Command', { exact: true }).fill('ns payments');
+            await page.getByLabel('Command', { exact: true }).press('Enter');
+            await page.getByRole('button', { name: /^Namespace: payments/ }).waitFor();
+            await openFromTable('nodes', '/r/v1/nodes', /prod-us\s*node-3(?!\d)/, 'node-3');
+            await page.getByTestId('node-pods').click();
+            await page.waitForURL(/\/pods(?:\?|$)/);
+            const nodeBtn = page.getByRole('button', { name: /^Node: node-3/ });
+            await nodeBtn.waitFor();
+            // The jump shows every pod on the node: an earlier step's namespace filter is cleared.
+            await page.getByRole('button', { name: /^Namespace: all/ }).waitFor();
+            await page.waitForFunction(
+                () => {
+                    const rows = [...document.querySelectorAll('.table-card .scroller .row:not(.sk)')];
+                    // Cells, not the row's text: textContent runs the node into the next cell ("node-310.64…").
+                    return rows.length > 0 && rows.every(r => [...r.querySelectorAll('[role=cell]')].some(c => c.textContent?.trim() === 'node-3'));
+                },
+                null,
+                { timeout: 15000 }
+            );
+            await nodeBtn.click();
+            const menu = page.getByRole('dialog', { name: 'Node filter' });
+            assert.ok(await menu.getByRole('checkbox', { name: 'node-3', exact: true }).isChecked(), 'node-3 is checked');
+            await menu.getByRole('button', { name: 'Remove node-3' }).waitFor();
+            await menu.getByRole('button', { name: 'Clear' }).click();
+            await menu.getByRole('button', { name: 'Done' }).click();
+            await page.getByRole('button', { name: /^Node: all/ }).waitFor();
+        });
+
         await step('flux: reconcile shows Reconciling… then settles', async () => {
             await page
                 .getByTestId('drawer-close')
@@ -1012,7 +1046,7 @@ async function main() {
             await ctx.close();
         });
 
-        await step('phone: the pod card shows cpu and memory', async () => {
+        await step('phone: the pod card shows cpu and memory; the node menu fits the screen', async () => {
             const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
             const p = await ctx.newPage();
             await p.goto(stack.url);
@@ -1023,6 +1057,13 @@ async function main() {
             await line.waitFor({ timeout: 30000 });
             assert.match(await line.innerText(), /^cpu \d+m · mem \d+Mi$/);
             await p.screenshot({ path: shot('phone-pods-usage') });
+            // The Node menu's button sits right of the namespace menu: its popover shifts left to stay on screen.
+            await p.getByRole('button', { name: /^Node:/ }).click();
+            const menu = p.getByRole('dialog', { name: 'Node filter' });
+            await menu.getByRole('button', { name: 'Done' }).waitFor();
+            const mb = await menu.boundingBox();
+            assert.ok(mb && mb.x >= 0 && mb.x + mb.width <= 390, `the node menu fits the phone screen (${JSON.stringify(mb)})`);
+            await menu.getByRole('button', { name: 'Done' }).click();
             await ctx.close();
         });
 

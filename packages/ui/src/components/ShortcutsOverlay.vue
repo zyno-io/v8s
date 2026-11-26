@@ -47,7 +47,7 @@ const groups: { title: string; rows: [string, string][] }[] = [
             ['r', 'restart the focused or selected workload, after a confirm (deployments, statefulsets, daemonsets)'],
             ['Shift F', 'port-forward the focused pod or service'],
             ['Shift J', 'jump to the owner (pod to ReplicaSet, ReplicaSet to Deployment, Job to CronJob)'],
-            ['o', 'pods: open the node'],
+            ['o', 'pods: open the node; nodes: show the pods on it'],
             ['c', "copy the focused row's name"],
             ['n', 'copy its namespace (namespaced types)']
         ]
