@@ -15,6 +15,7 @@ import { isScrollKey, redirectsScrollKey, scrollStep, type DrawerSpot } from '@/
 import { closeDrawer, editRequest, openObject, shellRequest } from '@/lib/drawer.ts';
 import { currentDrawerNav, isEditable, restoreListFocus, setDrawerNav, type DrawerNav } from '@/lib/keys.ts';
 import { kindLabel, labelFromGvr, resolveKind } from '@/lib/kinds.ts';
+import { showPodsOnNode } from '@/lib/node-pods.ts';
 import { useObjectSession } from '@/lib/object-session.ts';
 import { GITOPS_LABEL, objectStatus, revisionOf } from '@/lib/overview.ts';
 import { listsPods } from '@/lib/related.ts';
@@ -315,6 +316,16 @@ const TAB_LABEL: Record<DrawerTab, string> = {
                     {{ status.text }}
                 </button>
                 <span v-else-if="status" class="tag" :class="status.tone">{{ status.text }}</span>
+                <button
+                    v-if="target.gvr === 'v1/nodes' && target.name"
+                    class="tag go"
+                    type="button"
+                    title="Show the pods on this node (o)"
+                    data-testid="node-pods"
+                    @click="showPodsOnNode(router, target.name)"
+                >
+                    Pods on this node
+                </button>
                 <span v-if="payload?.gitops" class="tag">managed by {{ GITOPS_LABEL[payload.gitops.kind] ?? payload.gitops.kind }}</span>
             </div>
         </header>

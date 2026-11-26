@@ -914,6 +914,34 @@ async function main() {
             await dlg.waitFor({ state: 'detached' });
         });
 
+        await step('node drawer: "Pods on this node" opens Pods filtered to node-3; the node menu clears it', async () => {
+            await page.getByTestId('node-pods').click();
+            await page.waitForURL(/\/pods(?:\?|$)/);
+            const nodeBtn = page.getByRole('button', { name: /^Node: node-3/ });
+            await nodeBtn.waitFor();
+            // An earlier step's namespace filter would hide node-3's pods in other namespaces.
+            await page.getByRole('button', { name: /^Namespace:/ }).click();
+            const nsMenu = page.getByRole('dialog', { name: 'Namespace filter' });
+            const clear = nsMenu.getByRole('button', { name: 'Clear' });
+            if (await clear.isEnabled()) await clear.click();
+            await nsMenu.getByRole('button', { name: 'Done' }).click();
+            await page.waitForFunction(
+                () => {
+                    const rows = [...document.querySelectorAll('.scroller .row:not(.sk)')];
+                    return rows.length > 0 && rows.every(r => /node-3(?!\d)/.test(r.textContent ?? ''));
+                },
+                null,
+                { timeout: 15000 }
+            );
+            await nodeBtn.click();
+            const menu = page.getByRole('dialog', { name: 'Node filter' });
+            assert.ok(await menu.getByRole('checkbox', { name: 'node-3', exact: true }).isChecked(), 'node-3 is checked');
+            await menu.getByRole('button', { name: 'Remove node-3' }).waitFor();
+            await menu.getByRole('button', { name: 'Clear' }).click();
+            await menu.getByRole('button', { name: 'Done' }).click();
+            await page.getByRole('button', { name: /^Node: all/ }).waitFor();
+        });
+
         await step('flux: reconcile shows Reconciling… then settles', async () => {
             await page
                 .getByTestId('drawer-close')

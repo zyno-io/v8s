@@ -21,6 +21,7 @@ import { formatAge, formatUsage, OLD_AGE_MS, usageBar, usageReqTone } from '@/li
 import { focusDrawer, setListNav, setPageKeyHandler } from '@/lib/keys.ts';
 import { emptyKindOf, loadingNames } from '@/lib/loading.ts';
 import { errorText } from '@/lib/mutations.ts';
+import { showPodsOnNode } from '@/lib/node-pods.ts';
 import { portForwardAvailable } from '@/lib/portforward.ts';
 import { listsPods } from '@/lib/related.ts';
 import { parseDrawer, tabsFor } from '@/lib/route.ts';
@@ -348,7 +349,7 @@ watch(isPhone, () => {
 });
 
 watch(
-    () => [ui.value.text, nsFilter.value, ui.value.tones, ui.value.sort],
+    () => [ui.value.text, nsFilter.value, ui.value.tones, ui.value.nodes, ui.value.sort],
     () => {
         anchor.id = 0;
         queryPending = true;
@@ -629,6 +630,10 @@ function rowKey(e: KeyboardEvent, inDrawer = false): boolean {
             void jumpToOwner(target);
             return true;
         case 'node': {
+            if (target && props.gvr === 'v1/nodes') {
+                void showPodsOnNode(router, target.name ?? '');
+                return true;
+            }
             if (!target || props.gvr !== 'v1/pods') return false;
             if (f) {
                 const ni = (props.handle.columns.value ?? []).findIndex(c => c.key === 'node');

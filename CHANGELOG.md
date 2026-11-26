@@ -5,6 +5,12 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- Pods have a **Node** filter, right of the namespace filter: pick one or more nodes (search narrows the list) to show only the pods
+  on them. A node's drawer has **Pods on this node**, and `o` on a node (row or drawer) does the same: it opens Pods filtered to that
+  node, clearing the Pods text and status filters and keeping the namespace filter. Node names match across clusters, like namespaces.
+
 ## 0.11.0 — 2026-11-25
 
 ### Added

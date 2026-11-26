@@ -91,6 +91,55 @@ describe('namespace filter across kinds', () => {
     });
 });
 
+describe('node filter (Pods)', () => {
+    const router = () => ({ currentRoute: { value: { path: '/r/v1/nodes', params: {} } }, push: vi.fn(async () => {}) }) as unknown as Router;
+
+    it('filters the pods view on its node column, beside the namespaces and tones', () => {
+        const t = useTableStore();
+        t.namespaces = ['shop'];
+        const s = t.of('v1/pods');
+        s.tones = [3];
+        s.nodes = ['node-3', 'node-1'];
+        const q = stateQuery('v1/pods', s, t.namespacesOf('v1/pods'));
+        expect(q.namespaces).toEqual(['shop']);
+        expect(q.filters).toEqual([
+            { col: 'statusTone', op: 'in', value: ['3'] },
+            { col: 'node', op: 'in', value: ['node-3', 'node-1'] }
+        ]);
+        expect(isFiltered(s, [])).toBe(true);
+    });
+
+    it('is cleared with the kind filters and by "Clear filters"; other kinds never send it', () => {
+        const t = useTableStore();
+        t.of('v1/pods').nodes = ['node-3'];
+        t.clearKindFilters('v1/pods');
+        expect(t.of('v1/pods').nodes).toEqual([]);
+        t.of('v1/pods').nodes = ['node-3'];
+        t.clearFilters('v1/pods');
+        expect(t.of('v1/pods').nodes).toEqual([]);
+        const d = t.of('apps/v1/deployments');
+        d.nodes = ['node-3'];
+        expect(stateQuery('apps/v1/deployments', d, []).filters).toEqual([]);
+    });
+
+    it('showPodsOnNode opens Pods on that node only, keeping the namespace filter', async () => {
+        const { showPodsOnNode } = await import('../src/lib/node-pods.ts');
+        const t = useTableStore();
+        t.namespaces = ['shop'];
+        const s = t.of('v1/pods');
+        s.text = 'web';
+        s.tones = [3];
+        s.nodes = ['node-1', 'node-2'];
+        const r = router();
+        await showPodsOnNode(r, 'node-3');
+        expect(r.push).toHaveBeenCalledWith('/pods');
+        expect(s.nodes).toEqual(['node-3']);
+        expect(s.text).toBe('');
+        expect(s.tones).toEqual([]);
+        expect(t.namespaces).toEqual(['shop']);
+    });
+});
+
 describe('commands keep the namespace filter across kinds', () => {
     const router = (path: string, params: Record<string, unknown> = {}) =>
         ({ currentRoute: { value: { path, params } }, push: vi.fn(async () => {}) }) as unknown as Router;

@@ -30,7 +30,7 @@ export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
     function ensureCounts() {
         if (Object.keys(counts).length) return;
         for (const c of chips)
-            counts[c.key] = agent.subscribeView(buildQuery(gvr, state.text, namespaces.value, [c.tone], []), { offset: 0, limit: 1 });
+            counts[c.key] = agent.subscribeView(buildQuery(gvr, state.text, namespaces.value, [c.tone], [], state.nodes), { offset: 0, limit: 1 });
     }
     watch(
         () => handle.columns.value,
@@ -52,11 +52,11 @@ export function useResourceView(gvr: string, opts?: { usage?: boolean }) {
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     watch(
-        () => [state.text, namespaces.value] as const,
-        ([text, ns]) => {
+        () => [state.text, namespaces.value, state.nodes] as const,
+        ([text, ns, nodes]) => {
             clearTimeout(timer);
             timer = setTimeout(() => {
-                for (const c of chips) counts[c.key]?.update({ query: buildQuery(gvr, text, ns, [c.tone], []) });
+                for (const c of chips) counts[c.key]?.update({ query: buildQuery(gvr, text, ns, [c.tone], [], nodes) });
             }, 150);
         }
     );
