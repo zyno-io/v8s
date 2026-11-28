@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
 
 import { connectAll, waitSynced } from './page.ts';
 import { startStack, uiDir } from './stack.ts';
-import { analyseTrace, formatBreakdown, type TraceEvent } from './trace.ts';
+import { analyzeTrace, formatBreakdown, type TraceEvent } from './trace.ts';
 
 const FAKE = 'clusters=3,pods=50000,churn=1000';
 const CATEGORIES = [
@@ -62,7 +62,7 @@ try {
             const trace = JSON.parse((await browser.stopTracing()).toString()) as { traceEvents: TraceEvent[] };
             const file = join(outDir, `${phase}-${round}.json`);
             writeFileSync(file, JSON.stringify(trace));
-            report.push(formatBreakdown(`round ${round} ${phase} (CPU throttle ${throttle}x) → ${file}`, analyseTrace(trace.traceEvents)));
+            report.push(formatBreakdown(`round ${round} ${phase} (CPU throttle ${throttle}x) → ${file}`, analyzeTrace(trace.traceEvents)));
         };
 
         // The perf suite's scroll: the whole table in 10 s, a wheel event every ~8 ms.

@@ -41,7 +41,7 @@ When the app's UI changes, update the demo to match (compare against fresh scree
 ## Content sources: read before editing copy
 
 - **Product claims** come only from the v8s repo (the repo root, `../..`): `README.md`, `CHANGELOG.md`, `docs/`. Performance
-  figures are the **design budgets** in `docs/performance.md` and are labelled as budgets, never as measurements.
+  figures are the **design budgets** in `docs/performance.md` and are labeled as budgets, never as measurements.
   No user counts, logos, testimonials or benchmarks.
 - Things v8s does **not** do (offline mode, web push, auto-update, Prometheus, Argo CD, hosted port-forward…) are listed
   at the end of the v8s CHANGELOG (0.1.0 "Not in this release"); don't claim them.

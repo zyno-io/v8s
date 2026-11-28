@@ -7,7 +7,7 @@
  *
  * Product claims come only from the v8s repo (README, CHANGELOG through 0.3.0, docs/).
  * Performance figures are the design budgets from docs/performance.md and are
- * labelled as budgets, never as measurements.
+ * labeled as budgets, never as measurements.
  */
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteHeader from '../components/SiteHeader.astro';
@@ -171,10 +171,10 @@ const keys = [
           </figure>
         <ul class="checks usage__list">
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Pods:</b> CPU (m), MEM (Mi), and each as %R and %L, right-aligned with the unit in the header. Requests, limits and the share of the node are one click away in <b>Columns</b>.</span></li>
-          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Bars:</b> every percentage of a limit, and of a node’s allocatable, fills the row from the bottom by its value: green below 70&nbsp;%, amber from 70&nbsp;%, red from 90&nbsp;%. A request percentage gets a bar only when the pod has no limit for that resource. Hover a percentage header for what its colours mean.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Bars:</b> every percentage of a limit, and of a node’s allocatable, fills the row from the bottom by its value: green below 70&nbsp;%, amber from 70&nbsp;%, red from 90&nbsp;%. A request percentage gets a bar only when the pod has no limit for that resource. Hover a percentage header for what its colors mean.</span></li>
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Next to a limit, the memory request percentage turns amber above 100&nbsp;% and red above 200&nbsp;%, since pods over their memory request are evicted first when a node runs short of memory. CPU request percentages stay plain.</span></li>
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><code>n/a</code> means no request or limit to divide by; <code>—</code> means no data yet. Both always sort last.</span></li>
-          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>VPA:</b> a pod whose requests a Vertical Pod Autoscaler sets gets a <b>VPA</b> tag, coloured by the VPA’s status, so high usage there is VPA’s to handle. Its Overview compares each container’s request with the recommendation.</span></li>
+          <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>VPA:</b> a pod whose requests a Vertical Pod Autoscaler sets gets a <b>VPA</b> tag, colored by the VPA’s status, so high usage there is VPA’s to handle. Its Overview compares each container’s request with the recommendation.</span></li>
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Nodes:</b> usage, its percentage of the node’s allocatable, and the allocatable itself.</span></li>
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span><b>Overview:</b> per cluster, usage against the allocatable of all nodes, with the requests and limits committed (<code>requests 62% · limits 143%</code>).</span></li>
           <li><i class="fa-solid fa-check" aria-hidden="true"></i><span>Reads <a href="https://github.com/kubernetes-sigs/metrics-server">metrics-server</a> only while a table or card shows it, every 30 seconds, for the namespaces on screen. Without it the usage columns stay hidden and say why.</span></li>

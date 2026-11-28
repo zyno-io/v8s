@@ -15,7 +15,7 @@ import (
 func loadingOf(m *Manager, id string) []string { return stateOf(m, id).Loading }
 
 // A kind an open view holds is "loading" from the moment it is opened until its first list has landed and settled;
-// background scopes never count, a refused list stops counting, and the clients are signalled when it clears.
+// background scopes never count, a refused list stops counting, and the clients are signaled when it clears.
 func TestLoadingHeldUnsyncedKinds(t *testing.T) {
 	m, _ := newElevateManagerCfg(t, fake.Config{Clusters: 2, Pods: 100, RBAC: true, ListDelay: 400 * time.Millisecond})
 	const cms, secrets = "v1/configmaps", "v1/secrets"

@@ -282,7 +282,7 @@ dd {
     flex-wrap: wrap;
     align-items: center;
 }
-/* A status tag that opens the Related tab: keeps its tone colour, reads as clickable. */
+/* A status tag that opens the Related tab: keeps its tone color, reads as clickable. */
 .go {
     font: inherit;
     font-size: 11px;

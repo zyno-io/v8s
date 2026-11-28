@@ -51,7 +51,7 @@ The first round is the **hosted web app in a phone's browser**: no app install, 
 
 Nothing in the first round blocks this; it is additive:
 
-- Web app manifest (name, short name, `start_url: /`, `display: standalone`, theme colours from tokens for light and dark, 192/512 PNG + maskable icons, `shortcuts` for Problems and Search). Installs from Chrome/Edge/Android and via Add to Home Screen on iOS Safari (the recipe Signal24's CI Dashboard uses).
+- Web app manifest (name, short name, `start_url: /`, `display: standalone`, theme colors from tokens for light and dark, 192/512 PNG + maskable icons, `shortcuts` for Problems and Search). Installs from Chrome/Edge/Android and via Add to Home Screen on iOS Safari (the recipe Signal24's CI Dashboard uses).
 - **Service worker** (production builds only) precaches the **app shell**: HTML, hashed JS/CSS chunks for the shell and the Problems/Search/Detail routes, fonts, icons. Route chunks for heavy desktop features (terminal, YAML editor, graphs) are cached on first use, not precached, to keep the install small.
 - **No offline cluster data.** API, auth, and WebSocket traffic are always network. Offline, the shell loads instantly and shows the last-known Problems snapshot (stored in IndexedDB, marked with its age and "offline") plus a reconnect state. A stale snapshot that says it is stale is useful on a train; a fake live view is not.
 - **Update flow**: new service worker waits; a toast offers "Reload to update". Never auto-reload mid-action.

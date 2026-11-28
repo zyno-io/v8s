@@ -46,7 +46,7 @@ describe('containers', () => {
         ]);
         expect(containersOf(null)).toEqual([]);
     });
-    it('picks the first non-init container, honouring the annotation', () => {
+    it('picks the first non-init container, honoring the annotation', () => {
         expect(defaultContainer(pod)).toBe('app');
         const ann = { ...pod, metadata: { annotations: { 'kubectl.kubernetes.io/default-container': 'sidecar' } } };
         expect(defaultContainer(ann)).toBe('sidecar');
@@ -132,7 +132,7 @@ describe('splitRuns', () => {
     });
 });
 
-describe('colours', () => {
+describe('colors', () => {
     it('maps palette and rgb', () => {
         expect(paletteVar(3)).toBe('--ansi-3');
         expect(cssColor(3)).toBe('var(--ansi-3)');
@@ -140,7 +140,7 @@ describe('colours', () => {
         expect(cssColor(-1)).toBe('');
         expect(runStyle({ text: 'x', fg: 1, bg: -1, flags: 9, hl: false })).toBe('color:var(--ansi-1);font-weight:700;text-decoration:underline;');
     });
-    it('source colour is stable, in range, and shared by containers of a pod', () => {
+    it('source color is stable, in range, and shared by containers of a pod', () => {
         const a = colorForSource('web-1/app');
         expect(a).toBe(colorForSource('web-1/app'));
         expect(a).toBe(colorForSource('web-1/sidecar'));

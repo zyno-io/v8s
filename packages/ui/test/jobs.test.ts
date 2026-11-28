@@ -100,7 +100,7 @@ describe('itemRows', () => {
         ]);
         expect(log).toHaveLength(1);
     });
-    it('summarises', () => {
+    it('summarizes', () => {
         expect(progressSummary(j)).toBe('1 of 2 pods evicted');
         expect(progressSummary(job({ type: 'helm.rollback', progress: [{ at: 1, message: 'rolling back' }] }))).toBe('rolling back');
     });
@@ -154,6 +154,6 @@ describe('drain', () => {
         expect(preflightSummary(r, { ignoreDaemonSets: false, force: true, deleteEmptyDirData: true }).blockers.map(b => b.option)).toEqual([
             'ignoreDaemonSets'
         ]);
-        expect(preflightSummary(r, { disableEviction: true }).warnings.join()).toContain('NOT honoured');
+        expect(preflightSummary(r, { disableEviction: true }).warnings.join()).toContain('NOT honored');
     });
 });

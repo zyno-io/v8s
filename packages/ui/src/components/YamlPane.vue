@@ -198,7 +198,7 @@ watch(
     }
 );
 
-// The `e` shortcut asks for edit mode; honoured once the document is here and editable.
+// The `e` shortcut asks for edit mode; honored once the document is here and editable.
 watch(
     editRequest,
     want => {

@@ -94,7 +94,7 @@ export function layoutFluxGraph(graph: GraphIn): Layout {
     // Working DAG arcs a -> b (a is placed to the right of b): original edges, reversed when they are back edges.
     const dagOut = new Int32Array(N); // number of arcs a -> *
     const dependants: number[][] = Array.from({ length: N }, () => []); // b -> a
-    const nbr: number[][] = Array.from({ length: N }, () => []); // undirected neighbours
+    const nbr: number[][] = Array.from({ length: N }, () => []); // undirected neighbors
     const parent = Int32Array.from({ length: N }, (_, i) => i);
     const find = (x: number): number => {
         while (parent[x] !== x) {
@@ -146,7 +146,7 @@ export function layoutFluxGraph(graph: GraphIn): Layout {
         for (const v of members) if (layer[v]! > maxLayer) maxLayer = layer[v]!;
         const layers: number[][] = Array.from({ length: maxLayer + 1 }, () => []);
         for (const v of members) layers[layer[v]!]!.push(v);
-        const pos = new Float64Array(N); // normalised position within its layer
+        const pos = new Float64Array(N); // normalized position within its layer
         const setPos = (l: number[]) => l.forEach((v, i) => (pos[v] = (i + 0.5) / l.length));
         layers.forEach(setPos);
         const bary = new Float64Array(N);

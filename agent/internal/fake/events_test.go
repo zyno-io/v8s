@@ -40,7 +40,7 @@ func listEvents(t *testing.T, api ingest.API, opts metav1.ListOptions) []corev1.
 	return obj.(*corev1.EventList).Items
 }
 
-func TestFakeEventsHonourFieldSelectors(t *testing.T) {
+func TestFakeEventsHonorFieldSelectors(t *testing.T) {
 	api, _ := eventsAPI(t)
 	all := listEvents(t, api, metav1.ListOptions{})
 	warn := listEvents(t, api, metav1.ListOptions{FieldSelector: "type=Warning"})

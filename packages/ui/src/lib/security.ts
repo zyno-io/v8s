@@ -11,7 +11,7 @@ export type Severity = (typeof SEVERITIES)[number];
 
 const RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, negligible: 4, none: 4, unknown: 5 };
 
-/** 0 = worst. Unrecognised words sort last. */
+/** 0 = worst. Unrecognized words sort last. */
 export function sevRank(s: string): number {
     return RANK[s.toLowerCase()] ?? 6;
 }

@@ -469,7 +469,7 @@ Put it behind a TLS-terminating ingress at your `publicUrl`. v8s runs as a singl
 
 ## Warpgate
 
-To v8s, [Warpgate](https://github.com/warp-tech/warpgate) is an ordinary Kubernetes endpoint with OIDC. A Warpgate target is configured as a cluster with the default `oidc-passthrough` strategy. A few behaviours to know:
+To v8s, [Warpgate](https://github.com/warp-tech/warpgate) is an ordinary Kubernetes endpoint with OIDC. A Warpgate target is configured as a cluster with the default `oidc-passthrough` strategy. A few behaviors to know:
 
 - **One target per cluster and role.** A read-only `operator` target and a writable `cluster-admin` target are two contexts. [Link them](/guide/clusters#linked-read-and-write-contexts) so writes switch to the admin target.
 - **Elevation is Warpgate's.** Time-boxed elevated sessions are granted in Warpgate. If the write target rejects a request, v8s reports "write context rejected" and the read context keeps working. See [Troubleshooting](/guide/troubleshooting#write-context-rejected).

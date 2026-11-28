@@ -103,7 +103,7 @@ Why one smart agent everywhere:
 - **A browser cannot talk to most API servers directly** (no CORS, client certificates, exec plugins, private networks), so a proxy exists in every mode regardless.
 - A **dumb proxy** (the Lens and Headlamp pattern) pushes full lists into the renderer. That is exactly how those tools fail at 10k+ objects.
 - With decoding, indexing, sorting, windowing, and problem detection in the agent, **UI cost scales with the viewport**. Mobile becomes a window-size setting, not a separate architecture. Desktop, hosted, and phone share one code path.
-- **Smart on reads, thin on the long tail.** The agent fully models the read paths (ingest, views, problems, related-object queries). Arbitrary GET/PUT/PATCH/DELETE, subresources, discovery, and OpenAPI go through an authenticated passthrough that adds identity, rate limits, and dry run without modelling every kind.
+- **Smart on reads, thin on the long tail.** The agent fully models the read paths (ingest, views, problems, related-object queries). Arbitrary GET/PUT/PATCH/DELETE, subresources, discovery, and OpenAPI go through an authenticated passthrough that adds identity, rate limits, and dry run without modeling every kind.
 
 ### Binary modes
 
@@ -130,7 +130,7 @@ Why one smart agent everywhere:
 
 ### UI components
 
-- **Vue 3.5 + Vite + Pinia + vue-router + `@zyno-io/vue-foundation`** (designless behaviour components), the Signal24 stack. Pinia holds UI state only.
+- **Vue 3.5 + Vite + Pinia + vue-router + `@zyno-io/vue-foundation`** (designless behavior components), the Signal24 stack. Pinia holds UI state only.
 - **Data Worker** per tab: owns the data socket, decodes, merges, posts at most one update per frame per view.
 - **View stores**: `markRaw` row maps plus a `shallowRef` version counter per view.
 - **Virtualized fixed-height tables** (`@tanstack/vue-virtual`), CodeMirror 6, xterm.js, canvas graphs, all route-split.
@@ -147,7 +147,7 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
    │                  auth needed │  │ unreachable                         watch    │            │ 410/disconnect
    │                              ▼  ▼                                     error    ▼            ▼
    │                      auth-required  unreachable ◀──────── backoff ─────── degraded ◀──── reconnecting
-   │                                                                     (some kinds forbidden    (rows kept, greyed,
+   │                                                                     (some kinds forbidden    (rows kept, grayed,
    │                                                                      or failing; says which)  "stale since T")
    │ deselect (10 s grace) → stop watches, drop stores, free memory
    └──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ v8s **never connects to clusters the user has not selected**, and nothing is sel
 - `authenticating` serializes identical exec-plugin commands so one IdP login serves several contexts.
 - `write-unavailable`: an action needed the linked write context and it was rejected (with Warpgate: no active elevated session); the action fails with a link to Warpgate, and reads keep working.
 - `degraded` lists what is missing ("no permission to list `ingresses`; Ingress checks disabled").
-- `reconnecting` keeps last-known rows visible but greyed with "stale since T"; the outage is itself a `cluster.unreachable` problem.
+- `reconnecting` keeps last-known rows visible but grayed with "stale since T"; the outage is itself a `cluster.unreachable` problem.
 - Selecting 40 clusters at once is allowed but staged: connections start in batches of 8 to avoid an exec-plugin and API-server stampede.
 
 ### Linked contexts
@@ -166,7 +166,7 @@ A cluster's read-only and write contexts (for example two Warpgate targets) can 
 
 ### Cluster groups
 
-- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional colour dot. Groups are purely organizational; the stricter confirms (type-to-confirm) come from a per-cluster **Protected** flag (`settings.protectedClusters`, a list of cluster ids).
+- Groups are named sets of clusters (`production`, `staging`, `eu`), with an optional color dot. Groups are purely organizational; the stricter confirms (type-to-confirm) come from a per-cluster **Protected** flag (`settings.protectedClusters`, a list of cluster ids).
 - Desktop: user-defined; v8s **suggests** groups from context-name patterns (`*-prod*`, `*-stg*`) on first run without applying them. Hosted: admin-defined groups plus personal groups.
 - Group chips in the cluster selector: click selects exactly that group, shift-click adds it.
 - Problem-class presets and default namespaces can be set per group.

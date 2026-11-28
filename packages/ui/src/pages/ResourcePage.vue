@@ -67,7 +67,7 @@ const plan = computed(() =>
         vpaOff: vpaOff.value
     })
 );
-// Pods: the VPA list (a handful of rows, watched by the agent only while subscribed) colours the VPA tags by the VPA's status.
+// Pods: the VPA list (a handful of rows, watched by the agent only while subscribed) colors the VPA tags by the VPA's status.
 // Subscribed only while the VPA column is on screen.
 const vpaWant = computed(() => {
     if (props.gvr !== 'v1/pods' || !plan.value.cols.some(c => c.kind === 'vpa')) return '';

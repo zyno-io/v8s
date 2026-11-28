@@ -227,7 +227,7 @@ func TestKioskDisablesMutations(t *testing.T) {
 	if _, ok := kube.RuntimeOf(be); ok {
 		t.Error("kiosk backend exposes a runtime (exec/port-forward)")
 	}
-	// Defence in depth: even the raw client of the real backend cannot write (transport is GET-only).
+	// Defense in depth: even the raw client of the real backend cannot write (transport is GET-only).
 	if _, err := inner.Dynamic().Resource(podsGVR).Namespace("ns").Create(ctx, obj, metav1.CreateOptions{}); err == nil {
 		t.Error("kiosk transport let a POST through")
 	}

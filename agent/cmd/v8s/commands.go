@@ -48,7 +48,7 @@ func dispatch(args []string) error {
 
 var errUsage = errors.New("usage error")
 
-// agentHooks lets subcommands customise the agent run without forking it.
+// agentHooks lets subcommands customize the agent run without forking it.
 type agentHooks struct {
 	// onReady replaces the stdout `{port, token}` banner when set.
 	onReady func(port int, token string)

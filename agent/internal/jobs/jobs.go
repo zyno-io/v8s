@@ -341,7 +341,7 @@ func (m *Manager) Wait(id string) {
 	}
 }
 
-// Subscription delivers changed jobs: C is signalled (coalesced) when something changed, Drain returns the
+// Subscription delivers changed jobs: C is signaled (coalesced) when something changed, Drain returns the
 // current frame of every job that changed since the last call. A slow reader therefore never loses a final
 // state, it just sees fewer intermediate ones.
 type Subscription struct {

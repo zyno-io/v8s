@@ -201,7 +201,7 @@ watch(
     { flush: 'post' }
 );
 
-// Search next/prev: centre the line and pause follow.
+// Search next/prev: center the line and pause follow.
 watch(
     () => props.handle.reveal.value,
     r => {
@@ -353,7 +353,7 @@ const levelWord = (l: 2 | 3 | 0) => (l === 3 ? 'error' : l === 2 ? 'warning' : '
     --ansi-14: #8fe3f2;
     --ansi-15: #ececf0;
 }
-// Pod label colours for merged streams, taken from the status tokens (no danger tone: that is reserved for error gutters).
+// Pod label colors for merged streams, taken from the status tokens (no danger tone: that is reserved for error gutters).
 .lv {
     @include ansi-light;
     --log-src-0: var(--info);

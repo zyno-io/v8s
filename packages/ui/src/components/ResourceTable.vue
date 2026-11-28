@@ -42,7 +42,7 @@ const props = defineProps<{
     namespaced: boolean;
     decor?: TableDecor | null;
     keyActions?: boolean;
-    /** Pods: the status of each VPA, which colours the row's VPA tag (only rows whose tag changes re-render). */
+    /** Pods: the status of each VPA, which colors the row's VPA tag (only rows whose tag changes re-render). */
     vpaIndex?: VpaIndex | null;
 }>();
 const emit = defineEmits<{ resize: [key: string, width: number] }>();
@@ -90,7 +90,7 @@ function refOf(row: Row): ObjectRef {
     };
 }
 
-// ---- visible slice: one v-for, plain elements, memoised on id + version + selection + focus + age text ----
+// ---- visible slice: one v-for, plain elements, memoized on id + version + selection + focus + age text ----
 
 interface Item {
     i: number;
@@ -783,7 +783,7 @@ function onResizeKey(e: KeyboardEvent, c: ColPlan) {
 }
 
 /**
- * One cell of the usage block: muted for no data and n/a. A percentage gets a background bar instead of coloured text: its tier
+ * One cell of the usage block: muted for no data and n/a. A percentage gets a background bar instead of colored text: its tier
  * as a class and its fill as `--p` (pure CSS, set only when the row re-renders under its v-memo). A request percentage is barred
  * only when the row has no limit for that resource, so `usageBar` gets the row's matching %L.
  */
@@ -810,7 +810,7 @@ const usageFill = (u: UsageSub, row: Row) => {
     const b = cellBar(u, row);
     return b ? '--p:' + b.fill + '%' : undefined;
 };
-/** A usage header's tooltip: the sort hint, then what its colours mean. */
+/** A usage header's tooltip: the sort hint, then what its colors mean. */
 const usageHeadTitle = (u: UsageSub) => {
     const h = usageHint(u);
     return `Sort by ${u.label.toLowerCase()} (shift-click adds a secondary key)` + (h ? '\n' + h : '');

@@ -50,7 +50,7 @@ export const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '
 export const tag = (text: string, tone: Tone = 'neutral') => `<span class="vd-tag vd-t-${tone}">${esc(text)}</span>`;
 const clusterTag = (cl: number) =>
   `<span class="vd-tag"><span class="vd-dot" style="background:var(--dot-ok)"></span>${CLUSTERS[cl].id}</span>`;
-// Header tooltips for the percentage columns: what the colours mean (the app's usageHint).
+// Header tooltips for the percentage columns: what the colors mean (the app's usageHint).
 const BARS = 'green below 70 %, amber from 70 %, red from 90 %';
 const HINT_LIM = `Bar: share of the limit, ${BARS}.`;
 const HINT_NODE = `Bar: share of the node's allocatable, ${BARS}.`;

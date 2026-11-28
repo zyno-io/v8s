@@ -201,7 +201,7 @@ export function subjectForProblem(p: Problem): Subject {
 
 // ---- logs -----------------------------------------------------------------------
 const MSGS: Record<string, string[]> = {
-  payments: ['authorize request accepted', 'ledger entry committed', 'idempotency key replayed', 'settlement window opened', 'card tokenised'],
+  payments: ['authorize request accepted', 'ledger entry committed', 'idempotency key replayed', 'settlement window opened', 'card tokenized'],
   shop: ['cart updated', 'checkout session created', 'catalog page rendered', 'price lookup', 'inventory reserved'],
   search: ['query executed', 'shard refreshed', 'bulk index batch applied', 'suggest cache hit'],
   data: ['batch committed', 'offset advanced', 'consumer lag sampled', 'schema resolved', 'partition rebalanced'],

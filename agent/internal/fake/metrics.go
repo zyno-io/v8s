@@ -140,7 +140,7 @@ type nodeShape struct {
 
 var (
 	nodeCores   = []int64{2, 4, 8, 16, 32, 48, 64, 96, 128, 192} // general-purpose instance sizes
-	gibPerCore  = []int64{2, 4, 8}                               // compute, general, memory optimised
+	gibPerCore  = []int64{2, 4, 8}                               // compute, general, memory optimized
 	nodeBusyPct = int64(70)                                      // the busier of requests and usage
 )
 

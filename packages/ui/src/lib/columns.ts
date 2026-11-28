@@ -18,7 +18,7 @@ export interface UsageSub {
     metrics: boolean;
     res: 'cpu' | 'mem';
     width: number;
-    /** Colour rule: `lim` warns at 90 % and alarms at 100 %, `node` warns at 90 %. */
+    /** Color rule: `lim` warns at 90 % and alarms at 100 %, `node` warns at 90 %. */
     tone: 'lim' | 'node' | null;
     /** A percentage of the node: one decimal below 10 %. */
     pctNode: boolean;

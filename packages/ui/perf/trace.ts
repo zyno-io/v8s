@@ -64,7 +64,7 @@ export function mainThread(events: readonly TraceEvent[]): string | null {
     return best;
 }
 
-export function analyseTrace(events: readonly TraceEvent[], longTaskMs = 50): Breakdown | null {
+export function analyzeTrace(events: readonly TraceEvent[], longTaskMs = 50): Breakdown | null {
     const main = mainThread(events);
     if (!main) return null;
     const ev = events.filter(e => e.ph === 'X' && e.dur !== undefined && `${e.pid}:${e.tid}` === main).sort((a, b) => a.ts - b.ts || b.dur! - a.dur!);

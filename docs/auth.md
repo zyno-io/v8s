@@ -14,11 +14,11 @@ The desktop agent is a Kubernetes client on the user's machine. It uses the user
 - **Browser-based plugins** (e.g. `kubelogin` opening a browser for OIDC): the agent shows "Waiting for sign-in for `prod-eu` in your browser" on that cluster only; other clusters keep working. The first authentication per identical plugin command is **serialized**, so many contexts sharing one IdP client (for example every Warpgate target plus every cluster that trusts the same Entra ID app) open one browser sign-in, not one per context. The returned `ExecCredential` is cached until `expirationTimestamp`.
 - **Plugins that prompt on stdin** (MFA codes typed into a terminal) are out of scope for v1; v8s detects them and suggests running the plugin once in a terminal to warm its cache.
 - **Secrets at rest**: anything v8s itself stores (imported tokens) goes in the OS keychain (macOS Keychain, Windows Credential Manager, libsecret), never in plain settings files.
-- **Proxy**: honours `proxy-url` in kubeconfig and `HTTPS_PROXY`/`NO_PROXY`; supports SOCKS5 for bastion setups.
+- **Proxy**: honors `proxy-url` in kubeconfig and `HTTPS_PROXY`/`NO_PROXY`; supports SOCKS5 for bastion setups.
 
 ## Access gateways (Warpgate)
 
-To v8s a gateway is **transparent**: it is a Kubernetes endpoint with OIDC authentication, configured like any other cluster. v8s has no gateway-specific code path. A few gateway behaviours still shape the design:
+To v8s a gateway is **transparent**: it is a Kubernetes endpoint with OIDC authentication, configured like any other cluster. v8s has no gateway-specific code path. A few gateway behaviors still shape the design:
 
 - **One endpoint per target**, where a target is a cluster × role (for example a read-only `operator` role and a writable `cluster-admin` role). v8s can link the two ([below](#linked-contexts-read-and-write)).
 - **Elevation lives in the gateway.** Warpgate's write targets work during time-boxed sessions granted in Warpgate. v8s just uses the linked write context; when Warpgate rejects it, v8s says so and links to Warpgate.

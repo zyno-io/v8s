@@ -20,7 +20,7 @@
     "colorMeta": {
       "bg": {
         "role": "neutral",
-        "displayName": "Desk Grey",
+        "displayName": "Desk Gray",
         "canonical": "#f6f7f9",
         "oklch": "oklch(97.6% 0.003 264.5)",
         "tonalRamp": [
@@ -52,7 +52,7 @@
       },
       "surface-2": {
         "role": "neutral",
-        "displayName": "Inset Grey",
+        "displayName": "Inset Gray",
         "canonical": "#f3f4f6",
         "oklch": "oklch(96.7% 0.003 264.5)",
         "tonalRamp": [
@@ -164,7 +164,7 @@
       },
       "text-3": {
         "role": "neutral",
-        "displayName": "Meta Grey",
+        "displayName": "Meta Gray",
         "canonical": "#646a78",
         "oklch": "oklch(52.4% 0.023 267.1)",
         "tonalRamp": [
@@ -180,7 +180,7 @@
       },
       "placeholder": {
         "role": "neutral",
-        "displayName": "Placeholder Grey",
+        "displayName": "Placeholder Gray",
         "canonical": "#6f7583",
         "oklch": "oklch(56.2% 0.023 267.1)",
         "tonalRamp": [
@@ -548,7 +548,7 @@
       },
       "neutral": {
         "role": "secondary",
-        "displayName": "Draft Grey",
+        "displayName": "Draft Gray",
         "canonical": "#545b69",
         "oklch": "oklch(47.0% 0.024 264.3)",
         "tonalRamp": [
@@ -564,7 +564,7 @@
       },
       "neutral-soft": {
         "role": "secondary",
-        "displayName": "Draft Grey Soft",
+        "displayName": "Draft Gray Soft",
         "canonical": "#f1f2f5",
         "oklch": "oklch(96.1% 0.004 271.4)",
         "tonalRamp": [
@@ -580,7 +580,7 @@
       },
       "neutral-border": {
         "role": "secondary",
-        "displayName": "Draft Grey Border",
+        "displayName": "Draft Gray Border",
         "canonical": "#dcdfe5",
         "oklch": "oklch(90.3% 0.009 264.5)",
         "tonalRamp": [
@@ -644,7 +644,7 @@
       },
       "dot-idle": {
         "role": "tertiary",
-        "displayName": "Disconnected Grey",
+        "displayName": "Disconnected Gray",
         "canonical": "#a3adb9",
         "oklch": "oklch(74.4% 0.021 252.9)",
         "tonalRamp": [
@@ -660,7 +660,7 @@
       },
       "bg-dark": {
         "role": "neutral",
-        "displayName": "Desk Grey (dark)",
+        "displayName": "Desk Gray (dark)",
         "canonical": "#0c0d10",
         "oklch": "oklch(15.9% 0.007 271.0)",
         "tonalRamp": [
@@ -692,7 +692,7 @@
       },
       "surface-2-dark": {
         "role": "neutral",
-        "displayName": "Inset Grey (dark)",
+        "displayName": "Inset Gray (dark)",
         "canonical": "#191b20",
         "oklch": "oklch(22.2% 0.010 268.2)",
         "tonalRamp": [
@@ -804,7 +804,7 @@
       },
       "text-3-dark": {
         "role": "neutral",
-        "displayName": "Meta Grey (dark)",
+        "displayName": "Meta Gray (dark)",
         "canonical": "#8b909c",
         "oklch": "oklch(65.3% 0.019 267.7)",
         "tonalRamp": [
@@ -820,7 +820,7 @@
       },
       "placeholder-dark": {
         "role": "neutral",
-        "displayName": "Placeholder Grey (dark)",
+        "displayName": "Placeholder Gray (dark)",
         "canonical": "#7a7f8c",
         "oklch": "oklch(59.7% 0.021 268.9)",
         "tonalRamp": [
@@ -1188,7 +1188,7 @@
       },
       "neutral-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey (dark)",
+        "displayName": "Draft Gray (dark)",
         "canonical": "#b3b8c3",
         "oklch": "oklch(78.2% 0.017 266.3)",
         "tonalRamp": [
@@ -1204,7 +1204,7 @@
       },
       "neutral-soft-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey Soft (dark)",
+        "displayName": "Draft Gray Soft (dark)",
         "canonical": "rgba(148, 155, 170, 0.1)",
         "oklch": "oklch(68.9% 0.023 265.7)",
         "tonalRamp": [
@@ -1220,7 +1220,7 @@
       },
       "neutral-border-dark": {
         "role": "secondary",
-        "displayName": "Draft Grey Border (dark)",
+        "displayName": "Draft Gray Border (dark)",
         "canonical": "rgba(148, 155, 170, 0.24)",
         "oklch": "oklch(68.9% 0.023 265.7)",
         "tonalRamp": [
@@ -1284,7 +1284,7 @@
       },
       "dot-idle-dark": {
         "role": "tertiary",
-        "displayName": "Disconnected Grey (dark)",
+        "displayName": "Disconnected Gray (dark)",
         "canonical": "#5e6a77",
         "oklch": "oklch(51.9% 0.025 250.4)",
         "tonalRamp": [
@@ -1330,7 +1330,7 @@
       },
       "caption": {
         "displayName": "Caption",
-        "purpose": "Notes, hints, file names, Meta Grey."
+        "purpose": "Notes, hints, file names, Meta Gray."
       },
       "control": {
         "displayName": "Control",
@@ -1382,7 +1382,7 @@
       {
         "name": "control",
         "value": "120ms ease",
-        "purpose": "Background, border and text colour on buttons, chips, links."
+        "purpose": "Background, border and text color on buttons, chips, links."
       },
       {
         "name": "header-rule",
@@ -1436,11 +1436,11 @@
       }
     ],
     "knownGaps": [
-      "**Indigo as emphasis.** The hero H1's \"No lag.\" is set in `accent` (`link` in dark). That is indigo used as a highlight colour, outside action, selection, and focus.",
+      "**Indigo as emphasis.** The hero H1's \"No lag.\" is set in `accent` (`link` in dark). That is indigo used as a highlight color, outside action, selection, and focus.",
       "**Dot that ignores state.** The hero release line's dot is always `dot-ok` green, including when the GitHub check fails and the text says \"Couldn't reach GitHub just now\".",
       "**Two indigo fills in the first viewport.** The header Download and the hero download are both filled at 1440x900.",
       "**Weight 650 is not loaded.** Headings, the replica's title, and the Zyno heading ask for 650; only static 400 to 700 ship, so they render at 700.",
-      "**Literal colours in the Zyno band.** `#0c0d10`, `#ececf0`, `#fff`, `#aeb2bd`, `#15171c`, `#eceef2`, and Zyno's `#2855d4` are literals, not tokens.",
+      "**Literal colors in the Zyno band.** `#0c0d10`, `#ececf0`, `#fff`, `#aeb2bd`, `#15171c`, `#eceef2`, and Zyno's `#2855d4` are literals, not tokens.",
       "**Carried but unused primitives.** `site.css` came over from the sales site with things this page does not use: `.card` and its variants, `feature-icon`, the comparison table and its stacked form, form fields, `grid-2/3/4`, `section-head`, scroll `reveal`, `notice`, the `info`, `release`, and `accent` tag tones, the `data-when` release gates, and `--cmdbar-h`. Their presence is not evidence of a v8s pattern.",
       "**Off-scale values.** Radii of 10px (xl button), 36px (phone frame), 4px (key caps, inline code, the replica's tags), and 2px (Zyno square) sit beside the three radius tokens; mono runs at 10, 11, 11.5, 12, 12.5, and 13px.",
       "**Local code-chip overrides.** The download ways, download headings, and 404 code each undo the global inline-code chip locally."
@@ -1530,7 +1530,7 @@
   ],
   "narrative": {
     "northStar": "The Review Desk, driven from the command bar",
-    "overview": "The v8s site is the PixelCI design system (\"The Review Desk\") carried over value for value, with v8s's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names that `siple-web` uses, so the sites read as one family. The marketing layer (display scale, generous sections, the faint desk grid and glow in the hero) is the PixelCI sales site's. v8s changes three things. The accent family is the app's indigo. The app's cluster connection dots (`--dot-*`) join as the live-state device. And the page is operated the way the app is: a working replica of the v8s interface sits in the hero, every feature section carries the real command that opens it as a Run chip, and `:` anywhere opens the replica's command bar.\n\nThe desk is quiet, dense, and utilitarian. A cool grey page; white cards with 1px hairlines and barely visible resting shadows; one indigo; status as small tags with a word in them. Collections are packed as rows inside one card rather than spread across airy feature cards. The only imagery is the app itself: the live replica, and real demo-mode screenshots in light and dark pairs. Nothing is illustrated, and no number is invented; performance figures appear only as labelled design budgets.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`; `html[data-theme]` pins the reader's choice from the header toggle. Components never branch on theme, with two exceptions: screenshot pairs show one of their two images, and indigo text (the Run chip label) uses Link Indigo, which is already themed.",
+    "overview": "The v8s site is the PixelCI design system (\"The Review Desk\") carried over value for value, with v8s's identity swapped in. Every neutral, status triplet, radius, and shadow is PixelCI's, under the same token names that `siple-web` uses, so the sites read as one family. The marketing layer (display scale, generous sections, the faint desk grid and glow in the hero) is the PixelCI sales site's. v8s changes three things. The accent family is the app's indigo. The app's cluster connection dots (`--dot-*`) join as the live-state device. And the page is operated the way the app is: a working replica of the v8s interface sits in the hero, every feature section carries the real command that opens it as a Run chip, and `:` anywhere opens the replica's command bar.\n\nThe desk is quiet, dense, and utilitarian. A cool gray page; white cards with 1px hairlines and barely visible resting shadows; one indigo; status as small tags with a word in them. Collections are packed as rows inside one card rather than spread across airy feature cards. The only imagery is the app itself: the live replica, and real demo-mode screenshots in light and dark pairs. Nothing is illustrated, and no number is invented; performance figures appear only as labeled design budgets.\n\nLight and dark come from one set of token names, redeclared for dark. Theme follows the OS through `prefers-color-scheme`; `html[data-theme]` pins the reader's choice from the header toggle. Components never branch on theme, with two exceptions: screenshot pairs show one of their two images, and indigo text (the Run chip label) uses Link Indigo, which is already themed.",
     "keyCharacteristics": [
       "PixelCI's Review Desk tokens unchanged, except the accent family (indigo) and the added `--dot-*` connection dots.",
       "One indigo for action, selection, and focus. In dark it is a brighter indigo that still carries white text.",
@@ -1543,7 +1543,7 @@
     "rules": [
       {
         "name": "The One Indigo Rule",
-        "body": "Indigo means \"this is the action, this is chosen, or this has focus\". The header Download is the persistent primary; inside the page body only the hero download fills indigo. Section actions are Run chips, whose indigo is a wash, not a fill. Indigo never carries status, and it is not an emphasis colour for prose or headings.",
+        "body": "Indigo means \"this is the action, this is chosen, or this has focus\". The header Download is the persistent primary; inside the page body only the hero download fills indigo. Section actions are Run chips, whose indigo is a wash, not a fill. Indigo never carries status, and it is not an emphasis color for prose or headings.",
         "section": "colors"
       },
       {
@@ -1553,7 +1553,7 @@
       },
       {
         "name": "The Dot Beside a Word Rule",
-        "body": "A connection dot is a 7px circle (6px in the replica) that always sits next to text naming the same thing: a cluster, \"Streaming\", a version line. Its colour must agree with that text.",
+        "body": "A connection dot is a 7px circle (6px in the replica) that always sits next to text naming the same thing: a cluster, \"Streaming\", a version line. Its color must agree with that text.",
         "section": "colors"
       },
       {
@@ -1583,7 +1583,7 @@
       }
     ],
     "dos": [
-      "**Do** take every colour from the custom properties in `tokens.css`, keeping PixelCI's names and values for everything except the accent family and the dots.",
+      "**Do** take every color from the custom properties in `tokens.css`, keeping PixelCI's names and values for everything except the accent family and the dots.",
       "**Do** keep indigo to action, selection, and focus; the section-level action is a Run chip, not a filled button (The One Indigo Rule).",
       "**Do** give every section with a real, demo-able v8s command a Run chip in its heading row, and put \"more\" links there otherwise.",
       "**Do** show status as a tag triplet with a word in it, and connection state as a dot beside a word whose meaning it matches (The Dot Beside a Word Rule).",
@@ -1591,7 +1591,7 @@
       "**Do** set commands, class names, CLI lines, and file names in monospace, and everything else in Inter (The Machine Text Rule).",
       "**Do** use the app's own light and dark renders as a pair, so a screenshot always matches the page theme.",
       "**Do** nest radii 12px, 8px, 5px from container to control to inner piece.",
-      "**Do** keep motion to 120ms colour changes, the header hairline (160ms), and the replica's one-time typed command; under reduced motion the command bar is a still."
+      "**Do** keep motion to 120ms color changes, the header hairline (160ms), and the replica's one-time typed command; under reduced motion the command bar is a still."
     ],
     "donts": [
       "**Don't** use another product's accent; v8s is indigo.",
@@ -1601,7 +1601,7 @@
       "**Don't** spread a collection across separate feature cards with icons.",
       "**Don't** lift site cards past the resting shadow, except the hero download card; floating shadows belong to pictures of the app (The Window Floats Rule).",
       "**Don't** use the desk grid and glow anywhere but the hero and the 404.",
-      "**Don't** hard-code a colour, radius, or shadow where a token exists.",
+      "**Don't** hard-code a color, radius, or shadow where a token exists.",
       "**Don't** copy the known gaps below into new work."
     ]
   }

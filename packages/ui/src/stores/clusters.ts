@@ -114,7 +114,7 @@ export const useClustersStore = defineStore('clusters', () => {
         return res;
     }
 
-    /** Group name to its listed members: the groups in settings plus the server-set ones (hosted mode). Used to recognise an exact group match. */
+    /** Group name to its listed members: the groups in settings plus the server-set ones (hosted mode). Used to recognize an exact group match. */
     const groupMap = computed<Record<string, string[]>>(() => {
         const out: Record<string, string[]> = {};
         for (const c of list.value) for (const g of c.fixedGroups ?? []) (out[g] ??= []).push(c.id);

@@ -175,7 +175,7 @@ func (m *Manager) List() protocol.ClustersListResult {
 	return protocol.ClustersListResult{Clusters: cs, Selected: sel}
 }
 
-// Listen returns a channel signalled (coalesced) whenever any cluster state changes.
+// Listen returns a channel signaled (coalesced) whenever any cluster state changes.
 func (m *Manager) Listen() (<-chan struct{}, func()) {
 	ch := make(chan struct{}, 1)
 	m.lmu.Lock()

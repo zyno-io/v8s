@@ -26,9 +26,9 @@ export interface ExtraCol {
 }
 
 /**
- * Per-kind customisation of the shared ResourceTable (Flux, Helm). Everything here must be cheap and pure per row: it runs for the
+ * Per-kind customization of the shared ResourceTable (Flux, Helm). Everything here must be cheap and pure per row: it runs for the
  * visible slice only, on every view version bump. External state that a row's version does not capture (a pending reconcile, a
- * lazily fetched chart version) is signalled by bumping `version` and returned from `rowKey` so the row's `v-memo` re-renders.
+ * lazily fetched chart version) is signaled by bumping `version` and returned from `rowKey` so the row's `v-memo` re-renders.
  */
 export interface TableDecor {
     /** Virtual columns appended after the schema columns (cells come from `cell`; they have `idx < 0`). */

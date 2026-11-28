@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { analyseTrace, formatBreakdown, mainThread, type TraceEvent } from '../perf/trace.ts';
+import { analyzeTrace, formatBreakdown, mainThread, type TraceEvent } from '../perf/trace.ts';
 
 const meta = (pid: number, tid: number, name: string): TraceEvent => ({ ph: 'M', name: 'thread_name', ts: 0, pid, tid, args: { name } });
 const x = (name: string, ts: number, dur: number, extra: Partial<TraceEvent> = {}): TraceEvent => ({
@@ -35,7 +35,7 @@ describe('perf trace breakdown', () => {
             x('ThreadControllerImpl::RunTask', 100_000, 5000),
             x('Layout', 100_000, 2000)
         ];
-        const b = analyseTrace(ev)!;
+        const b = analyzeTrace(ev)!;
         expect(b.totals).toEqual({ script: 10, style: 4, layout: 10, prePaint: 0, paint: 6, gc: 1 });
         expect(b.tasks).toBe(2);
         expect(b.longTasks).toHaveLength(1);

@@ -23,7 +23,7 @@ A flow view is always scoped to the object whose tab you opened, a namespace or 
 
 ## Service map
 
-Pick a cluster, a namespace, and a window (5 minutes, 15 minutes, or 1 hour), and the **service map** draws workloads as nodes (grouped by identity, not by pod) with edges for requests, errors, and drops. Dropped edges are red and dashed, so colour is not the only signal. Select a node for its edges and an **Open flows** shortcut. An edges table below lists every edge with requests, errors, drops, and a status word, sorted by drops, errors, then requests. v8s builds the map from a filtered flow stream and sends the UI only a small graph. The map is not offered on a phone, which has the Drops and Hubble status views.
+Pick a cluster, a namespace, and a window (5 minutes, 15 minutes, or 1 hour), and the **service map** draws workloads as nodes (grouped by identity, not by pod) with edges for requests, errors, and drops. Dropped edges are red and dashed, so color is not the only signal. Select a node for its edges and an **Open flows** shortcut. An edges table below lists every edge with requests, errors, drops, and a status word, sorted by drops, errors, then requests. v8s builds the map from a filtered flow stream and sends the UI only a small graph. The map is not offered on a phone, which has the Drops and Hubble status views.
 
 ## Drops view
 

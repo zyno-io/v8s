@@ -148,12 +148,12 @@ describe('severity', () => {
 });
 
 describe('image names', () => {
-    it('splits repository and tag, honouring registry ports and digests', () => {
+    it('splits repository and tag, honoring registry ports and digests', () => {
         expect(splitImage('nginx:1.25')).toEqual({ repository: 'nginx', tag: '1.25' });
         expect(splitImage('reg:5000/a/b')).toEqual({ repository: 'reg:5000/a/b', tag: '' });
         expect(splitImage('reg:5000/a/b:2@sha256:abc')).toEqual({ repository: 'reg:5000/a/b', tag: '2' });
     });
-    it('normalises to the scanner repository form', () => {
+    it('normalizes to the scanner repository form', () => {
         expect(imageKey('nginx')).toBe('library/nginx:latest');
         expect(imageKey('docker.io/library/nginx:1.25.3')).toBe('library/nginx:1.25.3');
         expect(imageKey('ghcr.io/acme/api:1.2')).toBe('acme/api:1.2');

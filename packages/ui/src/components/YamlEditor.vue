@@ -17,7 +17,7 @@ const editable = new Compartment();
 const wrapping = new Compartment();
 let base = props.initial;
 
-// Colours come from the design tokens, so the editor follows light/dark with no theme branching.
+// Colors come from the design tokens, so the editor follows light/dark with no theme branching.
 const theme = EditorView.theme({
     '&': { height: '100%', fontSize: '12px', color: 'var(--text)', backgroundColor: 'var(--surface)' },
     '.cm-scroller': { fontFamily: "ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace", lineHeight: '1.55' },

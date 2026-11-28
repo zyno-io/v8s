@@ -225,7 +225,7 @@ func TestG2RealCluster(t *testing.T) {
 			_, b := got["broken-release"]
 			return a && b
 		})
-		// the task described broken-release as failed; on this cluster Helm labelled the release `deployed` (its pods are
+		// the task described broken-release as failed; on this cluster Helm labeled the release `deployed` (its pods are
 		// in ImagePullBackOff, which is a workload failure, not a Helm one): the list reports what the labels say.
 		if got["broken-release"].status == "" {
 			t.Fatalf("broken-release: %+v", got["broken-release"])

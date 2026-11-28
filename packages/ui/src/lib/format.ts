@@ -31,7 +31,7 @@ export function formatUsage(unit: string, pctNode: boolean, v: unknown): string 
     return String(n);
 }
 
-/** Text colour for a usage cell: `lim` warns from 90 % and alarms from 100 %; `node` warns from 90 %; requests are uncoloured. */
+/** Text color for a usage cell: `lim` warns from 90 % and alarms from 100 %; `node` warns from 90 %; requests are uncolored. */
 export function usageTone(rule: 'lim' | 'node' | null, v: unknown): 'warning' | 'danger' | '' {
     if (rule == null || typeof v !== 'number' || v < 0) return '';
     if (rule === 'lim' && v >= 1000) return 'danger';
@@ -39,7 +39,7 @@ export function usageTone(rule: 'lim' | 'node' | null, v: unknown): 'warning' | 
 }
 
 /**
- * The background bar of a percentage cell in the usage block: its tier (colour) and its fill height in % of the row, capped at a
+ * The background bar of a percentage cell in the usage block: its tier (color) and its fill height in % of the row, capped at a
  * full row. `ok` below 70 %, `warn` from 70 %, `hot` from 90 %. A request percentage (`rule` null) gets a bar only when the row
  * has no limit for that resource (`lim`, the matching %L value, is n/a or absent): then the request is the only bound. Null (no
  * bar) for no data, n/a, and a request next to a limit.
@@ -51,9 +51,9 @@ export function usageBar(rule: 'lim' | 'node' | null, v: unknown, lim?: unknown)
 }
 
 /**
- * Text colour for a memory request percentage next to a limit (it has no bar then): `warning` above 100 %, `danger` above 200 %
+ * Text color for a memory request percentage next to a limit (it has no bar then): `warning` above 100 %, `danger` above 200 %
  * of the request, on the shown (rounded) percentage. A pod over its memory request is among the first evicted when its node runs
- * short of memory. CPU requests stay uncoloured: running over a CPU request is normal for bursty pods.
+ * short of memory. CPU requests stay uncolored: running over a CPU request is normal for bursty pods.
  */
 export function usageReqTone(res: 'cpu' | 'mem', v: unknown, lim: unknown): 'warning' | 'danger' | '' {
     if (res !== 'mem' || typeof v !== 'number' || v < 0 || typeof lim !== 'number' || lim < 0) return '';

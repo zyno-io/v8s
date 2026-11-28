@@ -79,7 +79,7 @@ export function usageCardLine(u: UsageIdx, row: Row): { text: string; tone: 'war
 
 const BARS = 'green below 70 %, amber from 70 %, red from 90 %';
 
-/** What a usage header's colours mean, for its tooltip under the sort hint ('' for raw columns). */
+/** What a usage header's colors mean, for its tooltip under the sort hint ('' for raw columns). */
 export function usageHint(u: UsageSub): string {
     if (u.unit !== 'permille') return '';
     if (u.tone === 'lim') return `Bar: share of the limit, ${BARS}.`;

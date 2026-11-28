@@ -463,7 +463,7 @@ type ObjectDryRunParams struct {
 	Ref  ObjectRef `msgpack:"ref" json:"ref"`
 	YAML string    `msgpack:"yaml" json:"yaml"`
 	Mode string    `msgpack:"mode" json:"mode"` // "update" | "create"
-	// UseWriteContext runs the dry run through the linked write context (honoured only when a link exists).
+	// UseWriteContext runs the dry run through the linked write context (honored only when a link exists).
 	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
 
@@ -487,7 +487,7 @@ type ObjectApplyParams struct {
 	Mode            string    `msgpack:"mode" json:"mode"`                                           // "update" | "create"
 	ResourceVersion string    `msgpack:"resourceVersion,omitempty" json:"resourceVersion,omitempty"` // update: the version the user opened
 	// UseWriteContext (here and on object.delete / object.action / jobs.start / stream.open) runs the mutation
-	// through the linked write context; honoured only when a link exists. It is how the UI retries after a
+	// through the linked write context; honored only when a link exists. It is how the UI retries after a
 	// "write_confirm" error (autoSwitchWrite off).
 	UseWriteContext bool `msgpack:"useWriteContext,omitempty" json:"useWriteContext,omitempty"`
 }
@@ -887,7 +887,7 @@ type JobsCancelParams struct {
 
 // DrainOptions mirror kubectl drain. IgnoreDaemonSets defaults to true. TimeoutSeconds 0 means 300.
 // GracePeriodSeconds nil uses each pod's own. DisableEviction deletes pods instead of evicting them
-// (PDBs are then not honoured): it is the explicit second confirmation.
+// (PDBs are then not honored): it is the explicit second confirmation.
 type DrainOptions struct {
 	IgnoreDaemonSets   *bool  `msgpack:"ignoreDaemonSets,omitempty" json:"ignoreDaemonSets,omitempty"`
 	DeleteEmptyDirData bool   `msgpack:"deleteEmptyDirData,omitempty" json:"deleteEmptyDirData,omitempty"`

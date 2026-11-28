@@ -20,7 +20,7 @@ describe('sidebarPrefs', () => {
         expect(sidebarPrefs(undefined)).toEqual({ pinned: true, width: SIDEBAR_DEFAULT });
         expect(sidebarPrefs({})).toEqual({ pinned: true, width: SIDEBAR_DEFAULT });
     });
-    it('reads stored values and sanitises malformed ones', () => {
+    it('reads stored values and sanitizes malformed ones', () => {
         expect(sidebarPrefs({ sidebarPinned: false, sidebarWidth: 300 })).toEqual({ pinned: false, width: 300 });
         expect(sidebarPrefs({ sidebarPinned: 'no', sidebarWidth: 5 })).toEqual({ pinned: true, width: SIDEBAR_MIN });
     });

@@ -153,7 +153,7 @@ function draw() {
     const y1 = (ch - ty) / scale;
     const active = focusNode.value ?? hoverId.value;
 
-    // Edges: one path per style; edges touching the focused/hovered node are drawn again on top in the accent colour.
+    // Edges: one path per style; edges touching the focused/hovered node are drawn again on top in the accent color.
     ctx.lineJoin = 'round';
     const lw = Math.max(1, 1.25 / Math.max(scale, 0.5));
     const pass = (type: string, hot: boolean) => {

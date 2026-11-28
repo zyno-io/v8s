@@ -41,7 +41,7 @@ func (e *NotReadyError) Error() string {
 }
 
 // Discover finds the hubble-relay Service (any namespace, kube-system preferred) and a ready relay pod from its
-// EndpointSlices. The pod port is the slice's resolved port, so a targetPort mapping is honoured.
+// EndpointSlices. The pod port is the slice's resolved port, so a targetPort mapping is honored.
 func Discover(ctx context.Context, dyn dynamic.Interface) (protocol.HubbleRelayInfo, error) {
 	svcs, err := dyn.Resource(servicesGVR).List(ctx, metav1.ListOptions{FieldSelector: "metadata.name=" + relayService})
 	if err != nil {

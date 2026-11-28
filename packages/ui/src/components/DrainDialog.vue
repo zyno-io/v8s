@@ -287,7 +287,7 @@ onBeforeUnmount(() => {
                         </label>
                     </div>
                     <label class="dangerous"
-                        ><input v-model="opts.disableEviction" type="checkbox" /> Disable eviction (delete pods instead; PDBs are NOT honoured)</label
+                        ><input v-model="opts.disableEviction" type="checkbox" /> Disable eviction (delete pods instead; PDBs are NOT honored)</label
                     >
                 </fieldset>
 
@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
                 <p class="notice danger-n" role="alert">
                     <span
                         ><b>Eviction is disabled</b> on <b>{{ clusterName }}</b>. Pods on {{ node }} are deleted directly: PodDisruptionBudgets are
-                        NOT honoured and the pods get no graceful handover. Workloads can lose availability.</span
+                        NOT honored and the pods get no graceful handover. Workloads can lose availability.</span
                     >
                 </p>
                 <label class="phrase">

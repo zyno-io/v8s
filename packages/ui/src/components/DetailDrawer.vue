@@ -473,7 +473,7 @@ header {
     gap: 8px;
     min-width: 0;
 }
-/* A status tag that opens the Related tab: keeps its tone colour, reads as clickable. */
+/* A status tag that opens the Related tab: keeps its tone color, reads as clickable. */
 .go {
     font: inherit;
     font-size: 11px;

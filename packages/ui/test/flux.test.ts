@@ -107,7 +107,7 @@ describe('row reading', () => {
         expect(baseFromColumns([{ key: 'name' }, { key: 'namespace' }, { key: 'ready' }])).toBe(1);
         expect(baseFromColumns(null)).toBe(2);
     });
-    it('honours a shifted base', () => {
+    it('honors a shifted base', () => {
         const r = [0, 0, ...row().slice(2)];
         const shifted = [9, 9, 9, ...r.slice(2)];
         expect(readCells(shifted, 3).name).toBe('apps');
