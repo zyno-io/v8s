@@ -116,6 +116,10 @@ describe('row reading', () => {
 
 describe('readyTag', () => {
     it('Ready', () => expect(readyTag(row())).toEqual({ text: 'Ready', tone: 'success' }));
+    it('Ready with a reason, as the agent sends it', () => {
+        expect(readyTag(row({ ready: 'True · UpgradeSucceeded', statusTone: 1 }))).toEqual({ text: 'Ready', tone: 'success' });
+        expect(readyTag(row({ ready: 'True · ReconciliationSucceeded', statusTone: 0 }))).toEqual({ text: 'Ready', tone: 'success' });
+    });
     it('keeps the reason', () =>
         expect(readyTag(row({ ready: 'False · ArtifactFailed', statusTone: 3 }))).toEqual({ text: 'Not ready · ArtifactFailed', tone: 'danger' }));
     it('progressing not-ready is warning via the tone', () =>
