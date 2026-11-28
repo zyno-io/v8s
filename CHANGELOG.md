@@ -5,6 +5,11 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Fixed
+
+- Flux Kustomizations and HelmReleases that are ready showed **Unknown** in the Ready column (green, but the wrong word) when Flux
+  gave a reason for Ready, which it always does. They show **Ready** again.
+
 ## 0.13.0 — 2026-11-28
 
 ### Added

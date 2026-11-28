@@ -149,7 +149,8 @@ export function readyTagOf(c: Pick<FluxCells, 'ready' | 'suspended' | 'tone'>): 
     const raw = c.ready.trim();
     let text: string;
     let derived: FluxTone;
-    if (raw === 'True') {
+    // The agent sends `True · <reason>` (Flux always sets one, e.g. UpgradeSucceeded); success needs no reason.
+    if (raw === 'True' || raw.startsWith('True ')) {
         text = 'Ready';
         derived = 'success';
     } else if (raw === 'False' || raw.startsWith('False')) {
