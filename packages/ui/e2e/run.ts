@@ -447,7 +447,7 @@ async function main() {
             await filter.fill('');
         });
 
-        await step('overview: clicking an owner opens it in the drawer', async () => {
+        await step('overview: a pod lists its containers and images; clicking an owner opens it in the drawer', async () => {
             await page.keyboard.press('Escape');
             await page.getByRole('link', { name: /^Pods/ }).first().click();
             await page.waitForURL(/\/pods/);
@@ -455,6 +455,9 @@ async function main() {
             await first.waitFor({ timeout: 30000 });
             await first.locator('.name').click();
             const drawer = page.getByTestId('drawer');
+            const image = drawer.getByTestId('containers').locator('.cimg').first();
+            await image.waitFor();
+            assert.match(await image.innerText(), /\S+:\S+/, 'container image is shown');
             const owner = drawer.getByTestId('owner-link').first();
             await owner.waitFor();
             const ownerName = (await owner.innerText()).split('/').pop()?.trim() ?? '';
