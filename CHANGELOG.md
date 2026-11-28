@@ -5,17 +5,17 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
-### Fixed
-
-- Flux Kustomizations and HelmReleases that are ready showed **Unknown** in the Ready column (green, but the wrong word) when Flux
-  gave a reason for Ready, which it always does. They show **Ready** again.
-
 ## 0.13.0 — 2026-11-28
 
 ### Added
 
 - A pod's **Overview** tab lists its containers: init containers and sidecars first, then the regular and ephemeral ones, each
   with its image, its state (Running, CrashLoopBackOff, Completed, …) and its restart count.
+
+### Fixed
+
+- Flux Kustomizations and HelmReleases that are ready showed **Unknown** in the Ready column (green, but the wrong word) when Flux
+  gave a reason for Ready, which it always does. They show **Ready** again.
 
 ## 0.12.0 — 2026-11-26
 
