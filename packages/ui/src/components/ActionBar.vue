@@ -163,7 +163,7 @@ function go(a: ActionDef) {
         if (props.variant === 'key') emit('end');
         return;
     }
-    // A key-triggered confirm: Cancel is the default button, so a stray Enter never runs it; the end of the request is signalled.
+    // A key-triggered confirm: Cancel is the default button, so a stray Enter never runs it; the end of the request is signaled.
     const viaKey = props.variant === 'key';
     const keyExtras = viaKey ? { cancelFirst: true, onCancel: () => emit('end') } : {};
     const phraseFor = (typed: boolean) => (typed ? confirmPhrase(targets.length, first.name ?? '') : undefined);

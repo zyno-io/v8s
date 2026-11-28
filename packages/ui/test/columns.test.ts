@@ -145,7 +145,7 @@ describe('planColumns: the usage block', () => {
         expect(noRaw.subs![0].width).toBeGreaterThan(36); // a full label needs more than a bare percentage
     });
 
-    it('colours %/L and %/N cells by rule and marks percentages of a node', () => {
+    it('colors %/L and %/N cells by rule and marks percentages of a node', () => {
         const subs = plan({ layout: { shown: ['cpuPctNode'] } }).cols.find(c => c.kind === 'usage')!.subs!;
         expect(subs.map(x => [x.key, x.tone, x.pctNode])).toEqual([
             ['cpuUse', null, false],
@@ -256,7 +256,7 @@ describe('planColumns: the nodes usage block', () => {
         expect(b.subGrid).toBe('44px 36px 52px 56px 36px 56px');
     });
 
-    it('colours % of allocatable by the node rule and prints node fractions with a decimal', () => {
+    it('colors % of allocatable by the node rule and prints node fractions with a decimal', () => {
         const subs = plan().cols.find(c => c.kind === 'usage')!.subs!;
         expect(subs.map(x => [x.key, x.tone, x.pctNode])).toEqual([
             ['cpuUse', null, false],

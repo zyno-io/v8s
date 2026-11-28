@@ -81,7 +81,7 @@ describe('buildSidebar', () => {
 });
 
 describe('labels', () => {
-    it('capitalises plurals', () => {
+    it('capitalizes plurals', () => {
         expect(kindLabel(kinds[0])).toBe('Pods');
         expect(labelFromGvr('batch/v1/cronjobs')).toBe('Cronjobs');
     });

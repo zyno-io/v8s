@@ -5,7 +5,7 @@ import { splitRole, suggestLinks } from '../src/lib/link-suggest.ts';
 const ctx = (...names: string[]) => names.map(n => ({ id: n, name: n }));
 
 describe('splitRole', () => {
-    it('recognises role suffixes, longest first', () => {
+    it('recognizes role suffixes, longest first', () => {
         expect(splitRole('prod-us-cluster-admin')).toEqual({ base: 'prod-us', role: 'cluster-admin', kind: 'write' });
         expect(splitRole('prod-us-operator')).toEqual({ base: 'prod-us', role: 'operator', kind: 'read' });
         expect(splitRole('staging')).toEqual({ base: 'staging', role: '', kind: 'none' });

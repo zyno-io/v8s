@@ -5,7 +5,7 @@ import { drawerQuery, gvrFromRoute, gvrPath, parseDrawer } from '../src/lib/rout
 import { gvrFromManifest, templateFor, TEMPLATES } from '../src/lib/templates.ts';
 
 describe('objectStatus', () => {
-    it('summarises replicas for workloads', () => {
+    it('summarizes replicas for workloads', () => {
         expect(objectStatus('apps/v1/deployments', { spec: { replicas: 3 }, status: { readyReplicas: 3 } })).toEqual({
             text: '3/3 ready',
             tone: 'success'

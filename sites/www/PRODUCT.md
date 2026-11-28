@@ -71,7 +71,7 @@ Added in 0.2.0 to 0.3.0 (CHANGELOG, docs/guide):
 - **CPU and memory (0.3.0, docs/guide/resources.md "CPU and memory")**: the Pods table shows CPU (millicores) and MEM
   (MiB), each with %R and %L (percent of the pod's request and limit), as one dense k9s-style block of right-aligned
   integers with units in the header; requests, limits and % of the node are in Columns. `—` = no data, `n/a` = nothing
-  to divide by; amber from 90 % of a limit, red from 100 % (node share amber from 90 %; requests never coloured);
+  to divide by; amber from 90 % of a limit, red from 100 % (node share amber from 90 %; requests never colored);
   sortable, missing values always last; hover for used/requested/limit/node share; phone cards show
   `cpu 16m · mem 163Mi`. Nodes: usage, % of allocatable, and the allocatable. Overview, per cluster: usage as a % of
   all nodes' allocatable, a bar with a tick at requests, `requests 62% · limits 143%`, `41.2 of 112 cores`. Needs
@@ -101,10 +101,10 @@ stated design budgets (they are budgets, not measured results).
 
 - Name **v8s**, always lower case.
 - Mark: `docs/public/logo.svg`: a white "v" stroke with a dot on an indigo (`#4f46e5`) rounded square.
-- The app's own visual system is the **PixelCI design system** (cool grey desk, white hairline cards, one
+- The app's own visual system is the **PixelCI design system** (cool gray desk, white hairline cards, one
   indigo accent, status as tag triplets, Inter, Font Awesome Free) with v8s's indigo (`#4f46e5` light,
   `#5b52f0` dark), from `packages/ui/src/styles/tokens.scss`.
-- Licence: **MIT**. Open source.
+- License: **MIT**. Open source.
 - Maker: Signal24 LLC dba Zyno Consulting. The footer carries a Zyno Consulting pitch for Kubernetes help,
   linking to https://zyno.consulting (owner's brief). v8s never requires Zyno Consulting.
 

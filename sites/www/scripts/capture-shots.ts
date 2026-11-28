@@ -136,11 +136,11 @@ try {
         }
         if (want('flux')) {
             await nav(page, '/flux/graph');
-            await page.getByText('Failing only + neighbours').click();
+            await page.getByText('Failing only + neighbors').click();
             await settle(page, 1500);
             await page.getByRole('button', { name: 'Fit' }).click();
             await settle(page, 1000);
-            await shot('flux', 'the Flux dependency graph for prod-eu, failing objects plus neighbours');
+            await shot('flux', 'the Flux dependency graph for prod-eu, failing objects plus neighbors');
         }
         if (want('hubble')) {
             await nav(page, '/network/drops');

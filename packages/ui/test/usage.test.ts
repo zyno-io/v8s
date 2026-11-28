@@ -87,7 +87,7 @@ describe('usageTone', () => {
         expect(usageTone('lim', 1000)).toBe('danger');
         expect(usageTone('lim', 1500)).toBe('danger');
     });
-    it('node: warning from 90 % only; requests are never coloured; missing values are not coloured', () => {
+    it('node: warning from 90 % only; requests are never colored; missing values are not colored', () => {
         expect(usageTone('node', 950)).toBe('warning');
         expect(usageTone('node', 1200)).toBe('warning');
         expect(usageTone(null, 5000)).toBe('');
@@ -158,7 +158,7 @@ describe('nodes: usage against allocatable', () => {
         const t = usageTitle(NIDX, row({ cpuPctAlloc: -1 }, NIDX));
         expect(t.split('\n')).toEqual(['CPU no data · no allocatable', 'MEM no data · no allocatable']);
     });
-    it('the phone line is coloured by the node rule (warning from 90 %, never danger)', () => {
+    it('the phone line is colored by the node rule (warning from 90 %, never danger)', () => {
         expect(usageCardLine(NIDX, row({ cpuUse: 3920, memUse: 20480, cpuPctAlloc: 247, memPctAlloc: 317 }, NIDX))).toEqual({
             text: 'cpu 3920m · mem 20480Mi',
             tone: ''

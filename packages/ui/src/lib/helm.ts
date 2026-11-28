@@ -42,7 +42,7 @@ export function parseManagedBy(v: string | null | undefined): { namespace: strin
     return { namespace: rest.slice(0, i), name: rest.slice(i + 1) };
 }
 
-/** Revisions newest first, labelled for a select. */
+/** Revisions newest first, labeled for a select. */
 export function latestRevisionOptions(history: readonly HelmRevision[] | undefined): { revision: number; label: string }[] {
     return [...(history ?? [])]
         .sort((a, b) => b.revision - a.revision)

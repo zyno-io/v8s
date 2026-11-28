@@ -100,7 +100,7 @@ func TestCallbackRejectsForgedOrReplayedFlows(t *testing.T) {
 	if r := callback(attacker, "code="+code+"&state="+state); r.StatusCode != 400 {
 		t.Fatalf("callback without the flow cookie: %d", r.StatusCode)
 	}
-	// The state was single-use and is now burnt, even for the right browser.
+	// The state was single-use and is now burned, even for the right browser.
 	if r := callback(b, "code="+code+"&state="+state); r.StatusCode != 400 {
 		t.Fatalf("replayed state: %d", r.StatusCode)
 	}

@@ -188,7 +188,7 @@ export function formatNewLines(n: number): string {
     return `${n.toLocaleString('en-US')} new ${n === 1 ? 'line' : 'lines'}`;
 }
 
-/** Scroll position that centres row `idx` (index in the rendered list). */
+/** Scroll position that centers row `idx` (index in the rendered list). */
 export function centerScrollTop(idx: number, rowH: number, clientHeight: number, paddingStart: number): number {
     return Math.max(0, paddingStart + idx * rowH + rowH / 2 - clientHeight / 2);
 }
@@ -209,7 +209,7 @@ export function shortTimestamp(ts: string): string {
     return `${m[1]} ${m[2]}${m[3] ? '.' + m[3].slice(0, 3).padEnd(3, '0') : ''}`;
 }
 
-// ---- colour and runs ----
+// ---- color and runs ----
 
 export const SOURCE_PALETTE_SIZE = 8;
 
@@ -235,7 +235,7 @@ const UNDERLINE = 8;
 /** CSS variable for ANSI palette index 0..15. */
 export const paletteVar = (i: number): string => `--ansi-${i}`;
 
-/** CSS colour for an encoded span colour: var() for the palette, #rrggbb for rgb, '' for none. */
+/** CSS color for an encoded span color: var() for the palette, #rrggbb for rgb, '' for none. */
 export function cssColor(c: number): string {
     if (c < 0) return '';
     if (c & RGB_FLAG) return '#' + (c & 0xffffff).toString(16).padStart(6, '0');
@@ -294,7 +294,7 @@ export function splitRuns(text: string, spans?: readonly number[], hl?: readonly
 
 const clamp = (n: number, max: number) => Math.min(Math.max(n, 0), max);
 
-/** Inline style for a run: colours (palette var or rgb), weight, dim, italic, underline. */
+/** Inline style for a run: colors (palette var or rgb), weight, dim, italic, underline. */
 export function runStyle(r: Run): string {
     let s = '';
     const fg = cssColor(r.fg);

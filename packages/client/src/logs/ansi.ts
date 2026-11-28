@@ -9,7 +9,7 @@ export const DIM = 2;
 export const ITALIC = 4;
 export const UNDERLINE = 8;
 
-/** Colour encoding: -1 none, 0..15 palette index, otherwise `0x1000000 | 0xRRGGBB`. */
+/** Color encoding: -1 none, 0..15 palette index, otherwise `0x1000000 | 0xRRGGBB`. */
 export const NO_COLOR = -1;
 export const RGB_FLAG = 0x1000000;
 

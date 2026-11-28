@@ -87,14 +87,14 @@ Users without `get secrets` in a namespace can still see releases if they can `l
 
 ### Surfaces
 
-- **Releases table** across clusters: name, namespace, revision, status (`deployed` success, `failed` danger, `pending-*` warning, `superseded` info, `uninstalling` neutral), updated, managed by (Flux HelmRelease link when labelled). These come from labels. **Chart, chart version, and app version are not in the labels**: they fill in lazily for **visible rows only**, from the HelmRelease's `status.history` when Flux manages the release, otherwise by decoding the latest revision's payload through the bounded fetch queue (cached by `resourceVersion`). Sorting or filtering by chart triggers a background job that decodes the rest, with a progress indicator.
+- **Releases table** across clusters: name, namespace, revision, status (`deployed` success, `failed` danger, `pending-*` warning, `superseded` info, `uninstalling` neutral), updated, managed by (Flux HelmRelease link when labeled). These come from labels. **Chart, chart version, and app version are not in the labels**: they fill in lazily for **visible rows only**, from the HelmRelease's `status.history` when Flux manages the release, otherwise by decoding the latest revision's payload through the bounded fetch queue (cached by `resourceVersion`). Sorting or filtering by chart triggers a background job that decodes the rest, with a progress indicator.
 - **Release detail**: revision history with status per revision; values (user-supplied vs computed, toggle); rendered manifest; **diff between any two revisions** (values and manifest), computed in the agent; notes; resources from the manifest joined to live objects with health; hooks.
 
 ### Actions
 
 Performed by the agent with the Helm 4 SDK (`action.Rollback`, `action.Uninstall`, `action.Upgrade`) as the user, so hooks, waits, and history pruning behave exactly like the CLI.
 
-| Action | Behaviour |
+| Action | Behavior |
 | --- | --- |
 | Rollback | to a chosen revision; options wait, timeout, cleanup-on-fail, force (behind confirm) |
 | Uninstall | options keep-history, wait, timeout, cascade policy; type-to-confirm on protected clusters |

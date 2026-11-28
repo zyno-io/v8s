@@ -20,7 +20,7 @@ Every resource list is the same component, so the controls work everywhere.
 
 - **Sort.** Click a column header. Shift-click to add a secondary sort key.
 - **Filter.** Type in the filter box (or press `/`). It matches names and answers instantly, even over tens of thousands of rows.
-- **Tone chips.** Where a type has a status, chips such as success, warning, and danger appear with live counts. Toggle them to show only broken or only healthy rows. Status is always a word, never colour alone: `CrashLoopBackOff`, `Running`, `Suspended`.
+- **Tone chips.** Where a type has a status, chips such as success, warning, and danger appear with live counts. Toggle them to show only broken or only healthy rows. Status is always a word, never color alone: `CrashLoopBackOff`, `Running`, `Suspended`.
 - **Columns.** Use **Columns** to hide or show columns, and drag column edges to resize. Your layout is remembered per resource type.
 - **Cluster column.** The cluster column (a short tag with the cluster name) appears only when more than one cluster is selected.
 - **Namespace filter.** Set it from the namespace menu or with `:ns`. It is one filter for every resource type: switching from Pods to Deployments, Services or a CRD (from the sidebar, `:<type>`, search or an Overview link) keeps the namespaces you picked. Cluster-scoped types such as Nodes ignore it and keep it for the next namespaced list. The menu lists the namespaces you picked under **Selected**, below the scrolling list, so they stay in view while you search; click one there to remove it.

@@ -22,7 +22,7 @@ Open a pod's detail drawer and choose the **Logs** tab. The same tab exists on D
 - **Bounded memory.** The view keeps a ring buffer (about 50,000 lines on desktop, 5,000 on a phone). When older lines fall off, the view says "N earlier lines dropped, download full log".
 - **Download** streams straight from the cluster to a file; it does not pass through the UI, so a huge log does not slow the app.
 - **Flow control.** A very chatty container cannot flood your screen. The agent stops reading from the API server when the UI is behind.
-- Lines that parse as structured logs (`level=error`, or JSON with `"level":"error"`) get a coloured gutter.
+- Lines that parse as structured logs (`level=error`, or JSON with `"level":"error"`) get a colored gutter.
 
 ::: info No long-term logs
 v8s reads logs live from the pod. It stores nothing: when a pod is gone, so is its log. For history, use your log pipeline.
@@ -128,7 +128,7 @@ On a Node, choose **Cordon** or **Uncordon** (a patch to `spec.unschedulable`). 
     - unmanaged pods that will be lost;
     - pods using `emptyDir`;
     - DaemonSet pods that will be skipped.
-3. Set options if needed: ignore DaemonSets (on by default), delete `emptyDir` data, force (for pods without a controller), grace period, timeout, and, behind a second confirm, disable eviction so pods are deleted and PodDisruptionBudgets are not honoured.
+3. Set options if needed: ignore DaemonSets (on by default), delete `emptyDir` data, force (for pods without a controller), grace period, timeout, and, behind a second confirm, disable eviction so pods are deleted and PodDisruptionBudgets are not honored.
 4. Confirm.
 
 Progress streams per pod (evicting, waiting on PDB, terminated). A drain is an agent-side **job**, so it survives a reload or a brief disconnect: reopen the node and its state is there. **Cancel** stops further evictions and leaves the node cordoned. If v8s stops mid-drain, the node stays cordoned (the safe state) and the node offers **Resume drain**. Running a drain again is safe.

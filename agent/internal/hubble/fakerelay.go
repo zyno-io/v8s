@@ -16,7 +16,7 @@ import (
 
 // FakeRelay is an in-process hubble-relay serving synthetic flows for fake mode and tests: web traffic in a
 // "shop" namespace (frontend -> backend over HTTP, backend -> db, DNS lookups with the odd NXDOMAIN) plus a
-// probe pod denied by a NetworkPolicy (POLICY_DENIED drops). It honours the server-side filters a client sends.
+// probe pod denied by a NetworkPolicy (POLICY_DENIED drops). It honors the server-side filters a client sends.
 type FakeRelay struct {
 	pb.UnimplementedObserverServer
 	// Rate is the flows per second of a follow stream (default 60).

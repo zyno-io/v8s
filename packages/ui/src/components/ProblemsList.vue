@@ -148,7 +148,7 @@ watch(
 
 const totalPx = computed(() => virtualizer.value.getTotalSize());
 
-// ---- visible slice: one v-for over plain data, memoised ----
+// ---- visible slice: one v-for over plain data, memoized ----
 interface Item {
     i: number;
     start: number;

@@ -15,7 +15,7 @@ export const edgeWord = (c: EdgeClass): string => (c === 'dropped' ? 'Dropped' :
 
 export const edgeKey = (e: Pick<ServiceMapEdge, 'from' | 'to'>): string => `${e.from}→${e.to}`;
 
-/** Label parts: requests first, then errors and drops (each only when non-zero); `danger` marks the parts drawn in the danger colour. */
+/** Label parts: requests first, then errors and drops (each only when non-zero); `danger` marks the parts drawn in the danger color. */
 export function edgeLabelParts(e: Pick<ServiceMapEdge, 'requests' | 'errors' | 'drops'>): { text: string; danger: boolean }[] {
     const parts = [{ text: `${compact(e.requests)} req`, danger: false }];
     if (e.errors > 0) parts.push({ text: `${compact(e.errors)} err`, danger: true });

@@ -34,7 +34,7 @@ export function validBookmarks<T extends { url?: unknown }>(list: readonly T[]):
     return list.filter(b => !!b && typeof b.url === 'string' && b.url.startsWith('/') && !b.url.startsWith('//') && !b.url.startsWith('/\\'));
 }
 
-/** Fills missing collections so callers never null-check (the agent normalises, but a patch result may not be complete). */
+/** Fills missing collections so callers never null-check (the agent normalizes, but a patch result may not be complete). */
 export function normalizeSettings(s: Partial<Settings> | null | undefined): Settings {
     const d = emptySettings();
     if (!s) return d;

@@ -15,7 +15,7 @@ const CR = 0x0d;
 export interface LogBufferOptions {
     /** Lines to keep after a trim (desktop 50k, phone 5k). */
     capacity: number;
-    /** Extra slots before a trim happens; amortises the compaction. Default 25% of capacity (at least 256). */
+    /** Extra slots before a trim happens; amortizes the compaction. Default 25% of capacity (at least 256). */
     slack?: number;
     /** Cap on the bytes held (the arena): desktop 32 MiB, phone 8 MiB. Long lines must not make 50k lines unbounded. */
     maxBytes?: number;
@@ -142,7 +142,7 @@ export class LogBuffer {
 
     /**
      * Drops the oldest lines and compacts the arena: down to `capacity` when the slots are full, and, when the next line (`need`
-     * bytes) would pass `maxBytes`, down to 75% of it (amortises the copy). The newest data always survives. Shrinks an arena
+     * bytes) would pass `maxBytes`, down to 75% of it (amortizes the copy). The newest data always survives. Shrinks an arena
      * that has become much larger than what it holds.
      */
     private trim(need: number): void {

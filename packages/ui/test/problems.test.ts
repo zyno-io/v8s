@@ -63,7 +63,7 @@ describe('familyChips', () => {
         expect(chips.find(c => c.family === 'flows')?.off).toBe(true);
         expect(chips.find(c => c.family === 'pods')?.off).toBe(false);
     });
-    it('honours per-cluster overrides: disabled in the only active cluster means off', () => {
+    it('honors per-cluster overrides: disabled in the only active cluster means off', () => {
         const chips = familyChips(classes, ['a'], false);
         expect(chips.find(c => c.family === 'flux')?.off).toBe(true);
         expect(chips.find(c => c.family === 'flux')?.count).toBe(0);
@@ -167,7 +167,7 @@ describe('rows', () => {
         const pc = problemCols([...cols, { key: 'problemId', type: 'str' as never }]);
         expect(pc.problemId).toBe(18);
     });
-    it('recognises rollups and aggregate identity', () => {
+    it('recognizes rollups and aggregate identity', () => {
         expect(isRollup({ class: 'pod.crashloop', count: 3, kind: 'Deployment' })).toBe(true);
         expect(isRollup({ class: 'pod.crashloop', count: 1, kind: 'Pod' })).toBe(false);
         expect(isRollup({ class: 'vuln.critical', count: 9, kind: 'Image' })).toBe(false);

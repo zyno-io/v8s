@@ -213,7 +213,7 @@ export function preflightSummary(r: DrainPreflightResult, options: DrainOptions)
                 : `${counts.blocked} pod${counts.blocked === 1 ? ' is' : 's are'} covered by a PodDisruptionBudget that allows no disruptions: the drain will wait and retry every 5 s until the timeout.`
         );
     }
-    if (options.disableEviction) warnings.push('Eviction is disabled: pods are deleted and PodDisruptionBudgets are NOT honoured.');
+    if (options.disableEviction) warnings.push('Eviction is disabled: pods are deleted and PodDisruptionBudgets are NOT honored.');
     const affected = counts.evict + counts.blocked + (options.force ? counts.unmanaged : 0);
     return { counts, affected, blockers, warnings };
 }

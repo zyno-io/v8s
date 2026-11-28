@@ -72,7 +72,7 @@ const counts = computed(() => {
     return { total: g?.nodes.length ?? 0, failing: g ? g.nodes.filter(n => n.tone === 3).length : 0 };
 });
 
-/** Kind chips first, then (optionally) failing nodes plus their direct neighbours. Edges keep only surviving endpoints. */
+/** Kind chips first, then (optionally) failing nodes plus their direct neighbors. Edges keep only surviving endpoints. */
 const shown = computed<FluxGraphResult | null>(() => {
     const g = graph.value;
     if (!g) return null;
@@ -126,7 +126,7 @@ function open(n: FluxGraphNode) {
             </label>
             <label>
                 <input v-model="failingOnly" class="chip-input sr-only" type="checkbox" />
-                <span class="chip" :class="{ on: failingOnly }">Failing only + neighbours</span>
+                <span class="chip" :class="{ on: failingOnly }">Failing only + neighbors</span>
             </label>
         </div>
 

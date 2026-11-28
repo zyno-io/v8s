@@ -50,7 +50,7 @@ describe('buildInventoryTree', () => {
         expect(tree.groups[1]!.tone).toBe(0);
     });
 
-    it('summarises', () => {
+    it('summarizes', () => {
         expect(tree.summary).toEqual({ total: 5, failing: 1, warning: 0, healthy: 2, missing: 1, notWatched: 1, other: 0 });
     });
 

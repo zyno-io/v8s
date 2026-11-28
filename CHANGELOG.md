@@ -123,7 +123,7 @@ release notes when the tag has no annotation.
 
 ### Added
 
-- **Vertical Pod Autoscaler.** Pods whose requests VPA set (the admission controller's `vpaUpdates` annotation) show a **VPA** tag just before the usage block. The usage tooltip names the VPA, so high usage against the request is clearly VPA's to handle. The tag is coloured by the VPA's status: green **Provided**, amber **LowConfidence** or **NoPodsMatched**, red **ConfigUnsupported**, grey while pending. The column can be sorted. It appears only when a selected cluster has a pod that VPA manages, so clusters without VPA, or with VPA installed but unused, keep the full width. The pod's Overview shows the VPA's recommendation for each container (target, lower, upper, uncapped) next to the current request, with an **Open VPA** button. VerticalPodAutoscalers get a curated list: target, update mode, status, and the target, lower and upper CPU and memory as a usage block. Their detail view shows each container's recommendation. VPA objects are watched only while a VPA view is open; the pod tag comes from the pod itself, with no extra reads.
+- **Vertical Pod Autoscaler.** Pods whose requests VPA set (the admission controller's `vpaUpdates` annotation) show a **VPA** tag just before the usage block. The usage tooltip names the VPA, so high usage against the request is clearly VPA's to handle. The tag is colored by the VPA's status: green **Provided**, amber **LowConfidence** or **NoPodsMatched**, red **ConfigUnsupported**, gray while pending. The column can be sorted. It appears only when a selected cluster has a pod that VPA manages, so clusters without VPA, or with VPA installed but unused, keep the full width. The pod's Overview shows the VPA's recommendation for each container (target, lower, upper, uncapped) next to the current request, with an **Open VPA** button. VerticalPodAutoscalers get a curated list: target, update mode, status, and the target, lower and upper CPU and memory as a usage block. Their detail view shows each container's recommendation. VPA objects are watched only while a VPA view is open; the pod tag comes from the pod itself, with no extra reads.
 - Vulnerabilities: **Unknown** in the Exposed via column. While a cluster's Services, endpoints, pods or Ingresses are still loading, or cannot be read with your permissions, its images show `?` instead of `-`; they never count as **Not exposed**, the filter offers **Unknown** to find them, and the list re-reads every 10 s a few times until they resolve.
 
 ### Fixed
@@ -156,9 +156,9 @@ release notes when the tag has no annotation.
 
 ### Changed
 
-- Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 %. A request percentage gets a bar only when the pod has no limit for that resource. The number on it is a shade softer and no longer coloured.
+- Pods and Nodes: each **CPU and memory percentage cell carries a bar** that fills the row from the bottom by its value: green below 70 %, amber from 70 %, red from 90 %. A request percentage gets a bar only when the pod has no limit for that resource. The number on it is a shade softer and no longer colored.
 - Pods: next to a limit, the **memory request percentage turns amber above 100 % and red above 200 %**, since pods over their memory request are evicted first when a node runs short of memory. CPU request percentages stay plain.
-- Pods and Nodes: **hover a percentage header** for what its colours mean.
+- Pods and Nodes: **hover a percentage header** for what its colors mean.
 
 ## 0.3.2 — 2026-11-18
 

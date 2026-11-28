@@ -8,13 +8,13 @@ related_targets: []
 # Surface: v8s home page (`/`)
 
 Mode: **Persuade**. Scope: the single marketing page for v8s at v8s.io (plus 404). World: settled by the
-product, the PixelCI design system the v8s app already uses (cool grey desk, white hairline cards, 32px
+product, the PixelCI design system the v8s app already uses (cool gray desk, white hairline cards, 32px
 rows, status tag triplets, Inter + Font Awesome Free) with v8s indigo (#4f46e5 light, #5b52f0 dark).
 
 Audience: platform/SRE/DevOps engineers running several clusters. Action: download the right desktop
 build for this computer (release-aware from the GitHub API), or run `v8s serve` / deploy hosted mode;
 secondary: docs. Proof: real demo-mode screenshots (synthetic clusters), real commands, the stated design
-budgets (labelled as budgets). Constraints: no invented users, logos, testimonials or measured benchmarks.
+budgets (labeled as budgets). Constraints: no invented users, logos, testimonials or measured benchmarks.
 Footer carries the Zyno Consulting pitch for Kubernetes help (owner's brief) using only claims on
 zyno.consulting (infrastructure and DevOps, Kubernetes/AWS migrations, CI/CD, monitoring and incident
 response, embedded consulting); v8s never requires it.
@@ -33,7 +33,7 @@ command that opens it in the app (`:ctx`, `:pb`, `:ks`, `:po`), and pressing `:`
 working command bar that jumps between them. Refuses the category default of a hero over three
 feature cards and a logo strip.
 
-OWN-WORLD: the app's own chrome at marketing scale: Desk Grey ground, white hairline cards with 12/8/5
+OWN-WORLD: the app's own chrome at marketing scale: Desk Gray ground, white hairline cards with 12/8/5
 radii, 32px table rows with 11px caps headers, tag triplets carrying status words, mono for commands
 and machine text, one indigo for action/selection/focus only. Dark theme is the app's near-black. No
 gradients, no glass, no illustration; the cluster is the content.

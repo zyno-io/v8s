@@ -12,7 +12,7 @@ export const site = {
   repo,
   releases: `${repo}/releases`,
   latest: `${repo}/releases/latest`,
-  licenceText: `${repo}/blob/main/LICENSE`,
+  licenseText: `${repo}/blob/main/LICENSE`,
   changelog: `${repo}/blob/main/CHANGELOG.md`,
   issues: `${repo}/issues`,
   docs: `${docs}/`,

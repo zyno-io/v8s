@@ -18,7 +18,7 @@ Pod tables show CPU and memory as one dense block, in the style of k9s: right-al
 
 - `—` means there is no data: metrics-server does not report the pod (Pending, Completed, just started), or the numbers have not arrived yet. `n/a` means there is nothing to divide by: the pod has no request or no limit. A pod only has a limit when every container has one, as in `kubectl`.
 - Each percentage has a bar behind it that fills the row from the bottom by its value (a full row at 100 % or more): green below 70 %, amber from 70 %, red from 90 %. This applies to percentages of a limit and of a node. A percentage of a request has no bar when the pod has a limit for that resource, because running above a request is normal for burstable pods and the limit is the bound that matters. When the pod has no limit, the request is the only bound, and its percentage gets the same green, amber or red bar. Next to a limit, a memory request percentage turns amber above 100 % and red above 200 %: when a node runs short of memory, the kubelet evicts the pods furthest over their memory request first. CPU request percentages stay plain, since running over a CPU request only means less guaranteed CPU when the node is busy.
-- Hover a percentage header for what its colours mean. The row's hover text also says when a pod is over its memory request.
+- Hover a percentage header for what its colors mean. The row's hover text also says when a pod is over its memory request.
 - Sort by any of them from its header. A value sorts before `n/a`, which sorts before `—`, in both directions, so the busiest pods are on top whichever way you sort.
 - Hover the block for the full picture: used, requested and limit with percentages, and the share of the node's allocatable, in cores or GiB from a core or a GiB up.
 - Requests and limits come from the pod spec, as in `kubectl`, not from an in-place resize status.
@@ -26,7 +26,7 @@ Pod tables show CPU and memory as one dense block, in the style of k9s: right-al
 
 **Nodes** use the same block: **CPU** (millicores), **%** (usage as a percentage of the node's allocatable) and **alloc** (the allocatable CPU), then the same for **MEM** (MiB). Allocatable is what pods can actually get (capacity minus reserved), so a node near 100 % is full for the scheduler. Each percentage has the same bar: green below 70 %, amber from 70 %, red from 90 %. OS image, kernel, runtime and taints are hidden by default; turn them on from **Columns**. The allocatable columns are numbers now, so they sort numerically.
 
-The **Overview** shows, per cluster, CPU and Memory: the big number is usage as a percentage of the allocatable of all nodes (amber from 90 %, red from 100 %), the bar is allocatable with usage filled in and a tick at the requests, then `requests 62% · limits 143%` and `41.2 of 112 cores`. Without metrics-server the big number is the requested share, labelled "requested", with a note that usage needs metrics-server. Limits above 100 % mean the cluster is overcommitted on limits. Hover for how many nodes report and how many pods have no limit.
+The **Overview** shows, per cluster, CPU and Memory: the big number is usage as a percentage of the allocatable of all nodes (amber from 90 %, red from 100 %), the bar is allocatable with usage filled in and a tick at the requests, then `requests 62% · limits 143%` and `41.2 of 112 cores`. Without metrics-server the big number is the requested share, labeled "requested", with a note that usage needs metrics-server. Limits above 100 % mean the cluster is overcommitted on limits. Hover for how many nodes report and how many pods have no limit.
 
 Usage needs [metrics-server](https://github.com/kubernetes-sigs/metrics-server) in the cluster, and permission to read `metrics.k8s.io`. v8s asks for it only while a table shows usage (or sorts by it) or an Overview card is open, every 30 seconds, for the namespaces on screen (nodes and the Overview ask for one small node list); a tab hidden for 30 seconds stops asking. Without metrics-server the usage columns are not shown, and **Columns** says why; a cluster where it is missing or refusing shows a small "no metrics" tag next to the sync tag.
 
@@ -34,15 +34,15 @@ Columns you hide or show are remembered per resource type. Resizing a column no 
 
 ### Vertical Pod Autoscaler
 
-When a [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) sets a pod's requests, the Pods table shows a **VPA** tag just before the CPU and memory block, so high usage against a request that VPA manages is easy to tell apart from one you set by hand. The tag's colour is the VPA's status:
+When a [VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler) sets a pod's requests, the Pods table shows a **VPA** tag just before the CPU and memory block, so high usage against a request that VPA manages is easy to tell apart from one you set by hand. The tag's color is the VPA's status:
 
-| Colour | Status            | Meaning                                                         |
-| ------ | ----------------- | --------------------------------------------------------------- |
-| green  | Provided          | VPA has a confident recommendation.                             |
-| amber  | LowConfidence     | Recommendation based on little history; expect it to move.      |
-| amber  | NoPodsMatched     | The VPA's target selects no pods.                               |
-| red    | ConfigUnsupported | VPA rejected the configuration; requests are not being managed. |
-| grey   | Pending           | No recommendation yet (or the VPA list is still loading).       |
+| Color | Status            | Meaning                                                         |
+| ----- | ----------------- | --------------------------------------------------------------- |
+| green | Provided          | VPA has a confident recommendation.                             |
+| amber | LowConfidence     | Recommendation based on little history; expect it to move.      |
+| amber | NoPodsMatched     | The VPA's target selects no pods.                               |
+| red   | ConfigUnsupported | VPA rejected the configuration; requests are not being managed. |
+| gray  | Pending           | No recommendation yet (or the VPA list is still loading).       |
 
 Hover the tag for the VPA's name and status. The column appears only while a selected cluster has a VPA-managed pod: a VPA in `Off` mode sets no requests, so its pods are not tagged.
 

@@ -802,7 +802,7 @@ export interface ObjectDryRunParams {
   yaml: string;
   mode: string; // "update" | "create"
   /**
-   * UseWriteContext runs the dry run through the linked write context (honoured only when a link exists).
+   * UseWriteContext runs the dry run through the linked write context (honored only when a link exists).
    */
   useWriteContext?: boolean;
 }
@@ -827,7 +827,7 @@ export interface ObjectApplyParams {
   resourceVersion?: string; // update: the version the user opened
   /**
    * UseWriteContext (here and on object.delete / object.action / jobs.start / stream.open) runs the mutation
-   * through the linked write context; honoured only when a link exists. It is how the UI retries after a
+   * through the linked write context; honored only when a link exists. It is how the UI retries after a
    * "write_confirm" error (autoSwitchWrite off).
    */
   useWriteContext?: boolean;
@@ -1261,7 +1261,7 @@ export interface JobsCancelParams {
 /**
  * DrainOptions mirror kubectl drain. IgnoreDaemonSets defaults to true. TimeoutSeconds 0 means 300.
  * GracePeriodSeconds nil uses each pod's own. DisableEviction deletes pods instead of evicting them
- * (PDBs are then not honoured): it is the explicit second confirmation.
+ * (PDBs are then not honored): it is the explicit second confirmation.
  */
 export interface DrainOptions {
   ignoreDaemonSets?: boolean;

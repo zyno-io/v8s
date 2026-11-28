@@ -56,7 +56,7 @@ export function sameVpaIndex(a: VpaIndex, b: VpaIndex): boolean {
 }
 
 /**
- * Subscribes to the VPA list while `want` is non-empty (a vpaWantKey) and exposes its status index. The pods table colours
+ * Subscribes to the VPA list while `want` is non-empty (a vpaWantKey) and exposes its status index. The pods table colors
  * its VPA tags from it. The index object is replaced only when a status or tone changed, so recommendation updates (every recommender
  * loop) re-render nothing. VPAs are few; the agent watches them only while this subscription is open. It is a background
  * subscription: where the user may not list VPAs, the refused watch is parked instead of retried for as long as Pods is open.
