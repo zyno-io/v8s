@@ -5,6 +5,8 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+## 0.13.0 — 2026-11-28
+
 ### Added
 
 - A pod's **Overview** tab lists its containers: init containers and sidecars first, then the regular and ephemeral ones, each
