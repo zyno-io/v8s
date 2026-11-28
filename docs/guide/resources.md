@@ -66,6 +66,8 @@ Press `Enter` on a row, or click it, to open the drawer. The URL changes with it
 | Events    | All events for this object, newest first                                                                                   |
 | Related   | What owns this object and what it owns. For Deployments, StatefulSets, DaemonSets, ReplicaSets and Jobs, their pods        |
 
+A pod's Overview lists its containers in start order (init containers and sidecars, then regular, then ephemeral), each with its image, its state (Running, CrashLoopBackOff, Completed, …) and its restart count.
+
 The Events tab shows every event for the object, Normal and Warning, newest first, with the component that reported each one. It loads when you open the tab and stays live while it is open. Events of cluster-scoped objects (nodes, volumes, namespaces) come from the `default` namespace. Kubernetes keeps events for about an hour, so older ones are gone, and an object recreated with the same name shows the earlier one's events until then. Event objects themselves have no Events tab.
 
 Tabs appear in that order, and only those that apply to the type and, for Security and Flows, to the clusters you selected. On a tab button, `←` `→` `Home` and `End` move between tabs; `↑` `↓` `PgUp` `PgDn` move into the tab's content to scroll it. `l`, `s`, `e`, and `d` jump to Logs, Shell, YAML (in edit mode), and Overview from a table. See [Navigation](/guide/navigation#keyboard-shortcuts).

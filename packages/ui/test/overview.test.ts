@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { conditionsOf, conditionTone, keyFields, objectStatus, revisionOf } from '../src/lib/overview.ts';
+import { conditionsOf, conditionTone, keyFields, objectStatus, podContainers, revisionOf } from '../src/lib/overview.ts';
 import { drawerQuery, gvrFromRoute, gvrPath, parseDrawer } from '../src/lib/route.ts';
 import { gvrFromManifest, templateFor, TEMPLATES } from '../src/lib/templates.ts';
 
@@ -59,6 +59,52 @@ describe('keyFields and revision', () => {
         expect(keyFields('apps/v1/deployments', dep).find(f => f.label === 'Replicas')?.value).toBe('1 ready of 2');
         expect(revisionOf(dep)).toBe(4);
         expect(revisionOf({})).toBe(0);
+    });
+});
+
+describe('podContainers', () => {
+    it('lists init, sidecar, regular and ephemeral containers with image and state', () => {
+        const list = podContainers({
+            spec: {
+                initContainers: [
+                    { name: 'migrate', image: 'app:1-migrate' },
+                    { name: 'proxy', image: 'envoy:1.30', restartPolicy: 'Always' }
+                ],
+                containers: [
+                    { name: 'app', image: 'ghcr.io/x/app:1.2.3' },
+                    { name: 'worker', image: 'ghcr.io/x/worker:1.2.3' },
+                    { name: 'new', image: 'busybox' }
+                ],
+                ephemeralContainers: [{ name: 'debugger', image: 'nicolaka/netshoot' }]
+            },
+            status: {
+                initContainerStatuses: [
+                    { name: 'migrate', ready: false, restartCount: 0, state: { terminated: { exitCode: 0, reason: 'Completed' } } },
+                    { name: 'proxy', ready: true, restartCount: 1, state: { running: {} } }
+                ],
+                containerStatuses: [
+                    { name: 'app', ready: false, restartCount: 0, state: { running: {} } },
+                    { name: 'worker', ready: false, restartCount: 7, state: { waiting: { reason: 'CrashLoopBackOff' } } }
+                ],
+                ephemeralContainerStatuses: [{ name: 'debugger', state: { terminated: { exitCode: 137, reason: 'Error' } } }]
+            }
+        });
+        expect(list.map(c => [c.name, c.kind, c.image, c.state, c.tone, c.restarts])).toEqual([
+            ['migrate', 'init', 'app:1-migrate', 'Completed', 'info', 0],
+            ['proxy', 'sidecar', 'envoy:1.30', 'Running', 'success', 1],
+            ['app', '', 'ghcr.io/x/app:1.2.3', 'Running', 'warning', 0],
+            ['worker', '', 'ghcr.io/x/worker:1.2.3', 'CrashLoopBackOff', 'danger', 7],
+            ['new', '', 'busybox', '', 'neutral', 0],
+            ['debugger', 'ephemeral', 'nicolaka/netshoot', 'Error (137)', 'danger', 0]
+        ]);
+        expect(podContainers({ status: { containerStatuses: [{ name: 'x', state: { waiting: { reason: 'ContainerCreating' } } }] } })).toEqual([]);
+        expect(
+            podContainers({
+                spec: { containers: [{ name: 'a', image: 'a' }] },
+                status: { containerStatuses: [{ name: 'a', state: { waiting: { reason: 'ContainerCreating' } } }] }
+            })[0].tone
+        ).toBe('warning');
+        expect(podContainers(null)).toEqual([]);
     });
 });
 

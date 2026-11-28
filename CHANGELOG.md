@@ -5,6 +5,11 @@ release notes when the tag has no annotation.
 
 ## Unreleased
 
+### Added
+
+- A pod's **Overview** tab lists its containers: init containers and sidecars first, then the regular and ephemeral ones, each
+  with its image, its state (Running, CrashLoopBackOff, Completed, …) and its restart count.
+
 ## 0.12.0 — 2026-11-26
 
 ### Added

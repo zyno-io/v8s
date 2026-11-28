@@ -14,7 +14,7 @@ import { openObject } from '@/lib/drawer.ts';
 import { formatAge } from '@/lib/format.ts';
 import { resolveKind } from '@/lib/kinds.ts';
 import { errorText } from '@/lib/mutations.ts';
-import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, stringMap } from '@/lib/overview.ts';
+import { conditionsOf, conditionTone, GITOPS_LABEL, keyFields, objectStatus, podContainers, stringMap } from '@/lib/overview.ts';
 import { listsPods } from '@/lib/related.ts';
 import { ownerTarget } from '@/lib/row-keys.ts';
 import { isVpaGvr, podRequests, VPA_GVR, vpaNameFromAnnotation, vpaRecommendations } from '@/lib/vpa.ts';
@@ -31,6 +31,7 @@ const router = useRouter();
 // Owners the clusters serve open in the drawer, like Shift+J on a row; an unknown kind stays plain text.
 const owners = computed(() => (props.payload.owners ?? []).map(o => ({ ...o, to: ownerTarget(props.target, o, kinds.value) })));
 const conditions = computed(() => conditionsOf(props.parsed));
+const containers = computed(() => (props.target.gvr === 'v1/pods' ? podContainers(props.parsed) : []));
 const labels = computed(() => stringMap(meta.value.labels));
 const annotations = computed(() => stringMap(meta.value.annotations));
 const created = computed(() => {
@@ -171,6 +172,22 @@ const isSecret = computed(() => props.target.gvr === 'v1/secrets');
             <dt class="lbl">Version</dt>
             <dd class="mono">{{ payload.resourceVersion }}</dd>
         </dl>
+
+        <section v-if="containers.length" data-testid="containers">
+            <h3 class="lbl">Containers <span class="count">{{ containers.length }}</span></h3>
+            <ul class="ctrs">
+                <li v-for="c in containers" :key="c.name">
+                    <div class="chead">
+                        <span class="cname mono">{{ c.name }}</span>
+                        <span v-if="c.kind" class="tag neutral">{{ c.kind }}</span>
+                        <span class="grow"></span>
+                        <span v-if="c.restarts" class="muted restarts">{{ c.restarts }} {{ c.restarts === 1 ? 'restart' : 'restarts' }}</span>
+                        <span v-if="c.state" class="tag" :class="c.tone">{{ c.state }}</span>
+                    </div>
+                    <div class="cimg mono" :title="c.image">{{ c.image || '—' }}</div>
+                </li>
+            </ul>
+        </section>
 
         <section v-if="isVpa" data-testid="vpa-section">
             <h3 class="lbl">Recommendations</h3>
@@ -433,6 +450,49 @@ h3 {
 .disc:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
+}
+/* Containers: name, kind and state over the image, one bordered block per container. */
+.ctrs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.ctrs li {
+    padding: 7px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.ctrs li + li {
+    border-top: 1px solid var(--border);
+}
+.chead {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+.cname {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+.grow {
+    flex: 1;
+}
+.restarts {
+    font-size: 11px;
+}
+.cimg {
+    font-size: 12px;
+    color: var(--text2);
+    overflow-wrap: anywhere;
 }
 .ctable {
     width: 100%;

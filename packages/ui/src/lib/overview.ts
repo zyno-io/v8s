@@ -156,3 +156,60 @@ export function stringMap(v: unknown): [string, string][] {
 }
 
 export const GITOPS_LABEL: Record<string, string> = { Kustomization: 'Flux', HelmRelease: 'Flux', Helm: 'Helm' };
+
+export interface PodContainer {
+    name: string;
+    /** '' for a regular container; init containers with `restartPolicy: Always` are sidecars. */
+    kind: '' | 'init' | 'sidecar' | 'ephemeral';
+    image: string;
+    /** Running, Completed, CrashLoopBackOff, …; '' before the kubelet reports it. */
+    state: string;
+    tone: Tone;
+    restarts: number;
+}
+
+/** A pod's containers in start order (init and sidecars, regular, ephemeral), each with its image and current state. */
+export function podContainers(obj: Obj | null): PodContainer[] {
+    if (!obj) return [];
+    const statuses = new Map<string, Obj>();
+    for (const key of ['initContainerStatuses', 'containerStatuses', 'ephemeralContainerStatuses']) {
+        const list = get(obj, `status.${key}`);
+        if (Array.isArray(list)) for (const s of list) if (isObj(s) && typeof s.name === 'string') statuses.set(s.name, s);
+    }
+    const out: PodContainer[] = [];
+    const add = (list: unknown, kind: (c: Obj) => PodContainer['kind']) => {
+        if (!Array.isArray(list)) return;
+        for (const c of list) {
+            if (!isObj(c) || typeof c.name !== 'string') continue;
+            const s = statuses.get(c.name);
+            const k = kind(c);
+            const { state, tone } = containerState(s, k);
+            out.push({ name: c.name, kind: k, image: str(c.image), state, tone, restarts: Number(s?.restartCount) || 0 });
+        }
+    };
+    add(get(obj, 'spec.initContainers'), c => (c.restartPolicy === 'Always' ? 'sidecar' : 'init'));
+    add(get(obj, 'spec.containers'), () => '');
+    add(get(obj, 'spec.ephemeralContainers'), () => 'ephemeral');
+    return out;
+}
+
+function containerState(s: Obj | undefined, kind: PodContainer['kind']): { state: string; tone: Tone } {
+    const st = s?.state;
+    if (!isObj(st)) return { state: '', tone: 'neutral' };
+    if (isObj(st.running)) {
+        // A running container that fails its readiness probe is up but not serving.
+        const ready = s?.ready === true || kind === 'ephemeral' || kind === 'init';
+        return { state: 'Running', tone: ready ? 'success' : 'warning' };
+    }
+    if (isObj(st.waiting)) {
+        const reason = str(st.waiting.reason) || 'Waiting';
+        const bad = /BackOff|Err|Invalid|Failed/i.test(reason);
+        return { state: reason, tone: bad ? 'danger' : 'warning' };
+    }
+    if (isObj(st.terminated)) {
+        const code = Number(st.terminated.exitCode) || 0;
+        const reason = str(st.terminated.reason) || (code === 0 ? 'Completed' : 'Error');
+        return { state: code === 0 ? reason : `${reason} (${code})`, tone: code === 0 ? 'info' : 'danger' };
+    }
+    return { state: '', tone: 'neutral' };
+}
